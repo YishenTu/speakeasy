@@ -130,7 +130,7 @@ describe('shared chat client', () => {
     expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-new');
   });
 
-  it('sends trimmed user messages and returns the assistant message', async () => {
+  it('sends trimmed user messages and forwards optional stream request ids', async () => {
     storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-10';
     queueRuntimeResponses({
       ok: true,
@@ -149,6 +149,7 @@ describe('shared chat client', () => {
       'gemini-3-flash-preview',
       'high',
       undefined,
+      'stream-req-1',
     );
 
     expect(runtimeRequests).toEqual([
@@ -158,6 +159,7 @@ describe('shared chat client', () => {
         model: 'gemini-3-flash-preview',
         thinkingLevel: 'high',
         chatId: 'chat-10',
+        streamRequestId: 'stream-req-1',
       },
     ]);
     expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-11');

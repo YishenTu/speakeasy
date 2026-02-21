@@ -45,6 +45,9 @@ describe('Gemini interactions request contract', () => {
       model: settings.model,
       input,
       store: true,
+      generation_config: {
+        thinking_summaries: 'auto',
+      },
     });
     expect(plan.tools).toEqual([]);
     expect(plan.functionCallingEnabled).toBe(false);
@@ -121,7 +124,7 @@ describe('Gemini interactions request contract', () => {
     ]);
   });
 
-  it('includes previous interaction id, system instruction, and thinking level', () => {
+  it('includes previous interaction id, system instruction, and thinking config', () => {
     const settings = createBaseSettings();
     settings.systemInstruction = 'Be concise.';
 
@@ -135,10 +138,13 @@ describe('Gemini interactions request contract', () => {
 
     expect(plan.request.previous_interaction_id).toBe('int-1');
     expect(plan.request.system_instruction).toBe('Be concise.');
-    expect(plan.request.generation_config).toEqual({ thinking_level: 'high' });
+    expect(plan.request.generation_config).toEqual({
+      thinking_level: 'high',
+      thinking_summaries: 'auto',
+    });
   });
 
-  it('omits generation_config when thinking level is not provided', () => {
+  it('includes thinking summaries when thinking level is not provided', () => {
     const settings = createBaseSettings();
 
     const plan = composeGeminiInteractionRequest({
@@ -147,6 +153,8 @@ describe('Gemini interactions request contract', () => {
       functionDeclarations: FUNCTION_DECLARATIONS,
     });
 
-    expect(plan.request.generation_config).toBeUndefined();
+    expect(plan.request.generation_config).toEqual({
+      thinking_summaries: 'auto',
+    });
   });
 });

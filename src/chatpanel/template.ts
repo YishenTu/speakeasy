@@ -286,6 +286,50 @@ export function getChatPanelTemplate(): string {
         margin: 0;
       }
 
+      .message-thinking-placeholder {
+        color: rgba(255, 255, 255, 0.56);
+        display: inline-flex;
+        align-items: baseline;
+        gap: 0;
+      }
+
+      .thinking-placeholder-dots {
+        display: inline-flex;
+      }
+
+      .thinking-placeholder-dot {
+        display: inline-block;
+        min-width: 0.34ch;
+        opacity: 0.24;
+        animation: thinking-dot-pulse 1.2s ease-in-out infinite;
+      }
+
+      .thinking-placeholder-dot:nth-child(2) {
+        animation-delay: 0.16s;
+      }
+
+      .thinking-placeholder-dot:nth-child(3) {
+        animation-delay: 0.32s;
+      }
+
+      @keyframes thinking-dot-pulse {
+        0%,
+        80%,
+        100% {
+          opacity: 0.24;
+        }
+        40% {
+          opacity: 0.88;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .thinking-placeholder-dot {
+          animation: none;
+          opacity: 0.56;
+        }
+      }
+
       .message-text > * {
         margin: 0 0 8px;
       }
@@ -440,13 +484,95 @@ export function getChatPanelTemplate(): string {
         margin-bottom: 0;
       }
 
+      .message-text math[display='block'] mtable[columnalign='right left'] {
+        display: inline-table;
+        border-collapse: collapse;
+      }
+
+      .message-text math[display='block'] mtable[columnalign='right left'] mtd:nth-child(1) {
+        text-align: right;
+        padding-right: 0.16em;
+      }
+
+      .message-text math[display='block'] mtable[columnalign='right left'] mtd:nth-child(2) {
+        text-align: left;
+        padding-left: 0.16em;
+      }
+
+      .thinking-disclosure {
+        margin: 8px 0 10px;
+        border: 0;
+        padding: 0;
+        background: transparent;
+      }
+
+      .thinking-disclosure-label {
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.82);
+        user-select: none;
+        list-style: none;
+      }
+
+      .thinking-disclosure-label::-webkit-details-marker {
+        display: none;
+      }
+
+      .thinking-disclosure-label::marker {
+        content: '';
+      }
+
+      .thinking-summary {
+        margin: 8px 0 6px;
+        padding: 0 0 0 10px;
+        border-left: 1px solid rgba(255, 255, 255, 0.22);
+        font-size: 12px;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, 0.68);
+      }
+
+      .thinking-summary > * {
+        margin: 0 0 6px;
+      }
+
+      .thinking-summary > *:last-child {
+        margin-bottom: 0;
+      }
+
+      .thinking-summary a {
+        color: rgba(173, 216, 245, 0.96);
+      }
+
+      .thinking-summary a:hover {
+        color: rgba(209, 230, 247, 0.98);
+      }
+
+      .thinking-summary blockquote {
+        color: rgba(255, 255, 255, 0.66);
+      }
+
+      .thinking-summary .code-lang {
+        color: rgba(255, 255, 255, 0.56);
+      }
+
+      .thinking-summary .code-lang:hover {
+        color: rgba(255, 255, 255, 0.84);
+      }
+
+      .thinking-summary p {
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+
       .attachment-list {
         display: flex;
         flex-direction: column;
         gap: 8px;
       }
 
-      .message-text + .attachment-list {
+      .message-text + .attachment-list,
+      .thinking-disclosure + .attachment-list {
         margin-top: 8px;
       }
 
@@ -596,22 +722,16 @@ export function getChatPanelTemplate(): string {
         color: rgba(255, 255, 255, 0.35);
         font-family: inherit;
         font-size: 11px;
-        padding: 0 14px 0 0;
+        padding: 0;
         border-radius: 0;
         cursor: pointer;
         outline: none;
         transition: color 120ms ease;
-        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.35)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 0 center;
       }
 
       .dropup-trigger:hover,
       .dropup.open .dropup-trigger {
         color: rgba(255, 255, 255, 0.95);
-        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.95)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 0 center;
       }
 
       .dropup-menu {

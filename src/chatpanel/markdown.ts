@@ -110,11 +110,100 @@ function normalizeTexLineBreaks(tex: string): string {
 }
 
 function normalizeMarkdownForTex(markdown: string): string {
-  return markdown.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, body: string) => {
-    if (!body.includes('\n')) {
-      return fullMatch;
+  return markdown.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, body) => {
+    const normalizedBody = normalizeDisplayMathBlock(body);
+    return normalizedBody ? `$$${normalizedBody}$$` : fullMatch;
+  });
+}
+
+function normalizeDisplayMathBlock(body: string): string {
+  let normalized = normalizeTexLineBreaks(body).trim();
+  if (!normalized) {
+    return '';
+  }
+
+  normalized = normalizeDisplayEnvironmentAliases(normalized);
+  normalized = normalizeExplicitAlignedEnvironments(normalized);
+  if (shouldWrapWithAlignedEnvironment(normalized)) {
+    normalized = wrapWithAlignedEnvironment(normalized);
+  }
+
+  return normalized;
+}
+
+function normalizeDisplayEnvironmentAliases(tex: string): string {
+  return tex
+    .replace(/\\begin\{align\*?\}/g, '\\begin{aligned}')
+    .replace(/\\end\{align\*?\}/g, '\\end{aligned}')
+    .replace(/\\begin\{gather\*?\}/g, '\\begin{gathered}')
+    .replace(/\\end\{gather\*?\}/g, '\\end{gathered}')
+    .replace(/\\begin\{dcases\*?\}/g, '\\begin{cases}')
+    .replace(/\\end\{dcases\*?\}/g, '\\end{cases}');
+}
+
+function shouldWrapWithAlignedEnvironment(tex: string): boolean {
+  if (/\\begin\{[a-zA-Z*]+\}/.test(tex)) {
+    return false;
+  }
+
+  const lines = tex
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length < 2) {
+    return false;
+  }
+
+  const equalsCount = lines.filter((line) => line.includes('=')).length;
+  return equalsCount >= 2 || lines.slice(1).some((line) => line.startsWith('='));
+}
+
+function wrapWithAlignedEnvironment(tex: string): string {
+  const normalizedLines = splitAlignedRows(tex).map((line) => normalizeAlignedLine(line));
+
+  return `\\begin{aligned}\n${normalizedLines.join(' \\\\\n')}\n\\end{aligned}`;
+}
+
+function normalizeExplicitAlignedEnvironments(tex: string): string {
+  return tex.replace(/\\begin\{aligned\}([\s\S]*?)\\end\{aligned\}/g, (_match, body: string) => {
+    const normalizedLines = splitAlignedRows(body).map((line) => normalizeAlignedLine(line));
+    if (normalizedLines.length === 0) {
+      return '\\begin{aligned}\\end{aligned}';
     }
 
-    return `$$${normalizeTexLineBreaks(body)}$$`;
+    return `\\begin{aligned}\n${normalizedLines.join(' \\\\\n')}\n\\end{aligned}`;
   });
+}
+
+function splitAlignedRows(tex: string): string[] {
+  const normalized = tex.replace(/\r/g, '');
+  if (!normalized.trim()) {
+    return [];
+  }
+
+  const candidates = normalized.includes('\n') ? normalized.split('\n') : normalized.split(/\\\\/g);
+
+  return candidates.map((line) => line.trim()).filter((line) => line.length > 0);
+}
+
+function normalizeAlignedLine(line: string): string {
+  const withoutTrailingBreak = line.replace(/\\\\\s*$/, '').trim();
+  if (!withoutTrailingBreak) {
+    return '';
+  }
+
+  if (withoutTrailingBreak.includes('&')) {
+    return withoutTrailingBreak;
+  }
+
+  if (withoutTrailingBreak.startsWith('=')) {
+    return `&${withoutTrailingBreak}`;
+  }
+
+  const equalsIndex = withoutTrailingBreak.indexOf('=');
+  if (equalsIndex <= 0) {
+    return withoutTrailingBreak;
+  }
+
+  return `${withoutTrailingBreak.slice(0, equalsIndex)}&${withoutTrailingBreak.slice(equalsIndex)}`;
 }

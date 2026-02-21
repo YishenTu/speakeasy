@@ -1,6 +1,5 @@
 import type { GeminiSettings } from '../shared/settings';
 import { validateGeminiToolConfiguration } from '../shared/tool-validation';
-import { isObjectEmpty } from './utils';
 
 export interface GeminiRequestToolSelection {
   tools: Array<Record<string, unknown>>;
@@ -16,6 +15,7 @@ export interface GeminiInteractionRequest {
   tools?: Array<Record<string, unknown>>;
   generation_config?: {
     thinking_level?: string;
+    thinking_summaries?: 'auto' | 'none';
   };
 }
 
@@ -49,14 +49,13 @@ export function composeGeminiInteractionRequest(
     request.tools = selection.tools;
   }
 
-  const generationConfig: NonNullable<GeminiInteractionRequest['generation_config']> = {};
+  const generationConfig: NonNullable<GeminiInteractionRequest['generation_config']> = {
+    thinking_summaries: 'auto',
+  };
   if (input.thinkingLevel) {
     generationConfig.thinking_level = input.thinkingLevel;
   }
-
-  if (!isObjectEmpty(generationConfig)) {
-    request.generation_config = generationConfig;
-  }
+  request.generation_config = generationConfig;
 
   return {
     request,

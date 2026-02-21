@@ -11,5 +11,6 @@ export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
+  thinkingSummary?: string;
   attachments?: ChatAttachment[];
 }

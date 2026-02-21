@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import type { ChatRepository } from '../../src/background/chat-repository';
-import { InvalidPreviousInteractionIdError } from '../../src/background/gemini';
+import {
+  InvalidPreviousInteractionIdError,
+  completeAssistantTurn,
+} from '../../src/background/gemini';
 import { createRuntimeRequestHandler } from '../../src/background/runtime';
 import type { ChatSession, GeminiContent } from '../../src/background/types';
 import type { RuntimeRequest } from '../../src/shared/runtime';
@@ -343,6 +346,72 @@ describe('runtime chat storage handler', () => {
     expect(resetSession?.lastInteractionId).toBeUndefined();
     expect(resetSession?.contents).toHaveLength(1);
     expect(repository.upsertCalls).toHaveLength(1);
+  });
+
+  it('resets continuation token when streamed Gemini errors report invalid previous interaction id', async () => {
+    const chained = createSession('chat-stream-expired');
+    chained.lastInteractionId = 'interaction-old';
+    repository.sessions.set(chained.id, chained);
+
+    const originalFetch = globalThis.fetch;
+    let capturedRequestBody: Record<string, unknown> | undefined;
+    const streamBody = [
+      `data: ${JSON.stringify({
+        event_type: 'error',
+        error: {
+          message: 'Invalid previous_interaction_id: interaction not found.',
+        },
+      })}\n\n`,
+      'data: [DONE]\n\n',
+    ].join('');
+    (globalThis as { fetch: typeof fetch }).fetch = (async (_input, init) => {
+      capturedRequestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      return new Response(streamBody, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn,
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      await expect(
+        handler(
+          {
+            type: 'chat/send',
+            chatId: chained.id,
+            text: 'retry',
+            model: 'gemini-3-flash-preview',
+            streamRequestId: 'stream-1',
+          },
+          {
+            sender: {
+              tab: { id: 321 } as chrome.tabs.Tab,
+              frameId: 7,
+            },
+          },
+        ),
+      ).rejects.toThrow(/resend your last message/i);
+
+      expect(capturedRequestBody).toMatchObject({
+        stream: true,
+        previous_interaction_id: 'interaction-old',
+      });
+      const resetSession = repository.sessions.get(chained.id);
+      expect(resetSession?.lastInteractionId).toBeUndefined();
+      expect(resetSession?.contents).toHaveLength(1);
+      expect(repository.upsertCalls).toHaveLength(1);
+    } finally {
+      (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+    }
   });
 
   it('surfaces reset persistence failures separately from expired interaction errors', async () => {
@@ -803,6 +872,153 @@ describe('runtime chat storage handler', () => {
         },
       ],
     });
+  });
+
+  it('forwards streaming deltas to the originating tab frame when stream request id is provided', async () => {
+    repository.sessions.set('chat-stream', createSession('chat-stream'));
+    const sentEvents: Array<{
+      tabId: number;
+      payload: unknown;
+      options?: chrome.tabs.MessageSendOptions;
+    }> = [];
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        lastError: undefined,
+      },
+      tabs: {
+        sendMessage: (
+          tabId: number,
+          payload: unknown,
+          optionsOrCallback?: chrome.tabs.MessageSendOptions | ((response?: unknown) => void),
+          callback?: (response?: unknown) => void,
+        ) => {
+          const options = typeof optionsOrCallback === 'function' ? undefined : optionsOrCallback;
+          sentEvents.push({ tabId, payload, ...(options ? { options } : {}) });
+          if (typeof optionsOrCallback === 'function') {
+            optionsOrCallback();
+          } else {
+            callback?.();
+          }
+        },
+      },
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session, _settings, _thinkingLevel, onStreamDelta) => {
+          onStreamDelta?.({ textDelta: 'Draft' });
+          onStreamDelta?.({ thinkingDelta: 'Reasoning' });
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'Final answer' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      const payload = await handler(
+        {
+          type: 'chat/send',
+          chatId: 'chat-stream',
+          text: 'stream this',
+          model: 'gemini-3-flash-preview',
+          streamRequestId: 'stream-1',
+        },
+        {
+          sender: {
+            tab: { id: 321 } as chrome.tabs.Tab,
+            frameId: 7,
+          },
+        },
+      );
+
+      expect(payload).toMatchObject({
+        assistantMessage: {
+          content: 'Final answer',
+        },
+      });
+      expect(sentEvents).toEqual([
+        {
+          tabId: 321,
+          payload: {
+            type: 'chat/stream-delta',
+            requestId: 'stream-1',
+            textDelta: 'Draft',
+          },
+          options: { frameId: 7 },
+        },
+        {
+          tabId: 321,
+          payload: {
+            type: 'chat/stream-delta',
+            requestId: 'stream-1',
+            thinkingDelta: 'Reasoning',
+          },
+          options: { frameId: 7 },
+        },
+      ]);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    }
+  });
+
+  it('does not forward streaming deltas when sender tab context is unavailable', async () => {
+    repository.sessions.set(
+      'chat-stream-missing-sender',
+      createSession('chat-stream-missing-sender'),
+    );
+    let sendMessageCalls = 0;
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        lastError: undefined,
+      },
+      tabs: {
+        sendMessage: () => {
+          sendMessageCalls += 1;
+        },
+      },
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session, _settings, _thinkingLevel, onStreamDelta) => {
+          onStreamDelta?.({ textDelta: 'Draft' });
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'Done' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      await handler({
+        type: 'chat/send',
+        chatId: 'chat-stream-missing-sender',
+        text: 'stream this',
+        model: 'gemini-3-flash-preview',
+        streamRequestId: 'stream-2',
+      });
+
+      expect(sendMessageCalls).toBe(0);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    }
   });
 
   it('surfaces options-page failures to callers', async () => {

@@ -9,6 +9,8 @@ import { isRecord, toErrorMessage } from './utils';
 const MAX_GEMINI_CLIENT_CACHE_SIZE = 4;
 const SESSION_TITLE_MODEL = 'gemini-flash-lite-latest';
 const MAX_SESSION_TITLE_LENGTH = 60;
+const INVALID_PREVIOUS_INTERACTION_ID_ERROR_MESSAGE =
+  'Gemini rejected previous_interaction_id for this conversation.';
 
 type SDKCreateInteractionRequest = Parameters<GoogleGenAI['interactions']['create']>[0];
 
@@ -20,6 +22,11 @@ interface LocalToolDefinition {
 interface GeminiInteraction {
   id: string;
   outputs?: Array<Record<string, unknown>>;
+}
+
+export interface GeminiStreamDelta {
+  textDelta?: string;
+  thinkingDelta?: string;
 }
 
 interface ExecutedFunctionCall {
@@ -112,6 +119,7 @@ export async function completeAssistantTurn(
   session: ChatSession,
   settings: GeminiSettings,
   thinkingLevel?: string,
+  onStreamDelta?: (delta: GeminiStreamDelta) => void,
 ): Promise<GeminiContent> {
   const latestContent = session.contents.at(-1);
   if (!latestContent || latestContent.role !== 'user') {
@@ -132,10 +140,16 @@ export async function completeAssistantTurn(
   let latestAssistantContent: GeminiContent | null = null;
 
   for (let roundTrip = 0; roundTrip < settings.maxToolRoundTrips; roundTrip += 1) {
-    const interaction = await callGeminiInteraction({
-      settings,
-      request: requestPlan.request,
-    });
+    const interaction = onStreamDelta
+      ? await callGeminiInteractionStream({
+          settings,
+          request: requestPlan.request,
+          onStreamDelta,
+        })
+      : await callGeminiInteraction({
+          settings,
+          request: requestPlan.request,
+        });
 
     session.lastInteractionId = interaction.id;
 
@@ -284,6 +298,13 @@ export function renderContentForChat(content: GeminiContent): string {
   return blocks.join('\n\n');
 }
 
+export function renderThinkingSummaryForChat(content: GeminiContent): string {
+  return content.parts
+    .map((part) => (typeof part.thoughtSummary === 'string' ? part.thoughtSummary.trim() : ''))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 export function extractAttachments(content: GeminiContent): ChatAttachment[] {
   const attachments: ChatAttachment[] = [];
 
@@ -395,21 +416,86 @@ async function callGeminiInteraction(input: {
   settings: GeminiSettings;
   request: unknown;
 }): Promise<GeminiInteraction> {
-  const client = getGeminiClient(input.settings.apiKey);
-  let response: unknown;
-  try {
-    response = (await client.interactions.create(
-      input.request as unknown as SDKCreateInteractionRequest,
-    )) as unknown;
-  } catch (error: unknown) {
-    if (isPreviousInteractionIdError(error)) {
-      throw new InvalidPreviousInteractionIdError(
-        'Gemini rejected previous_interaction_id for this conversation.',
-        error,
-      );
-    }
-    throw error;
+  const response = await createInteraction(input.settings.apiKey, input.request);
+  return normalizeGeminiInteractionResponse(response);
+}
+
+async function callGeminiInteractionStream(input: {
+  settings: GeminiSettings;
+  request: unknown;
+  onStreamDelta: (delta: GeminiStreamDelta) => void;
+}): Promise<GeminiInteraction> {
+  const streamRequest = {
+    ...(input.request as Record<string, unknown>),
+    stream: true,
+  };
+
+  const stream = await createInteraction(input.settings.apiKey, streamRequest);
+
+  if (!isAsyncIterable(stream)) {
+    throw new Error('Gemini streaming response payload was not an async iterable.');
   }
+
+  let completedInteraction: GeminiInteraction | null = null;
+  const streamedTextChunks: string[] = [];
+  const streamedThoughtChunks: string[] = [];
+  for await (const rawEvent of stream) {
+    if (!isRecord(rawEvent)) {
+      continue;
+    }
+
+    switch (readStringField(rawEvent, 'event_type')) {
+      case 'content.delta': {
+        const delta = extractStreamDelta(rawEvent);
+        if (delta) {
+          input.onStreamDelta(delta);
+          if (delta.textDelta) streamedTextChunks.push(delta.textDelta);
+          if (delta.thinkingDelta) streamedThoughtChunks.push(delta.thinkingDelta);
+        }
+        break;
+      }
+      case 'interaction.complete': {
+        if (!isRecord(rawEvent.interaction)) {
+          throw new Error(
+            'Gemini interaction.complete event did not include an interaction payload.',
+          );
+        }
+        completedInteraction = normalizeGeminiInteractionResponse(rawEvent.interaction);
+        break;
+      }
+      case 'error': {
+        const rawError = rawEvent.error;
+        const errorRecord = isRecord(rawError) ? rawError : null;
+        const message =
+          typeof rawError === 'string'
+            ? rawError.trim()
+            : errorRecord
+              ? readStringField(errorRecord, 'message')
+              : '';
+        const streamError = new Error(message || 'Gemini streaming interaction failed.');
+        const classifiedError = asInvalidPreviousInteractionIdError(
+          errorRecord ?? (typeof rawError === 'string' ? rawError : rawEvent),
+          streamError,
+        );
+        if (classifiedError) {
+          throw classifiedError;
+        }
+        throw streamError;
+      }
+    }
+  }
+
+  if (!completedInteraction) {
+    throw new Error('Gemini stream ended before interaction.complete was received.');
+  }
+
+  return applyStreamOutputFallback(completedInteraction, {
+    text: streamedTextChunks.join(''),
+    thoughtSummary: streamedThoughtChunks.join(''),
+  });
+}
+
+function normalizeGeminiInteractionResponse(response: unknown): GeminiInteraction {
   if (!isRecord(response)) {
     throw new Error('Gemini response payload was not a JSON object.');
   }
@@ -429,6 +515,90 @@ async function callGeminiInteraction(input: {
     id: interactionId,
     outputs,
   };
+}
+
+function applyStreamOutputFallback(
+  interaction: GeminiInteraction,
+  fallback: { text: string; thoughtSummary: string },
+): GeminiInteraction {
+  if (Array.isArray(interaction.outputs) && interaction.outputs.length > 0) {
+    return interaction;
+  }
+
+  const fallbackOutputs: Array<Record<string, unknown>> = [];
+  if (fallback.thoughtSummary.trim()) {
+    fallbackOutputs.push({
+      type: 'thought',
+      summary: [{ type: 'text', text: fallback.thoughtSummary }],
+    });
+  }
+  if (fallback.text.trim()) {
+    fallbackOutputs.push({
+      type: 'text',
+      text: fallback.text,
+    });
+  }
+
+  if (fallbackOutputs.length === 0) {
+    return interaction;
+  }
+
+  return {
+    ...interaction,
+    outputs: fallbackOutputs,
+  };
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
+  return !!value && typeof (value as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function';
+}
+
+function extractStreamDelta(event: Record<string, unknown>): GeminiStreamDelta | null {
+  const delta = isRecord(event.delta) ? event.delta : null;
+  if (!delta) {
+    return null;
+  }
+
+  const deltaType = readStringField(delta, 'type');
+  if (deltaType === 'text') {
+    return delta.text ? { textDelta: delta.text as string } : null;
+  }
+
+  if (deltaType === 'thought_summary') {
+    const content = isRecord(delta.content) ? delta.content : null;
+    return content?.text ? { thinkingDelta: content.text as string } : null;
+  }
+
+  return null;
+}
+
+async function createInteraction(apiKey: string, request: unknown): Promise<unknown> {
+  const client = getGeminiClient(apiKey);
+  try {
+    return (await client.interactions.create(
+      request as unknown as SDKCreateInteractionRequest,
+    )) as unknown;
+  } catch (error: unknown) {
+    const classifiedError = asInvalidPreviousInteractionIdError(error);
+    if (classifiedError) {
+      throw classifiedError;
+    }
+    throw error;
+  }
+}
+
+function asInvalidPreviousInteractionIdError(
+  error: unknown,
+  cause: unknown = error,
+): InvalidPreviousInteractionIdError | null {
+  if (!isPreviousInteractionIdError(error)) {
+    return null;
+  }
+
+  return new InvalidPreviousInteractionIdError(
+    INVALID_PREVIOUS_INTERACTION_ID_ERROR_MESSAGE,
+    cause,
+  );
 }
 
 function isPreviousInteractionIdError(error: unknown): boolean {
@@ -486,6 +656,13 @@ function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart
       const text = typeof output.text === 'string' ? output.text : '';
       return { text };
     }
+    case 'thought': {
+      const summary = extractThoughtSummary(output);
+      if (!summary) {
+        return { interactionOutput: { type: 'thought' } };
+      }
+      return { thoughtSummary: summary };
+    }
     case 'function_call': {
       const name = typeof output.name === 'string' ? output.name.trim() : '';
       if (!name) {
@@ -534,6 +711,29 @@ function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart
         interactionOutput: summarizeInteractionOutput(output),
       };
   }
+}
+
+function extractThoughtSummary(output: Record<string, unknown>): string {
+  const rawSummary = Array.isArray(output.summary) ? output.summary : [];
+  const blocks: string[] = [];
+
+  for (const block of rawSummary) {
+    if (!isRecord(block)) {
+      continue;
+    }
+
+    const type = readStringField(block, 'type');
+    if (type !== 'text') {
+      continue;
+    }
+
+    const text = readStringField(block, 'text');
+    if (text) {
+      blocks.push(text);
+    }
+  }
+
+  return blocks.join('\n\n');
 }
 
 function mapInteractionMediaOutputToPart(output: Record<string, unknown>): GeminiPart | null {
