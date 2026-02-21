@@ -9,18 +9,8 @@ export function validateSettings(settings: GeminiSettings): string | null {
     return 'Gemini model is required.';
   }
 
-  const nativeToolFlags = [
-    settings.tools.googleSearch,
-    settings.tools.googleMaps,
-    settings.tools.codeExecution,
-    settings.tools.urlContext,
-    settings.tools.fileSearch,
-    settings.tools.mcpServers,
-  ];
-  const nativeToolCount = nativeToolFlags.filter(Boolean).length;
-
-  if (settings.tools.functionCalling && nativeToolCount > 0) {
-    return 'Function calling cannot be enabled with native Gemini tools in generateContent.';
+  if (settings.tools.googleMaps) {
+    return 'Google Maps is not supported by the Interactions API in this extension yet.';
   }
 
   if (settings.tools.fileSearch && settings.fileSearchStoreNames.length === 0) {

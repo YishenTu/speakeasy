@@ -115,6 +115,7 @@ describe('shared chat client', () => {
       '   hello there   ',
       'gemini-3-flash-preview',
       'high',
+      undefined,
     );
 
     expect(runtimeRequests).toEqual([
@@ -134,9 +135,48 @@ describe('shared chat client', () => {
     });
   });
 
-  it('rejects empty user messages before calling runtime', async () => {
-    await expect(sendMessage('   ', 'gemini-3-flash-preview')).rejects.toThrow(/empty message/i);
+  it('rejects empty user messages when attachments are not present', async () => {
+    await expect(sendMessage('   ', 'gemini-3-flash-preview', undefined, [])).rejects.toThrow(
+      /empty message/i,
+    );
     expect(runtimeRequests).toEqual([]);
+  });
+
+  it('allows attachment-only messages and forwards attachments', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        chatId: 'chat-1',
+        assistantMessage: {
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '',
+        },
+      },
+    });
+
+    await sendMessage('', 'gemini-3-flash-preview', undefined, [
+      {
+        name: 'note.txt',
+        mimeType: 'text/plain',
+        fileUri: 'https://example.invalid/files/note.txt',
+      },
+    ]);
+
+    expect(runtimeRequests).toEqual([
+      {
+        type: 'chat/send',
+        text: '',
+        model: 'gemini-3-flash-preview',
+        attachments: [
+          {
+            name: 'note.txt',
+            mimeType: 'text/plain',
+            fileUri: 'https://example.invalid/files/note.txt',
+          },
+        ],
+      },
+    ]);
   });
 
   it('throws when runtime response is missing', async () => {

@@ -1,5 +1,12 @@
 import type { ChatMessage } from './messages';
 
+export interface FileDataAttachmentPayload {
+  name: string;
+  mimeType: string;
+  fileUri: string;
+  fileName?: string;
+}
+
 export type RuntimeRequest =
   | {
       type: 'chat/send';
@@ -7,6 +14,7 @@ export type RuntimeRequest =
       chatId?: string;
       model: string;
       thinkingLevel?: string;
+      attachments?: FileDataAttachmentPayload[];
     }
   | {
       type: 'chat/load';

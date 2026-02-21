@@ -1,14 +1,12 @@
 import { createNewChat, loadChatMessages, sendMessage } from '../shared/chat';
-import {
-  GEMINI_SETTINGS_STORAGE_KEY,
-  type GeminiSettings,
-  normalizeGeminiSettings,
-} from '../shared/settings';
+import type { ChatAttachment } from '../shared/messages';
+import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../shared/settings';
 import { isRecord } from '../shared/utils';
 import { queryRequiredElement } from './dom';
 import { appendMessage, createWelcomeMessage, renderAll, toErrorMessage } from './messages';
 import { requestOpenSettings } from './runtime';
 import { getChatPanelTemplate } from './template';
+import { uploadFilesToGemini } from './uploads';
 
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
 const PANEL_MARGIN_PX = 12;
@@ -17,6 +15,16 @@ const MIN_PANEL_WIDTH_PX = 320;
 const MIN_PANEL_HEIGHT_PX = 260;
 const DEFAULT_PANEL_WIDTH_PX = 390;
 const DEFAULT_PANEL_HEIGHT_RATIO = 0.8;
+const MAX_STAGED_FILES = 5;
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const ACCEPTED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'text/plain',
+]);
 
 type PanelLayout = {
   width: number;
@@ -55,6 +63,14 @@ type ResizeDirection = {
   left: boolean;
 };
 
+type StagedFile = {
+  id: string;
+  file: File;
+  name: string;
+  mimeType: string;
+  previewUrl?: string;
+};
+
 if (window.top === window) {
   mountChatPanel();
 }
@@ -79,6 +95,9 @@ function mountChatPanel(): void {
   const newChatButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-new-chat');
   const form = queryRequiredElement<HTMLFormElement>(shadowRoot, '#speakeasy-form');
   const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
+  const attachButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-attach');
+  const fileInput = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-file-input');
+  const filePreviews = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-file-previews');
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
   const modelDropup = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-model-dropup');
   const modelTrigger = queryRequiredElement<HTMLButtonElement>(modelDropup, '.dropup-trigger');
@@ -99,15 +118,6 @@ function mountChatPanel(): void {
   input.addEventListener('input', () => {
     input.style.height = 'auto';
     input.style.height = `${input.scrollHeight}px`;
-  });
-
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      if (!isBusy && input.value.trim()) {
-        form.requestSubmit();
-      }
-    }
   });
 
   const MODEL_ALIASES: Record<string, string> = {
@@ -255,8 +265,206 @@ function mountChatPanel(): void {
   let interactionState: InteractionState | null = null;
   let previousUserSelect = '';
   let hasUserSelectOverride = false;
+  let stagedFiles: StagedFile[] = [];
+  let dragEnterDepth = 0;
 
   applyPanelLayout(shell, panelLayout);
+
+  input.addEventListener('paste', (event) => {
+    if (isBusy) {
+      return;
+    }
+
+    const files = extractFilesFromDataTransfer(event.clipboardData);
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    stageSelectedFiles(files);
+  });
+
+  attachButton.addEventListener('click', () => {
+    if (isBusy) {
+      return;
+    }
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (isBusy) {
+      fileInput.value = '';
+      return;
+    }
+    stageSelectedFiles(Array.from(fileInput.files ?? []));
+    fileInput.value = '';
+  });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!isBusy && canSubmitMessage(input.value.trim(), stagedFiles.length)) {
+        form.requestSubmit();
+      }
+    }
+  });
+
+  shell.addEventListener('dragenter', (event) => {
+    if (!hasFileDataTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dragEnterDepth += 1;
+    if (!isBusy) {
+      form.classList.add('drop-active');
+    }
+  });
+
+  shell.addEventListener('dragover', (event) => {
+    if (!hasFileDataTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  shell.addEventListener('dragleave', (event) => {
+    if (!hasFileDataTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dragEnterDepth = Math.max(0, dragEnterDepth - 1);
+    if (dragEnterDepth === 0) {
+      form.classList.remove('drop-active');
+    }
+  });
+
+  shell.addEventListener('drop', (event) => {
+    if (!hasFileDataTransfer(event.dataTransfer)) {
+      return;
+    }
+
+    event.preventDefault();
+    dragEnterDepth = 0;
+    form.classList.remove('drop-active');
+    if (isBusy) {
+      return;
+    }
+
+    stageSelectedFiles(extractFilesFromDataTransfer(event.dataTransfer));
+    input.focus();
+  });
+
+  function stageSelectedFiles(files: File[]): void {
+    if (files.length === 0) {
+      return;
+    }
+
+    const nextFiles: StagedFile[] = [];
+    const availableSlots = MAX_STAGED_FILES - stagedFiles.length;
+    if (availableSlots <= 0) {
+      appendLocalError(`You can attach up to ${MAX_STAGED_FILES} files per message.`);
+      return;
+    }
+
+    for (const file of files.slice(0, availableSlots)) {
+      if (!isAcceptedMimeType(file.type)) {
+        appendLocalError(`Unsupported file type for "${file.name}".`);
+        continue;
+      }
+
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        appendLocalError(
+          `"${file.name}" exceeds the ${formatByteSize(MAX_FILE_SIZE_BYTES)} file size limit.`,
+        );
+        continue;
+      }
+
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      nextFiles.push({
+        id: crypto.randomUUID(),
+        file,
+        name: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        ...(previewUrl ? { previewUrl } : {}),
+      });
+    }
+
+    stagedFiles = [...stagedFiles, ...nextFiles];
+    if (files.length > availableSlots) {
+      appendLocalError(`Only ${availableSlots} additional file(s) were staged.`);
+    }
+    renderStagedFiles();
+  }
+
+  function renderStagedFiles(): void {
+    const fragment = document.createDocumentFragment();
+
+    for (const staged of stagedFiles) {
+      const chip = document.createElement('div');
+      chip.className = 'file-chip';
+      chip.dataset.fileId = staged.id;
+
+      const label = document.createElement('span');
+      label.className = 'file-chip-label';
+      label.textContent = `${staged.name} (${staged.mimeType})`;
+
+      const removeButton = document.createElement('button');
+      removeButton.className = 'file-chip-remove';
+      removeButton.type = 'button';
+      removeButton.textContent = '×';
+      removeButton.setAttribute('aria-label', `Remove ${staged.name}`);
+      removeButton.addEventListener('click', () => {
+        removeStagedFile(staged.id);
+      });
+
+      chip.append(label, removeButton);
+      fragment.append(chip);
+    }
+
+    filePreviews.replaceChildren(fragment);
+  }
+
+  function removeStagedFile(fileId: string): void {
+    const target = stagedFiles.find((staged) => staged.id === fileId);
+    if (!target) {
+      return;
+    }
+
+    if (target.previewUrl) {
+      URL.revokeObjectURL(target.previewUrl);
+    }
+    stagedFiles = stagedFiles.filter((staged) => staged.id !== fileId);
+    renderStagedFiles();
+  }
+
+  function clearStagedFiles(revokePreviews: boolean): void {
+    if (revokePreviews) {
+      for (const staged of stagedFiles) {
+        if (staged.previewUrl) {
+          URL.revokeObjectURL(staged.previewUrl);
+        }
+      }
+    }
+    stagedFiles = [];
+    renderStagedFiles();
+  }
+
+  function appendLocalError(message: string): void {
+    appendMessage(
+      {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: message,
+      },
+      messageList,
+    );
+  }
 
   function startInteractionLock(): void {
     if (!hasUserSelectOverride) {
@@ -388,6 +596,7 @@ function mountChatPanel(): void {
     setBusyState(true);
     try {
       await createNewChat();
+      clearStagedFiles(true);
       renderAll([createWelcomeMessage()], messageList);
       input.focus();
     } catch (error: unknown) {
@@ -412,27 +621,56 @@ function mountChatPanel(): void {
     }
 
     const userText = input.value.trim();
-    if (!userText) {
+    if (!canSubmitMessage(userText, stagedFiles.length)) {
       return;
     }
 
-    appendMessage(
-      {
-        id: crypto.randomUUID(),
-        role: 'user',
-        content: userText,
-      },
-      messageList,
-    );
-
-    input.value = '';
-    input.style.height = 'auto';
+    const stagedSnapshot = [...stagedFiles];
     setBusyState(true);
 
     try {
+      const uploadedAttachments = await uploadFilesToGemini(
+        stagedSnapshot.map((staged) => staged.file),
+      );
+      const userMessageAttachments: ChatAttachment[] = uploadedAttachments.map(
+        (attachment, index) => {
+          const staged = stagedSnapshot[index];
+          let previewUrl: string | undefined;
+          if (staged?.mimeType.startsWith('image/')) {
+            previewUrl = URL.createObjectURL(staged.file);
+          }
+
+          return {
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            fileUri: attachment.fileUri,
+            ...(previewUrl ? { previewUrl } : {}),
+          };
+        },
+      );
+
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: userText,
+          ...(userMessageAttachments.length > 0 ? { attachments: userMessageAttachments } : {}),
+        },
+        messageList,
+      );
+
+      input.value = '';
+      input.style.height = 'auto';
+      clearStagedFiles(true);
+
       const selectedModel = modelTrigger.dataset.value ?? 'gemini-3-flash-preview';
       const selectedThinking = thinkingTrigger.dataset.value ?? 'minimal';
-      const assistantMessage = await sendMessage(userText, selectedModel, selectedThinking);
+      const assistantMessage = await sendMessage(
+        userText,
+        selectedModel,
+        selectedThinking,
+        uploadedAttachments,
+      );
       appendMessage(assistantMessage, messageList);
     } catch (error: unknown) {
       appendMessage(
@@ -503,6 +741,8 @@ function mountChatPanel(): void {
       interactionState = null;
     }
 
+    dragEnterDepth = 0;
+    form.classList.remove('drop-active');
     isPanelOpen = false;
     shell.hidden = true;
   }
@@ -536,6 +776,7 @@ function mountChatPanel(): void {
   function setBusyState(nextBusy: boolean): void {
     isBusy = nextBusy;
     input.disabled = nextBusy;
+    attachButton.disabled = nextBusy;
     newChatButton.disabled = nextBusy;
     form.toggleAttribute('aria-busy', nextBusy);
   }
@@ -659,6 +900,69 @@ function getViewportBounds(): {
 
 function clampNumber(value: number, minValue: number, maxValue: number): number {
   return Math.min(Math.max(value, minValue), maxValue);
+}
+
+function canSubmitMessage(userText: string, stagedFileCount: number): boolean {
+  return userText.length > 0 || stagedFileCount > 0;
+}
+
+function isAcceptedMimeType(mimeType: string): boolean {
+  return ACCEPTED_MIME_TYPES.has(mimeType.toLowerCase());
+}
+
+function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {
+  if (!dataTransfer) {
+    return false;
+  }
+
+  if (Array.from(dataTransfer.types).includes('Files')) {
+    return true;
+  }
+
+  if (dataTransfer.items) {
+    for (const item of Array.from(dataTransfer.items)) {
+      if (item.kind === 'file') {
+        return true;
+      }
+    }
+  }
+
+  return dataTransfer.files.length > 0;
+}
+
+function extractFilesFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
+  if (!dataTransfer) {
+    return [];
+  }
+
+  const filesFromItems: File[] = [];
+  if (dataTransfer.items) {
+    for (const item of Array.from(dataTransfer.items)) {
+      if (item.kind !== 'file') {
+        continue;
+      }
+
+      const file = item.getAsFile();
+      if (file) {
+        filesFromItems.push(file);
+      }
+    }
+  }
+  if (filesFromItems.length > 0) {
+    return filesFromItems;
+  }
+
+  return Array.from(dataTransfer.files);
+}
+
+function formatByteSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round((bytes / 1024) * 10) / 10} KB`;
+  }
+  return `${bytes} B`;
 }
 
 async function openSettings(messageList: HTMLOListElement): Promise<void> {

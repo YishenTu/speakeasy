@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   completeAssistantTurn,
+  extractAttachments,
   normalizeContent,
   renderContentForChat,
 } from '../../src/background/gemini';
 import {
   buildGeminiRequestToolSelection,
-  composeGeminiGenerateContentRequest,
+  composeGeminiInteractionRequest,
 } from '../../src/background/gemini-request';
 import type { ChatSession, GeminiContent } from '../../src/background/types';
 import { defaultGeminiSettings } from '../../src/shared/settings';
@@ -48,7 +49,7 @@ function enqueueGeminiResponses(...responses: unknown[]): void {
   fetchResponseQueue.push(...responses);
 }
 
-function createSession(prompt = 'hello'): ChatSession {
+function createSession(prompt = 'hello', lastInteractionId?: string): ChatSession {
   return {
     id: `session-${crypto.randomUUID()}`,
     createdAt: new Date('2025-01-01T00:00:00.000Z').toISOString(),
@@ -59,6 +60,7 @@ function createSession(prompt = 'hello'): ChatSession {
         parts: [{ text: prompt }],
       },
     ],
+    ...(lastInteractionId ? { lastInteractionId } : {}),
   };
 }
 
@@ -103,14 +105,20 @@ afterEach(() => {
 });
 
 describe('buildGeminiRequestToolSelection', () => {
-  it('rejects mixed native tools with function calling', () => {
+  it('allows mixing local function tools with native interactions tools', () => {
     const settings = createSettingsForToolTests();
     settings.tools.functionCalling = true;
     settings.tools.googleSearch = true;
 
-    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
-      /cannot be enabled together/i,
-    );
+    const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
+    expect(selection.tools).toEqual([
+      {
+        type: 'function',
+        ...FUNCTION_DECLARATIONS[0],
+      },
+      { type: 'google_search' },
+    ]);
+    expect(selection.functionCallingEnabled).toBe(true);
   });
 
   it('guards file search and mcp server configuration requirements', () => {
@@ -135,6 +143,15 @@ describe('buildGeminiRequestToolSelection', () => {
 
     expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
       /not yet wired/i,
+    );
+  });
+
+  it('rejects google maps because interactions tooling does not expose it yet', () => {
+    const settings = createSettingsForToolTests();
+    settings.tools.googleMaps = true;
+
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
+      /google maps/i,
     );
   });
 });
@@ -175,6 +192,64 @@ describe('renderContentForChat', () => {
   });
 });
 
+describe('extractAttachments', () => {
+  it('extracts fileData attachments in camel and snake case', () => {
+    const content: GeminiContent = {
+      role: 'model',
+      parts: [
+        {
+          fileData: {
+            fileUri: 'https://example.invalid/files/photo.jpg',
+            mimeType: 'image/jpeg',
+            displayName: 'photo.jpg',
+          },
+        },
+        {
+          file_data: {
+            file_uri: 'https://example.invalid/files/report.pdf',
+            mime_type: 'application/pdf',
+          },
+        },
+      ],
+    };
+
+    expect(extractAttachments(content)).toEqual([
+      {
+        name: 'photo.jpg',
+        mimeType: 'image/jpeg',
+        fileUri: 'https://example.invalid/files/photo.jpg',
+      },
+      {
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+        fileUri: 'https://example.invalid/files/report.pdf',
+      },
+    ]);
+  });
+
+  it('extracts inlineData metadata without embedding payload bytes', () => {
+    const content: GeminiContent = {
+      role: 'model',
+      parts: [
+        {
+          inlineData: {
+            mimeType: 'image/png',
+            data: 'AAAABBBB',
+            displayName: 'preview.png',
+          },
+        },
+      ],
+    };
+
+    expect(extractAttachments(content)).toEqual([
+      {
+        name: 'preview.png',
+        mimeType: 'image/png',
+      },
+    ]);
+  });
+});
+
 describe('normalizeContent', () => {
   it('throws for non-object payloads and empty parts', () => {
     expect(() => normalizeContent(null)).toThrow(/json object/i);
@@ -190,34 +265,31 @@ describe('normalizeContent', () => {
   });
 });
 
-describe('composeGeminiGenerateContentRequest', () => {
-  it('adds system instructions to request config when provided', () => {
+describe('composeGeminiInteractionRequest', () => {
+  it('adds system instructions and thinking config when provided', () => {
     const settings = createSettingsForToolTests();
     settings.systemInstruction = 'Be concise.';
 
-    const plan = composeGeminiGenerateContentRequest({
+    const plan = composeGeminiInteractionRequest({
       settings,
-      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      input: [{ type: 'text', text: 'hello' }],
       functionDeclarations: FUNCTION_DECLARATIONS,
+      thinkingLevel: 'high',
+      previousInteractionId: 'int-1',
     });
 
-    expect(plan.request.config?.systemInstruction).toEqual({
-      parts: [{ text: 'Be concise.' }],
-    });
+    expect(plan.request.system_instruction).toBe('Be concise.');
+    expect(plan.request.generation_config).toEqual({ thinking_level: 'high' });
+    expect(plan.request.previous_interaction_id).toBe('int-1');
+    expect(plan.request.store).toBe(true);
   });
 });
 
 describe('completeAssistantTurn', () => {
-  it('returns first assistant response when no function calls are present', async () => {
+  it('returns first assistant response and persists interaction id', async () => {
     enqueueGeminiResponses({
-      candidates: [
-        {
-          content: {
-            role: 'model',
-            parts: [{ text: 'Direct answer' }],
-          },
-        },
-      ],
+      id: 'interaction-1',
+      outputs: [{ type: 'text', text: 'Direct answer' }],
     });
 
     const session = createSession();
@@ -227,38 +299,43 @@ describe('completeAssistantTurn', () => {
 
     expect(assistantContent.parts).toEqual([{ text: 'Direct answer' }]);
     expect(session.contents).toHaveLength(2);
+    expect(session.lastInteractionId).toBe('interaction-1');
     expect(fetchRequestBodies).toHaveLength(1);
+    expect(fetchRequestBodies[0]?.input).toEqual([{ type: 'text', text: 'hello' }]);
+    expect(fetchRequestBodies[0]?.previous_interaction_id).toBeUndefined();
+  });
+
+  it('continues from the stored previous interaction id', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-2',
+      outputs: [{ type: 'text', text: 'Continued answer' }],
+    });
+
+    const session = createSession('continue', 'interaction-1');
+    const settings = createSettingsForToolTests();
+
+    await completeAssistantTurn(session, settings);
+
+    expect(fetchRequestBodies[0]?.previous_interaction_id).toBe('interaction-1');
+    expect(session.lastInteractionId).toBe('interaction-2');
   });
 
   it('handles function calls and appends function responses before final answer', async () => {
     enqueueGeminiResponses(
       {
-        candidates: [
+        id: 'interaction-1',
+        outputs: [
           {
-            content: {
-              role: 'model',
-              parts: [
-                {
-                  function_call: {
-                    id: 'tool-call-1',
-                    name: 'get_extension_info',
-                    args: '{"ignored":true}',
-                  },
-                },
-              ],
-            },
+            type: 'function_call',
+            id: 'tool-call-1',
+            name: 'get_extension_info',
+            arguments: { ignored: true },
           },
         ],
       },
       {
-        candidates: [
-          {
-            content: {
-              role: 'model',
-              parts: [{ text: 'Done after tool call' }],
-            },
-          },
-        ],
+        id: 'interaction-2',
+        outputs: [{ type: 'text', text: 'Done after tool call' }],
       },
     );
 
@@ -287,16 +364,31 @@ describe('completeAssistantTurn', () => {
       ],
     });
     expect(fetchRequestBodies).toHaveLength(2);
+    expect(fetchRequestBodies[1]?.previous_interaction_id).toBe('interaction-1');
+    expect(fetchRequestBodies[1]?.input).toEqual([
+      {
+        type: 'function_result',
+        call_id: 'tool-call-1',
+        name: 'get_extension_info',
+        result: {
+          name: 'Speakeasy',
+          version: '1.2.3',
+          description: 'Test extension',
+        },
+      },
+    ]);
+    expect(session.lastInteractionId).toBe('interaction-2');
   });
 
   it('returns tool error responses for unknown tools and malformed JSON args', async () => {
     enqueueGeminiResponses({
-      candidates: [
+      id: 'interaction-1',
+      outputs: [
         {
-          content: {
-            role: 'model',
-            parts: [{ functionCall: { id: 'x', name: 'missing_tool', args: 'not json' } }],
-          },
+          type: 'function_call',
+          id: 'x',
+          name: 'missing_tool',
+          arguments: 'not json',
         },
       ],
     });
@@ -309,7 +401,7 @@ describe('completeAssistantTurn', () => {
     const assistantContent = await completeAssistantTurn(session, settings);
 
     expect(assistantContent.parts).toEqual([
-      { functionCall: { id: 'x', name: 'missing_tool', args: 'not json' } },
+      { functionCall: { id: 'x', name: 'missing_tool', args: {} } },
     ]);
     expect(session.contents[2]).toEqual({
       role: 'user',
@@ -323,24 +415,18 @@ describe('completeAssistantTurn', () => {
         },
       ],
     });
+    expect(fetchRequestBodies).toHaveLength(1);
   });
 
   it('captures tool runtime errors as function responses', async () => {
     enqueueGeminiResponses({
-      candidates: [
+      id: 'interaction-1',
+      outputs: [
         {
-          content: {
-            role: 'model',
-            parts: [
-              {
-                functionCall: {
-                  id: 'bad-tz',
-                  name: 'get_current_time',
-                  args: { timeZone: 'Invalid/Time_Zone' },
-                },
-              },
-            ],
-          },
+          type: 'function_call',
+          id: 'bad-tz',
+          name: 'get_current_time',
+          arguments: { timeZone: 'Invalid/Time_Zone' },
         },
       ],
     });
@@ -360,12 +446,13 @@ describe('completeAssistantTurn', () => {
 
   it('throws if Gemini requests tool calls while function-calling is disabled', async () => {
     enqueueGeminiResponses({
-      candidates: [
+      id: 'interaction-1',
+      outputs: [
         {
-          content: {
-            role: 'model',
-            parts: [{ functionCall: { name: 'generate_uuid', args: {} } }],
-          },
+          type: 'function_call',
+          id: 'call-1',
+          name: 'generate_uuid',
+          arguments: {},
         },
       ],
     });
@@ -376,12 +463,13 @@ describe('completeAssistantTurn', () => {
     await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/tools are disabled/i);
   });
 
-  it('throws when Gemini returns no candidate content', async () => {
+  it('throws when Gemini returns no outputs', async () => {
     const settings = createSettingsForToolTests();
-    const secondSession = createSession();
-    enqueueGeminiResponses({});
-    await expect(completeAssistantTurn(secondSession, settings)).rejects.toThrow(
-      /did not return any candidate/i,
+    const session = createSession();
+    enqueueGeminiResponses({ id: 'interaction-1' });
+
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(
+      /did not return any outputs/i,
     );
   });
 

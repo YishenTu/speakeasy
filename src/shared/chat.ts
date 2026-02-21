@@ -1,5 +1,11 @@
 import type { ChatMessage } from './messages';
-import type { ChatLoadPayload, ChatNewPayload, ChatSendPayload, RuntimeRequest } from './runtime';
+import type {
+  ChatLoadPayload,
+  ChatNewPayload,
+  ChatSendPayload,
+  FileDataAttachmentPayload,
+  RuntimeRequest,
+} from './runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from './settings';
 
 export type { ChatMessage, MessageRole } from './messages';
@@ -54,9 +60,13 @@ export async function sendMessage(
   userInput: string,
   model: string,
   thinkingLevel?: string,
+  attachments?: FileDataAttachmentPayload[],
 ): Promise<ChatMessage> {
   const normalizedInput = userInput.trim();
-  if (!normalizedInput) {
+  const normalizedAttachments = attachments?.filter(
+    (attachment) => attachment.fileUri.trim().length > 0,
+  );
+  if (!normalizedInput && (!normalizedAttachments || normalizedAttachments.length === 0)) {
     throw new Error('Cannot send an empty message.');
   }
 
@@ -66,6 +76,9 @@ export async function sendMessage(
     text: normalizedInput,
     model,
     ...(thinkingLevel ? { thinkingLevel } : {}),
+    ...(normalizedAttachments && normalizedAttachments.length > 0
+      ? { attachments: normalizedAttachments }
+      : {}),
     ...(chatId ? { chatId } : {}),
   });
 

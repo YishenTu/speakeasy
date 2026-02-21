@@ -34,13 +34,12 @@ describe('validateSettings', () => {
     expect(validateSettings(missingModel)).toBe('Gemini model is required.');
   });
 
-  it('rejects mixed function-calling and native tool configuration', () => {
+  it('rejects google maps because interactions tooling does not support it yet', () => {
     const settings = createValidSettings();
-    settings.tools.functionCalling = true;
-    settings.tools.googleSearch = true;
+    settings.tools.googleMaps = true;
 
     expect(validateSettings(settings)).toBe(
-      'Function calling cannot be enabled with native Gemini tools in generateContent.',
+      'Google Maps is not supported by the Interactions API in this extension yet.',
     );
   });
 

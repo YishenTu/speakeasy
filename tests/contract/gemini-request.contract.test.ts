@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { composeGeminiGenerateContentRequest } from '../../src/background/gemini-request';
-import type { GeminiContent } from '../../src/background/types';
+import { composeGeminiInteractionRequest } from '../../src/background/gemini-request';
 import { defaultGeminiSettings } from '../../src/shared/settings';
 
 const FUNCTION_DECLARATIONS = [
@@ -31,176 +30,123 @@ function createBaseSettings() {
   return settings;
 }
 
-describe('Gemini request contract', () => {
-  it('builds a text-only request without config', () => {
+describe('Gemini interactions request contract', () => {
+  it('builds a text-only request without optional config', () => {
     const settings = createBaseSettings();
-    const contents: GeminiContent[] = [{ role: 'user', parts: [{ text: 'hello' }] }];
+    const input = [{ type: 'text', text: 'hello' }];
 
-    const plan = composeGeminiGenerateContentRequest({
+    const plan = composeGeminiInteractionRequest({
       settings,
-      contents,
+      input,
       functionDeclarations: FUNCTION_DECLARATIONS,
     });
 
     expect(plan.request).toEqual({
       model: settings.model,
-      contents,
+      input,
+      store: true,
     });
     expect(plan.tools).toEqual([]);
     expect(plan.functionCallingEnabled).toBe(false);
   });
 
-  it('builds function-calling request config', () => {
+  it('builds function-calling tools in interactions format', () => {
     const settings = createBaseSettings();
     settings.tools.functionCalling = true;
 
-    const plan = composeGeminiGenerateContentRequest({
+    const plan = composeGeminiInteractionRequest({
       settings,
-      contents: [{ role: 'user', parts: [{ text: 'call get_current_time' }] }],
+      input: [{ type: 'text', text: 'call get_current_time' }],
       functionDeclarations: FUNCTION_DECLARATIONS,
     });
 
-    expect(plan.request.config?.tools).toEqual([{ functionDeclarations: FUNCTION_DECLARATIONS }]);
-    expect(plan.request.config?.toolConfig).toEqual({
-      functionCallingConfig: {
-        mode: 'AUTO',
+    expect(plan.request.tools).toEqual([
+      {
+        type: 'function',
+        ...FUNCTION_DECLARATIONS[0],
       },
-    });
+    ]);
     expect(plan.functionCallingEnabled).toBe(true);
   });
 
   it('builds native tool list config with file search and mcp servers', () => {
     const settings = createBaseSettings();
     settings.tools.googleSearch = true;
+    settings.tools.codeExecution = true;
     settings.tools.urlContext = true;
     settings.tools.fileSearch = true;
     settings.tools.mcpServers = true;
     settings.fileSearchStoreNames = ['fileSearchStores/project'];
     settings.mcpServerUrls = ['https://mcp.example.com/sse'];
 
-    const plan = composeGeminiGenerateContentRequest({
+    const plan = composeGeminiInteractionRequest({
       settings,
-      contents: [{ role: 'user', parts: [{ text: 'find docs' }] }],
+      input: [{ type: 'text', text: 'find docs' }],
       functionDeclarations: FUNCTION_DECLARATIONS,
     });
 
-    expect(plan.request.config?.tools).toEqual([
-      { googleSearch: {} },
-      { urlContext: {} },
+    expect(plan.request.tools).toEqual([
+      { type: 'google_search' },
+      { type: 'code_execution' },
+      { type: 'url_context' },
       {
-        fileSearch: {
-          fileSearchStoreNames: ['fileSearchStores/project'],
-        },
+        type: 'file_search',
+        file_search_store_names: ['fileSearchStores/project'],
       },
       {
-        mcpServers: [
-          {
-            name: 'mcp_server_1',
-            streamableHttpTransport: {
-              url: 'https://mcp.example.com/sse',
-            },
-          },
-        ],
+        type: 'mcp_server',
+        name: 'mcp_server_1',
+        url: 'https://mcp.example.com/sse',
       },
     ]);
-    expect(plan.request.config?.toolConfig).toBeUndefined();
   });
 
-  it('adds maps retrieval latLng only when both coordinates exist', () => {
-    const settingsWithCoords = createBaseSettings();
-    settingsWithCoords.tools.googleMaps = true;
-    settingsWithCoords.mapsLatitude = 37.422;
-    settingsWithCoords.mapsLongitude = -122.084;
-
-    const withCoords = composeGeminiGenerateContentRequest({
-      settings: settingsWithCoords,
-      contents: [{ role: 'user', parts: [{ text: 'nearby coffee' }] }],
-      functionDeclarations: FUNCTION_DECLARATIONS,
-    });
-
-    expect(withCoords.request.config?.toolConfig).toEqual({
-      retrievalConfig: {
-        latLng: {
-          latitude: 37.422,
-          longitude: -122.084,
-        },
-      },
-    });
-
-    const settingsMissingLongitude = createBaseSettings();
-    settingsMissingLongitude.tools.googleMaps = true;
-    settingsMissingLongitude.mapsLatitude = 37.422;
-    settingsMissingLongitude.mapsLongitude = null;
-
-    const missingLongitude = composeGeminiGenerateContentRequest({
-      settings: settingsMissingLongitude,
-      contents: [{ role: 'user', parts: [{ text: 'nearby coffee' }] }],
-      functionDeclarations: FUNCTION_DECLARATIONS,
-    });
-
-    expect(missingLongitude.request.config?.toolConfig).toBeUndefined();
-  });
-
-  it('includes thinkingConfig when thinkingLevel is provided', () => {
+  it('allows mixing function calling and native tools in interactions', () => {
     const settings = createBaseSettings();
-    const contents: GeminiContent[] = [{ role: 'user', parts: [{ text: 'think hard' }] }];
+    settings.tools.functionCalling = true;
+    settings.tools.googleSearch = true;
 
-    const plan = composeGeminiGenerateContentRequest({
+    const plan = composeGeminiInteractionRequest({
       settings,
-      contents,
+      input: [{ type: 'text', text: 'hello' }],
       functionDeclarations: FUNCTION_DECLARATIONS,
+    });
+
+    expect(plan.request.tools).toEqual([
+      {
+        type: 'function',
+        ...FUNCTION_DECLARATIONS[0],
+      },
+      { type: 'google_search' },
+    ]);
+  });
+
+  it('includes previous interaction id, system instruction, and thinking level', () => {
+    const settings = createBaseSettings();
+    settings.systemInstruction = 'Be concise.';
+
+    const plan = composeGeminiInteractionRequest({
+      settings,
+      input: [{ type: 'text', text: 'hello' }],
+      functionDeclarations: FUNCTION_DECLARATIONS,
+      previousInteractionId: 'int-1',
       thinkingLevel: 'high',
     });
 
-    expect(plan.request.config?.thinkingConfig).toEqual({ thinkingLevel: 'high' });
+    expect(plan.request.previous_interaction_id).toBe('int-1');
+    expect(plan.request.system_instruction).toBe('Be concise.');
+    expect(plan.request.generation_config).toEqual({ thinking_level: 'high' });
   });
 
-  it('omits thinkingConfig when thinkingLevel is not provided', () => {
+  it('omits generation_config when thinking level is not provided', () => {
     const settings = createBaseSettings();
-    const contents: GeminiContent[] = [{ role: 'user', parts: [{ text: 'hello' }] }];
 
-    const plan = composeGeminiGenerateContentRequest({
+    const plan = composeGeminiInteractionRequest({
       settings,
-      contents,
+      input: [{ type: 'text', text: 'hello' }],
       functionDeclarations: FUNCTION_DECLARATIONS,
     });
 
-    expect(plan.request.config).toBeUndefined();
-  });
-
-  it('preserves conversation content structure for thought-signature safety', () => {
-    const settings = createBaseSettings();
-    const contents: GeminiContent[] = [
-      {
-        role: 'user',
-        parts: [{ text: 'Solve 3x + 5 = 20' }],
-      },
-      {
-        role: 'model',
-        parts: [
-          {
-            thoughtSignature: 'sig-123',
-            text: 'I can solve this.',
-          },
-        ],
-      },
-      {
-        role: 'user',
-        parts: [{ text: 'Only provide x.' }],
-      },
-    ];
-
-    const plan = composeGeminiGenerateContentRequest({
-      settings,
-      contents,
-      functionDeclarations: FUNCTION_DECLARATIONS,
-    });
-
-    expect(plan.request.contents).toBe(contents);
-    expect(plan.request.contents).toEqual(contents);
-    expect(plan.request.contents[1]?.parts[0]).toEqual({
-      thoughtSignature: 'sig-123',
-      text: 'I can solve this.',
-    });
+    expect(plan.request.generation_config).toBeUndefined();
   });
 });

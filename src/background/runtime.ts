@@ -2,6 +2,7 @@ import type {
   ChatLoadPayload,
   ChatNewPayload,
   ChatSendPayload,
+  FileDataAttachmentPayload,
   OpenOptionsPayload,
   RuntimeRequest,
   RuntimeResponse,
@@ -71,7 +72,13 @@ async function handleRuntimeRequest(
     case 'chat/new':
       return handleNewChat();
     case 'chat/send':
-      return handleSendMessage(request.text, request.chatId, request.model, request.thinkingLevel);
+      return handleSendMessage(
+        request.text,
+        request.chatId,
+        request.model,
+        request.thinkingLevel,
+        request.attachments,
+      );
     case 'app/open-options':
       await openOptionsPage();
       return {
@@ -120,9 +127,11 @@ async function handleSendMessage(
   chatId: string | undefined,
   model?: string,
   thinkingLevel?: string,
+  attachments?: FileDataAttachmentPayload[],
 ): Promise<ChatSendPayload> {
   const normalizedText = text.trim();
-  if (!normalizedText) {
+  const normalizedAttachments = normalizeFileDataAttachments(attachments);
+  if (!normalizedText && normalizedAttachments.length === 0) {
     throw new Error('Cannot send an empty message.');
   }
 
@@ -137,9 +146,19 @@ async function handleSendMessage(
 
   const sessions = await readSessions();
   const session = getOrCreateSession(sessions, chatId);
+  const userParts = [
+    ...(normalizedText ? [{ text: normalizedText }] : []),
+    ...normalizedAttachments.map((attachment) => ({
+      fileData: {
+        fileUri: attachment.fileUri,
+        mimeType: attachment.mimeType,
+      },
+    })),
+  ];
+
   session.contents.push({
     role: 'user',
-    parts: [{ text: normalizedText }],
+    parts: userParts,
   });
 
   const assistantContent = await completeAssistantTurn(session, settings, thinkingLevel);
@@ -151,6 +170,38 @@ async function handleSendMessage(
     chatId: session.id,
     assistantMessage: toAssistantChatMessage(assistantContent),
   };
+}
+
+function normalizeFileDataAttachments(
+  attachments: FileDataAttachmentPayload[] | undefined,
+): FileDataAttachmentPayload[] {
+  if (!attachments) {
+    return [];
+  }
+
+  const normalized: FileDataAttachmentPayload[] = [];
+  for (const attachment of attachments) {
+    const fileUri = typeof attachment.fileUri === 'string' ? attachment.fileUri.trim() : '';
+    const mimeType = typeof attachment.mimeType === 'string' ? attachment.mimeType.trim() : '';
+    const name = typeof attachment.name === 'string' ? attachment.name.trim() : '';
+    if (!fileUri || !mimeType || !name) {
+      continue;
+    }
+
+    const fileName =
+      typeof attachment.fileName === 'string' && attachment.fileName.trim()
+        ? attachment.fileName.trim()
+        : undefined;
+
+    normalized.push({
+      name,
+      mimeType,
+      fileUri,
+      ...(fileName ? { fileName } : {}),
+    });
+  }
+
+  return normalized;
 }
 
 async function readGeminiSettings(): Promise<GeminiSettings> {

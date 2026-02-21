@@ -1,67 +1,60 @@
 import type { GeminiSettings } from '../shared/settings';
-import type { GeminiContent } from './types';
 import { isObjectEmpty } from './utils';
 
 export interface GeminiRequestToolSelection {
   tools: Array<Record<string, unknown>>;
-  toolConfig?: Record<string, unknown>;
   functionCallingEnabled: boolean;
 }
 
-export interface GeminiGenerateContentRequest {
+export interface GeminiInteractionRequest {
   model: string;
-  contents: GeminiContent[];
-  config?: {
-    systemInstruction?: {
-      parts: Array<{
-        text: string;
-      }>;
-    };
-    tools?: Array<Record<string, unknown>>;
-    toolConfig?: Record<string, unknown>;
-    thinkingConfig?: {
-      thinkingLevel: string;
-    };
+  input: string | Array<Record<string, unknown>>;
+  store: true;
+  previous_interaction_id?: string;
+  system_instruction?: string;
+  tools?: Array<Record<string, unknown>>;
+  generation_config?: {
+    thinking_level?: string;
   };
 }
 
-interface ComposeGeminiRequestInput {
+interface ComposeGeminiInteractionRequestInput {
   settings: GeminiSettings;
-  contents: GeminiContent[];
+  input: string | Array<Record<string, unknown>>;
   functionDeclarations: Array<Record<string, unknown>>;
   thinkingLevel?: string;
+  previousInteractionId?: string;
 }
 
-export function composeGeminiGenerateContentRequest(
-  input: ComposeGeminiRequestInput,
-): GeminiRequestToolSelection & { request: GeminiGenerateContentRequest } {
+export function composeGeminiInteractionRequest(
+  input: ComposeGeminiInteractionRequestInput,
+): GeminiRequestToolSelection & { request: GeminiInteractionRequest } {
   const selection = buildGeminiRequestToolSelection(input.settings, input.functionDeclarations);
-  const request: GeminiGenerateContentRequest = {
+  const request: GeminiInteractionRequest = {
     model: input.settings.model,
-    contents: input.contents,
+    input: input.input,
+    store: true,
   };
 
-  const config: NonNullable<GeminiGenerateContentRequest['config']> = {};
+  if (input.previousInteractionId) {
+    request.previous_interaction_id = input.previousInteractionId;
+  }
+
   if (input.settings.systemInstruction) {
-    config.systemInstruction = {
-      parts: [{ text: input.settings.systemInstruction }],
-    };
+    request.system_instruction = input.settings.systemInstruction;
   }
 
   if (selection.tools.length > 0) {
-    config.tools = selection.tools;
+    request.tools = selection.tools;
   }
 
-  if (selection.toolConfig) {
-    config.toolConfig = selection.toolConfig;
-  }
-
+  const generationConfig: NonNullable<GeminiInteractionRequest['generation_config']> = {};
   if (input.thinkingLevel) {
-    config.thinkingConfig = { thinkingLevel: input.thinkingLevel };
+    generationConfig.thinking_level = input.thinkingLevel;
   }
 
-  if (!isObjectEmpty(config)) {
-    request.config = config;
+  if (!isObjectEmpty(generationConfig)) {
+    request.generation_config = generationConfig;
   }
 
   return {
@@ -74,23 +67,6 @@ export function buildGeminiRequestToolSelection(
   settings: GeminiSettings,
   functionDeclarations: Array<Record<string, unknown>>,
 ): GeminiRequestToolSelection {
-  const nativeToolFlags = {
-    googleSearch: settings.tools.googleSearch,
-    googleMaps: settings.tools.googleMaps,
-    codeExecution: settings.tools.codeExecution,
-    urlContext: settings.tools.urlContext,
-    fileSearch: settings.tools.fileSearch,
-    mcpServers: settings.tools.mcpServers,
-    computerUse: settings.tools.computerUse,
-  };
-
-  const nativeToolCount = Object.values(nativeToolFlags).filter(Boolean).length;
-  if (settings.tools.functionCalling && nativeToolCount > 0) {
-    throw new Error(
-      'Native Gemini tools and function calling cannot be enabled together in generateContent. Disable one set in Settings.',
-    );
-  }
-
   if (settings.tools.fileSearch && settings.fileSearchStoreNames.length === 0) {
     throw new Error('File Search is enabled but no file store names were configured.');
   }
@@ -105,78 +81,57 @@ export function buildGeminiRequestToolSelection(
     );
   }
 
+  if (settings.tools.googleMaps) {
+    throw new Error('Google Maps is not supported by the Interactions API in this extension yet.');
+  }
+
   const tools: Array<Record<string, unknown>> = [];
 
   if (settings.tools.functionCalling) {
-    tools.push({
-      functionDeclarations,
-    });
+    for (const declaration of functionDeclarations) {
+      const name = typeof declaration.name === 'string' ? declaration.name : '';
+      if (!name) {
+        continue;
+      }
+
+      tools.push({
+        type: 'function',
+        ...declaration,
+      });
+    }
   }
 
   if (settings.tools.googleSearch) {
-    tools.push({ googleSearch: {} });
-  }
-
-  if (settings.tools.googleMaps) {
-    tools.push({ googleMaps: {} });
+    tools.push({ type: 'google_search' });
   }
 
   if (settings.tools.codeExecution) {
-    tools.push({ codeExecution: {} });
+    tools.push({ type: 'code_execution' });
   }
 
   if (settings.tools.urlContext) {
-    tools.push({ urlContext: {} });
+    tools.push({ type: 'url_context' });
   }
 
   if (settings.tools.fileSearch) {
     tools.push({
-      fileSearch: {
-        fileSearchStoreNames: settings.fileSearchStoreNames,
-      },
+      type: 'file_search',
+      file_search_store_names: settings.fileSearchStoreNames,
     });
   }
 
   if (settings.tools.mcpServers) {
-    tools.push({
-      mcpServers: settings.mcpServerUrls.map((url, index) => ({
+    tools.push(
+      ...settings.mcpServerUrls.map((url, index) => ({
+        type: 'mcp_server',
         name: `mcp_server_${index + 1}`,
-        streamableHttpTransport: {
-          url,
-        },
+        url,
       })),
-    });
-  }
-
-  let toolConfig: Record<string, unknown> | undefined;
-
-  if (settings.tools.functionCalling) {
-    toolConfig = {
-      functionCallingConfig: {
-        mode: 'AUTO',
-      },
-    };
-  }
-
-  if (
-    settings.tools.googleMaps &&
-    settings.mapsLatitude !== null &&
-    settings.mapsLongitude !== null
-  ) {
-    toolConfig = {
-      ...toolConfig,
-      retrievalConfig: {
-        latLng: {
-          latitude: settings.mapsLatitude,
-          longitude: settings.mapsLongitude,
-        },
-      },
-    };
+    );
   }
 
   return {
     tools,
-    ...(toolConfig ? { toolConfig } : {}),
     functionCallingEnabled: settings.tools.functionCalling,
   };
 }

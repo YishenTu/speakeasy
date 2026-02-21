@@ -30,7 +30,7 @@ export function getChatPanelTemplate(): string {
         display: grid;
         grid-template-rows: auto minmax(0, 1fr) auto;
         border: 1px solid rgba(255, 255, 255, 0.1);
-        background: rgba(18, 18, 18, 0.65);
+        background: rgba(0, 0, 0, 0.85);
         backdrop-filter: blur(24px);
         -webkit-backdrop-filter: blur(24px);
         box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
@@ -163,6 +163,42 @@ export function getChatPanelTemplate(): string {
         margin: 0 -14px;
       }
 
+      .message-text {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+
+      .attachment-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .message-text + .attachment-list {
+        margin-top: 8px;
+      }
+
+      .attachment-image {
+        max-width: min(280px, 100%);
+        max-height: 220px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        object-fit: cover;
+      }
+
+      .attachment-placeholder {
+        display: inline-flex;
+        max-width: 100%;
+        width: fit-content;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        padding: 6px 8px;
+        background: rgba(255, 255, 255, 0.05);
+        word-break: break-word;
+      }
+
       .composer {
         padding: 12px 14px;
         background: transparent;
@@ -181,6 +217,89 @@ export function getChatPanelTemplate(): string {
       .composer-row {
         display: flex;
         align-items: flex-end;
+        gap: 2px;
+      }
+
+      .attach-btn {
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.58);
+        width: 32px;
+        min-width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 120ms ease, background 120ms ease;
+      }
+
+      .attach-btn:hover {
+        color: rgba(255, 255, 255, 0.95);
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .attach-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+
+      .attach-icon {
+        width: 16px;
+        height: 16px;
+      }
+
+      .file-preview-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 6px 8px 0;
+      }
+
+      .file-preview-strip:empty {
+        display: none;
+        margin: 0;
+      }
+
+      .file-chip {
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 999px;
+        padding: 4px 6px 4px 10px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.06);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 100%;
+      }
+
+      .file-chip-label {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-chip-remove {
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.7);
+        padding: 0;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        line-height: 1;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .file-chip-remove:hover {
+        color: rgba(255, 255, 255, 1);
+        background: rgba(255, 255, 255, 0.12);
       }
 
       .input-toolbar {
@@ -188,6 +307,10 @@ export function getChatPanelTemplate(): string {
         align-items: center;
         gap: 6px;
         padding: 4px 8px 6px;
+      }
+
+      .input-toolbar .attach-btn {
+        margin-left: auto;
       }
 
       .dropup {
@@ -269,6 +392,11 @@ export function getChatPanelTemplate(): string {
       .composer[aria-busy="true"] .composer-inner {
         opacity: 0.6;
         pointer-events: none;
+      }
+
+      .composer.drop-active .composer-inner {
+        border-color: rgba(255, 255, 255, 0.55);
+        background: rgba(255, 255, 255, 0.06);
       }
 
       .input {
@@ -402,8 +530,15 @@ export function getChatPanelTemplate(): string {
 
         <form id="speakeasy-form" class="composer" autocomplete="off">
           <div class="composer-inner">
+            <input
+              id="speakeasy-file-input"
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,application/pdf,text/plain"
+              multiple
+              hidden />
+            <div id="speakeasy-file-previews" class="file-preview-strip"></div>
             <div class="composer-row">
-              <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3" required></textarea>
+              <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3"></textarea>
             </div>
             <div class="input-toolbar">
               <div class="dropup" id="speakeasy-model-dropup">
@@ -422,6 +557,11 @@ export function getChatPanelTemplate(): string {
                   <button type="button" class="dropup-item" data-value="minimal" aria-selected="true">Min</button>
                 </div>
               </div>
+              <button id="speakeasy-attach" class="attach-btn" type="button" aria-label="Attach file">
+                <svg class="attach-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M8 12.5L14.8 5.7a3 3 0 1 1 4.2 4.2l-8.6 8.6a5 5 0 1 1-7.1-7.1l9-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
             </div>
           </div>
         </form>

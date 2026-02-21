@@ -143,7 +143,23 @@ describe('sessions', () => {
     expect(sessions).toEqual({});
   });
 
-  it('maps persisted content to chat messages and skips empty renderings', () => {
+  it('preserves persisted interaction ids for server-side conversation continuity', async () => {
+    storageState[CHAT_SESSIONS_STORAGE_KEY] = {
+      chained: {
+        id: 'chained',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        lastInteractionId: 'interaction-123',
+        contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      },
+    };
+
+    const sessions = await readSessions();
+
+    expect(sessions.chained?.lastInteractionId).toBe('interaction-123');
+  });
+
+  it('maps persisted content to chat messages and keeps attachment-only entries', () => {
     const session: ChatSession = {
       id: 'chat-1',
       createdAt: '2025-01-01T00:00:00.000Z',
@@ -151,13 +167,25 @@ describe('sessions', () => {
       contents: [
         { role: 'user', parts: [{ text: 'Question' }] },
         { role: 'model', parts: [{ text: 'Answer' }] },
+        {
+          role: 'model',
+          parts: [
+            {
+              fileData: {
+                fileUri: 'https://example.invalid/files/image.png',
+                mimeType: 'image/png',
+                displayName: 'image.png',
+              },
+            },
+          ],
+        },
         { role: 'model', parts: [{ unknown: true }] },
       ],
     };
 
     const messages = mapSessionToChatMessages(session);
 
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(3);
     expect(messages[0]).toMatchObject({
       role: 'user',
       content: 'Question',
@@ -165,6 +193,17 @@ describe('sessions', () => {
     expect(messages[1]).toMatchObject({
       role: 'assistant',
       content: 'Answer',
+    });
+    expect(messages[2]).toMatchObject({
+      role: 'assistant',
+      content: '',
+      attachments: [
+        {
+          name: 'image.png',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/image.png',
+        },
+      ],
     });
   });
 
@@ -176,6 +215,31 @@ describe('sessions', () => {
 
     expect(message.role).toBe('assistant');
     expect(message.content).toBe('Gemini returned a response with no displayable text.');
+  });
+
+  it('returns attachment metadata for attachment-only assistant responses', () => {
+    const message = toAssistantChatMessage({
+      role: 'model',
+      parts: [
+        {
+          fileData: {
+            fileUri: 'https://example.invalid/files/report.pdf',
+            mimeType: 'application/pdf',
+            displayName: 'report.pdf',
+          },
+        },
+      ],
+    });
+
+    expect(message.role).toBe('assistant');
+    expect(message.content).toBe('');
+    expect(message.attachments).toEqual([
+      {
+        name: 'report.pdf',
+        mimeType: 'application/pdf',
+        fileUri: 'https://example.invalid/files/report.pdf',
+      },
+    ]);
   });
 
   it('createSession produces empty content history', () => {

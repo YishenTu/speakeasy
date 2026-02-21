@@ -1,5 +1,5 @@
 import type { ChatMessage } from '../shared/chat';
-import { normalizeContent, renderContentForChat } from './gemini';
+import { extractAttachments, normalizeContent, renderContentForChat } from './gemini';
 import type { ChatSession, GeminiContent } from './types';
 import { isRecord } from './utils';
 
@@ -66,10 +66,14 @@ export async function writeSessions(sessions: Record<string, ChatSession>): Prom
 
 export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   const rendered = renderContentForChat(content).trim();
+  const attachments = extractAttachments(content);
   return {
     id: crypto.randomUUID(),
     role: 'assistant',
-    content: rendered || 'Gemini returned a response with no displayable text.',
+    content:
+      rendered ||
+      (attachments.length === 0 ? 'Gemini returned a response with no displayable text.' : ''),
+    ...(attachments.length > 0 ? { attachments } : {}),
   };
 }
 
@@ -78,7 +82,8 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
 
   for (const content of session.contents) {
     const text = renderContentForChat(content).trim();
-    if (!text) {
+    const attachments = extractAttachments(content);
+    if (!text && attachments.length === 0) {
       continue;
     }
 
@@ -87,6 +92,7 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
       id: crypto.randomUUID(),
       role,
       content: text,
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
   }
 
@@ -105,6 +111,10 @@ function parseSession(expectedId: string, value: unknown): ChatSession | null {
       : new Date().toISOString();
   const updatedAt =
     typeof value.updatedAt === 'string' && value.updatedAt ? value.updatedAt : createdAt;
+  const lastInteractionId =
+    typeof value.lastInteractionId === 'string' && value.lastInteractionId
+      ? value.lastInteractionId
+      : undefined;
   const rawContents = Array.isArray(value.contents) ? value.contents : [];
 
   const contents: GeminiContent[] = [];
@@ -121,5 +131,6 @@ function parseSession(expectedId: string, value: unknown): ChatSession | null {
     createdAt,
     updatedAt,
     contents,
+    ...(lastInteractionId ? { lastInteractionId } : {}),
   };
 }

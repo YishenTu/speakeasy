@@ -16,12 +16,5 @@ export interface ChatSession {
   createdAt: string;
   updatedAt: string;
   contents: GeminiContent[];
-}
-
-export interface GenerateContentCandidate {
-  content?: GeminiContent;
-}
-
-export interface GenerateContentResponse {
-  candidates?: GenerateContentCandidate[];
+  lastInteractionId?: string;
 }
