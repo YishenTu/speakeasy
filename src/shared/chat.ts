@@ -1,8 +1,11 @@
 import type { ChatMessage } from './messages';
 import type {
+  ChatDeletePayload,
+  ChatListPayload,
   ChatLoadPayload,
   ChatNewPayload,
   ChatSendPayload,
+  ChatSessionSummary,
   FileDataAttachmentPayload,
   RuntimeRequest,
 } from './runtime';
@@ -18,6 +21,10 @@ async function readActiveChatId(): Promise<string | undefined> {
 
 async function writeActiveChatId(chatId: string): Promise<void> {
   await chrome.storage.local.set({ [ACTIVE_CHAT_STORAGE_KEY]: chatId });
+}
+
+async function clearActiveChatId(): Promise<void> {
+  await chrome.storage.local.remove(ACTIVE_CHAT_STORAGE_KEY);
 }
 
 async function sendRuntimeRequest<TPayload>(request: RuntimeRequest): Promise<TPayload> {
@@ -39,12 +46,18 @@ async function sendRuntimeRequest<TPayload>(request: RuntimeRequest): Promise<TP
 
 export async function loadChatMessages(): Promise<ChatLoadPayload> {
   const chatId = await readActiveChatId();
+  return loadChatMessagesById(chatId);
+}
+
+export async function loadChatMessagesById(chatId: string | undefined): Promise<ChatLoadPayload> {
   const payload = await sendRuntimeRequest<ChatLoadPayload>({
     type: 'chat/load',
     ...(chatId ? { chatId } : {}),
   });
   if (payload.chatId) {
     await writeActiveChatId(payload.chatId);
+  } else {
+    await clearActiveChatId();
   }
 
   return payload;
@@ -84,4 +97,42 @@ export async function sendMessage(
 
   await writeActiveChatId(payload.chatId);
   return payload.assistantMessage;
+}
+
+export async function deleteCurrentChat(): Promise<boolean> {
+  const chatId = await readActiveChatId();
+  if (!chatId) {
+    await clearActiveChatId();
+    return false;
+  }
+
+  return deleteChatById(chatId);
+}
+
+export async function deleteChatById(chatId: string): Promise<boolean> {
+  const normalizedChatId = chatId.trim();
+  if (!normalizedChatId) {
+    return false;
+  }
+
+  const payload = await sendRuntimeRequest<ChatDeletePayload>({
+    type: 'chat/delete',
+    chatId: normalizedChatId,
+  });
+  const activeChatId = await readActiveChatId();
+  if (payload.deleted && activeChatId === normalizedChatId) {
+    await clearActiveChatId();
+  }
+  return payload.deleted;
+}
+
+export async function listChatSessions(): Promise<ChatSessionSummary[]> {
+  const payload = await sendRuntimeRequest<ChatListPayload>({
+    type: 'chat/list',
+  });
+  return payload.sessions;
+}
+
+export async function getActiveChatId(): Promise<string | undefined> {
+  return readActiveChatId();
 }

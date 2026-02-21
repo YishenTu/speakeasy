@@ -84,16 +84,17 @@ bun run test:gemini:canary
 
 ## Chat backend behavior
 
-- Multi-turn history is persisted in `chrome.storage.local` using a generated `chatId`.
-- Model `content.parts` are preserved as-is between turns (including `thoughtSignature`).
-- Gemini calls are made through the official `@google/genai` SDK (`models.generateContent`).
+- Multi-turn history is persisted in browser-managed IndexedDB (`speakeasy-chat`), keyed by `chatId`.
+- Conversation continuity uses Gemini interaction chaining via `previous_interaction_id` and persisted `lastInteractionId`.
+- Model `content.parts` are preserved as-is between turns (including tool outputs and attachments).
+- Gemini calls are made through the official `@google/genai` SDK (`interactions.create`).
 - Runtime supports both native Gemini tools and function calling, with compatibility checks.
-- Sessions are capped and pruned to keep extension storage bounded.
+- Sessions are retained with a 30-day TTL and pruned automatically.
 
 ## Overlay behavior
 
 - Toolbar click (or command shortcut) toggles the in-page Speakeasy overlay.
-- Overlay can open settings, start a new chat, and resume prior multi-turn history.
+- Overlay can open settings, start a new chat, switch chats from a history dropdown, and delete a specific session from that dropdown.
 - Overlay currently injects on `http://*/*` and `https://*/*` pages.
 
 ## Tooling notes

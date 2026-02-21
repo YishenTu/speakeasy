@@ -69,35 +69,153 @@ export function getChatPanelTemplate(): string {
         display: flex;
         align-items: center;
         gap: 4px;
+        position: relative;
       }
 
-      .control-btn {
+      .control-wrap {
+        position: relative;
+      }
+
+      .icon-btn {
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.5);
-        border-radius: 0;
-        padding: 6px 8px;
-        font-size: 11px;
-        line-height: 1;
+        color: rgba(255, 255, 255, 0.66);
+        border-radius: 8px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         cursor: pointer;
-        transition: color 120ms ease, background 120ms ease;
+        transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+      }
+
+      .icon-btn svg {
+        width: 14px;
+        height: 14px;
+        stroke: currentColor;
+        fill: none;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
 
       .controls,
-      .control-btn {
-        cursor: pointer;
+      .icon-btn {
         user-select: auto;
         touch-action: manipulation;
       }
 
-      .control-btn:hover {
-        color: rgba(255, 255, 255, 0.9);
+      .icon-btn:hover,
+      .control-wrap.open .icon-btn {
+        color: rgba(255, 255, 255, 0.95);
+      }
+
+      .icon-btn:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+
+      .history-menu {
+        display: none;
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        width: min(300px, 58vw);
+        max-height: 260px;
+        overflow: auto;
+        z-index: 16;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 8px;
+        background: rgba(18, 18, 18, 0.94);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        padding: 4px;
+      }
+
+      .control-wrap.open .history-menu {
+        display: block;
+      }
+
+      .history-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .history-item-main {
+        flex: 1;
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.82);
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      .history-item-main:hover {
         background: rgba(255, 255, 255, 0.08);
       }
 
-      .control-btn:disabled {
-        opacity: 0.3;
+      .history-item-main:disabled {
+        opacity: 0.45;
         cursor: not-allowed;
+      }
+
+      .history-item-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .history-item-meta {
+        color: rgba(255, 255, 255, 0.5);
+        flex-shrink: 0;
+      }
+
+      .history-item-main.history-item-active .history-item-title {
+        color: rgba(255, 255, 255, 0.98);
+      }
+
+      .history-item-delete {
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(255, 255, 255, 0.58);
+        border-radius: 6px;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        cursor: pointer;
+        font-size: 14px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .history-item-delete:hover {
+        color: rgba(255, 255, 255, 0.92);
+        border-color: rgba(255, 255, 255, 0.35);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .history-item-delete:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      .history-empty {
+        padding: 8px;
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 11px;
       }
 
       .messages {
@@ -520,9 +638,32 @@ export function getChatPanelTemplate(): string {
             Speakeasy
           </h2>
           <div class="controls">
-            <button id="speakeasy-settings" class="control-btn" type="button">Settings</button>
-            <button id="speakeasy-new-chat" class="control-btn" type="button">New</button>
-            <button id="speakeasy-close" class="control-btn" type="button" aria-label="Close">Close</button>
+            <button id="speakeasy-new-chat" class="icon-btn" type="button" aria-label="New chat">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+            <div id="speakeasy-history-control" class="control-wrap">
+              <button id="speakeasy-history-toggle" class="icon-btn" type="button" aria-label="History">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 12a9 9 0 1 0 3-6.7" />
+                  <path d="M3 4v3h3" />
+                  <path d="M12 8v5l3 2" />
+                </svg>
+              </button>
+              <div id="speakeasy-history-menu" class="history-menu" role="menu"></div>
+            </div>
+            <button id="speakeasy-settings" class="icon-btn" type="button" aria-label="Settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7Z" />
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 1-3 0 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 1 0-3 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 1 3 0 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.22.37.5.68.85.93a1.7 1.7 0 0 1 0 3c-.35.25-.63.56-.85.93Z" />
+              </svg>
+            </button>
+            <button id="speakeasy-close" class="icon-btn" type="button" aria-label="Close">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 6 12 12M18 6 6 18" />
+              </svg>
+            </button>
           </div>
         </header>
 

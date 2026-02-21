@@ -1,9 +1,24 @@
+import { execSync } from 'node:child_process';
 import { cp, mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { $ } from 'bun';
 
 const rootDir = process.cwd();
-const distDir = join(rootDir, 'dist');
+const distDir = resolveDistDir();
+
+function resolveDistDir(): string {
+  if (process.env.DIST_DIR) {
+    return resolve(process.env.DIST_DIR);
+  }
+  try {
+    const gitCommonDir = execSync('git rev-parse --path-format=absolute --git-common-dir', {
+      encoding: 'utf-8',
+    }).trim();
+    return join(dirname(gitCommonDir), 'dist');
+  } catch {
+    return join(rootDir, 'dist');
+  }
+}
 
 const staticFileCopies: ReadonlyArray<[string, string]> = [
   ['src/manifest.json', 'manifest.json'],
@@ -69,7 +84,7 @@ export async function buildExtension(): Promise<void> {
   await rm(distDir, { recursive: true, force: true });
   await mkdir(distDir, { recursive: true });
   await buildArtifacts(distDir);
-  console.log('Build complete: dist/ is ready to load as an unpacked extension.');
+  console.log(`Build complete: ${distDir} is ready to load as an unpacked extension.`);
 }
 
 if (import.meta.main) {

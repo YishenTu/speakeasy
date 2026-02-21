@@ -1,5 +1,14 @@
-import { createNewChat, loadChatMessages, sendMessage } from '../shared/chat';
+import {
+  createNewChat,
+  deleteChatById,
+  getActiveChatId,
+  listChatSessions,
+  loadChatMessages,
+  loadChatMessagesById,
+  sendMessage,
+} from '../shared/chat';
 import type { ChatAttachment } from '../shared/messages';
+import type { ChatSessionSummary } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
 import { queryRequiredElement } from './dom';
 import { createInputToolbar } from './input-toolbar';
@@ -93,6 +102,15 @@ function mountChatPanel(): void {
   const closeButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-close');
   const settingsButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-settings');
   const newChatButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-new-chat');
+  const historyControl = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-history-control',
+  );
+  const historyToggleButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-history-toggle',
+  );
+  const historyMenu = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-history-menu');
   const form = queryRequiredElement<HTMLFormElement>(shadowRoot, '#speakeasy-form');
   const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
   const fileInput = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-file-input');
@@ -117,8 +135,12 @@ function mountChatPanel(): void {
   let hasUserSelectOverride = false;
   let stagedFiles: StagedFile[] = [];
   let dragEnterDepth = 0;
+  let activeChatId: string | null = null;
+  let historySessions: ChatSessionSummary[] = [];
+  let isHistoryMenuOpen = false;
 
   applyPanelLayout(shell, panelLayout);
+  historyToggleButton.setAttribute('aria-expanded', 'false');
 
   input.addEventListener('paste', (event) => {
     if (isBusy) {
@@ -316,6 +338,154 @@ function mountChatPanel(): void {
     );
   }
 
+  function formatHistoryTimestamp(updatedAt: string): string {
+    const timestamp = Date.parse(updatedAt);
+    if (Number.isNaN(timestamp)) {
+      return updatedAt.replace('T', ' ').slice(0, 16);
+    }
+
+    return new Date(timestamp).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  function setHistoryMenuOpen(nextOpen: boolean): void {
+    isHistoryMenuOpen = nextOpen;
+    historyControl.classList.toggle('open', nextOpen);
+    historyToggleButton.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+  }
+
+  function renderHistoryMenu(): void {
+    const fragment = document.createDocumentFragment();
+
+    if (historySessions.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'history-empty';
+      empty.textContent = 'No previous chats.';
+      empty.setAttribute('role', 'presentation');
+      fragment.append(empty);
+      historyMenu.replaceChildren(fragment);
+      return;
+    }
+
+    for (const session of historySessions) {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      item.setAttribute('role', 'none');
+
+      const openButton = document.createElement('button');
+      openButton.className = 'history-item-main';
+      openButton.type = 'button';
+      openButton.setAttribute('role', 'menuitem');
+      openButton.disabled = isBusy;
+      if (session.chatId === activeChatId) {
+        openButton.classList.add('history-item-active');
+      }
+
+      const title = document.createElement('span');
+      title.className = 'history-item-title';
+      title.textContent = session.title;
+
+      const meta = document.createElement('span');
+      meta.className = 'history-item-meta';
+      meta.textContent = formatHistoryTimestamp(session.updatedAt);
+
+      openButton.append(title, meta);
+      openButton.addEventListener('click', async () => {
+        if (isBusy || session.chatId === activeChatId) {
+          return;
+        }
+
+        setBusyState(true);
+        try {
+          await loadChatFromHistory(session.chatId);
+          setHistoryMenuOpen(false);
+          input.focus();
+        } catch (error: unknown) {
+          appendMessage(
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: toErrorMessage(error),
+            },
+            messageList,
+          );
+        } finally {
+          setBusyState(false);
+        }
+      });
+
+      const deleteButton = document.createElement('button');
+      deleteButton.className = 'history-item-delete';
+      deleteButton.type = 'button';
+      deleteButton.setAttribute('aria-label', `Delete ${session.title}`);
+      deleteButton.setAttribute('role', 'menuitem');
+      deleteButton.textContent = '×';
+      deleteButton.disabled = isBusy;
+      deleteButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (isBusy) {
+          return;
+        }
+
+        if (!window.confirm(`Delete "${session.title}"?`)) {
+          return;
+        }
+
+        setBusyState(true);
+        try {
+          const deleted = await deleteChatById(session.chatId);
+          if (deleted && activeChatId === session.chatId) {
+            activeChatId = (await getActiveChatId()) ?? null;
+            clearStagedFiles(true);
+            renderAll([createWelcomeMessage()], messageList);
+          }
+          await refreshHistoryDropdown();
+          if (historySessions.length === 0) {
+            setHistoryMenuOpen(false);
+          }
+          input.focus();
+        } catch (error: unknown) {
+          appendMessage(
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: toErrorMessage(error),
+            },
+            messageList,
+          );
+        } finally {
+          setBusyState(false);
+        }
+      });
+
+      item.append(openButton, deleteButton);
+      fragment.append(item);
+    }
+
+    historyMenu.replaceChildren(fragment);
+  }
+
+  async function refreshHistoryDropdown(): Promise<void> {
+    historySessions = await listChatSessions();
+    renderHistoryMenu();
+  }
+
+  async function loadChatFromHistory(chatId: string): Promise<void> {
+    const payload = await loadChatMessagesById(chatId);
+    activeChatId = payload.chatId;
+    if (payload.messages.length > 0) {
+      renderAll(payload.messages, messageList);
+    } else {
+      renderAll([createWelcomeMessage()], messageList);
+    }
+    await refreshHistoryDropdown();
+  }
+
   function startInteractionLock(): void {
     if (!hasUserSelectOverride) {
       previousUserSelect = document.documentElement.style.userSelect;
@@ -445,9 +615,12 @@ function mountChatPanel(): void {
 
     setBusyState(true);
     try {
-      await createNewChat();
+      const chatId = await createNewChat();
+      activeChatId = chatId;
       clearStagedFiles(true);
       renderAll([createWelcomeMessage()], messageList);
+      await refreshHistoryDropdown();
+      setHistoryMenuOpen(false);
       input.focus();
     } catch (error: unknown) {
       appendMessage(
@@ -461,6 +634,46 @@ function mountChatPanel(): void {
     } finally {
       setBusyState(false);
     }
+  });
+
+  historyToggleButton.addEventListener('click', async () => {
+    if (isBusy) {
+      return;
+    }
+
+    if (isHistoryMenuOpen) {
+      setHistoryMenuOpen(false);
+      return;
+    }
+
+    setBusyState(true);
+    try {
+      await refreshHistoryDropdown();
+      setHistoryMenuOpen(true);
+    } catch (error: unknown) {
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: toErrorMessage(error),
+        },
+        messageList,
+      );
+    } finally {
+      setBusyState(false);
+    }
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!isHistoryMenuOpen) {
+      return;
+    }
+
+    if (event.composedPath().includes(historyControl)) {
+      return;
+    }
+
+    setHistoryMenuOpen(false);
   });
 
   form.addEventListener('submit', async (event) => {
@@ -522,6 +735,8 @@ function mountChatPanel(): void {
         uploadedAttachments,
       );
       appendMessage(assistantMessage, messageList);
+      activeChatId = (await getActiveChatId()) ?? null;
+      await refreshHistoryDropdown();
     } catch (error: unknown) {
       appendMessage(
         {
@@ -557,6 +772,10 @@ function mountChatPanel(): void {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && isPanelOpen) {
+      if (isHistoryMenuOpen) {
+        setHistoryMenuOpen(false);
+        return;
+      }
       closePanel();
     }
   });
@@ -593,6 +812,7 @@ function mountChatPanel(): void {
 
     dragEnterDepth = 0;
     form.classList.remove('drop-active');
+    setHistoryMenuOpen(false);
     isPanelOpen = false;
     shell.hidden = true;
   }
@@ -602,12 +822,13 @@ function mountChatPanel(): void {
 
     try {
       const history = await loadChatMessages();
+      activeChatId = history.chatId;
       if (history.messages.length > 0) {
         renderAll(history.messages, messageList);
-        return;
+      } else {
+        renderAll([createWelcomeMessage()], messageList);
       }
-
-      renderAll([createWelcomeMessage()], messageList);
+      await refreshHistoryDropdown();
     } catch (error: unknown) {
       renderAll(
         [
@@ -620,6 +841,9 @@ function mountChatPanel(): void {
         ],
         messageList,
       );
+      activeChatId = null;
+      historySessions = [];
+      renderHistoryMenu();
     }
   }
 
@@ -628,6 +852,8 @@ function mountChatPanel(): void {
     input.disabled = nextBusy;
     toolbar.attachButton.disabled = nextBusy;
     newChatButton.disabled = nextBusy;
+    historyToggleButton.disabled = nextBusy;
+    renderHistoryMenu();
     form.toggleAttribute('aria-busy', nextBusy);
   }
 }

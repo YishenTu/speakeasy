@@ -24,6 +24,13 @@ export type RuntimeRequest =
       type: 'chat/new';
     }
   | {
+      type: 'chat/delete';
+      chatId: string;
+    }
+  | {
+      type: 'chat/list';
+    }
+  | {
       type: 'app/open-options';
     };
 
@@ -51,6 +58,21 @@ export interface ChatLoadPayload {
 
 export interface ChatNewPayload {
   chatId: string;
+}
+
+export interface ChatDeletePayload {
+  deleted: boolean;
+  chatId: null;
+}
+
+export interface ChatSessionSummary {
+  chatId: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface ChatListPayload {
+  sessions: ChatSessionSummary[];
 }
 
 export interface OpenOptionsPayload {

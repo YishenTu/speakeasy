@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import { createNewChat, loadChatMessages, sendMessage } from '../../src/shared/chat';
+import {
+  createNewChat,
+  deleteChatById,
+  deleteCurrentChat,
+  listChatSessions,
+  loadChatMessages,
+  loadChatMessagesById,
+  sendMessage,
+} from '../../src/shared/chat';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
 
@@ -31,6 +39,15 @@ function installChromeMock(): void {
         },
         set: async (items: Record<string, unknown>) => {
           Object.assign(storageState, items);
+        },
+        remove: async (keys: string | string[]) => {
+          if (typeof keys === 'string') {
+            delete storageState[keys];
+            return;
+          }
+          for (const key of keys) {
+            delete storageState[key];
+          }
         },
       },
     },
@@ -67,6 +84,7 @@ describe('shared chat client', () => {
   });
 
   it('loads chat messages without chat id when none is stored', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'stale-chat';
     queueRuntimeResponses({
       ok: true,
       payload: {
@@ -78,8 +96,24 @@ describe('shared chat client', () => {
     const payload = await loadChatMessages();
 
     expect(payload).toEqual({ chatId: null, messages: [] });
-    expect(runtimeRequests).toEqual([{ type: 'chat/load' }]);
+    expect(runtimeRequests).toEqual([{ type: 'chat/load', chatId: 'stale-chat' }]);
     expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
+  });
+
+  it('loads chat messages by explicit chat id and persists returned chat id', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        chatId: 'chat-explicit',
+        messages: [],
+      },
+    });
+
+    const payload = await loadChatMessagesById('chat-explicit');
+
+    expect(payload).toEqual({ chatId: 'chat-explicit', messages: [] });
+    expect(runtimeRequests).toEqual([{ type: 'chat/load', chatId: 'chat-explicit' }]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-explicit');
   });
 
   it('creates a new chat and stores the returned chat id', async () => {
@@ -189,5 +223,73 @@ describe('shared chat client', () => {
     queueRuntimeResponses({ ok: false, error: '' });
 
     await expect(createNewChat()).rejects.toThrow(/failed to handle the request/i);
+  });
+
+  it('deletes the current chat and clears active chat id', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-123';
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        deleted: true,
+        chatId: null,
+      },
+    });
+
+    const deleted = await deleteCurrentChat();
+
+    expect(deleted).toBe(true);
+    expect(runtimeRequests).toEqual([{ type: 'chat/delete', chatId: 'chat-123' }]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
+  });
+
+  it('returns false when deleting without an active chat', async () => {
+    const deleted = await deleteCurrentChat();
+
+    expect(deleted).toBe(false);
+    expect(runtimeRequests).toEqual([]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
+  });
+
+  it('deletes a specific non-active chat id', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        deleted: true,
+        chatId: null,
+      },
+    });
+
+    const deleted = await deleteChatById('chat-other');
+
+    expect(deleted).toBe(true);
+    expect(runtimeRequests).toEqual([{ type: 'chat/delete', chatId: 'chat-other' }]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
+  });
+
+  it('lists chat sessions from runtime', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        sessions: [
+          {
+            chatId: 'chat-1',
+            title: 'First chat',
+            updatedAt: '2025-01-01T00:00:00.000Z',
+          },
+        ],
+      },
+    });
+
+    const sessions = await listChatSessions();
+
+    expect(sessions).toEqual([
+      {
+        chatId: 'chat-1',
+        title: 'First chat',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+    ]);
+    expect(runtimeRequests).toEqual([{ type: 'chat/list' }]);
   });
 });

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   completeAssistantTurn,
   extractAttachments,
+  isInvalidPreviousInteractionIdError,
   normalizeContent,
   renderContentForChat,
 } from '../../src/background/gemini';
@@ -49,6 +50,13 @@ function enqueueGeminiResponses(...responses: unknown[]): void {
   fetchResponseQueue.push(...responses);
 }
 
+function enqueueGeminiHttpResponse(status: number, body: unknown): void {
+  fetchResponseQueue.push({
+    __status: status,
+    __body: body,
+  });
+}
+
 function createSession(prompt = 'hello', lastInteractionId?: string): ChatSession {
   return {
     id: `session-${crypto.randomUUID()}`,
@@ -77,6 +85,19 @@ beforeEach(() => {
     }
 
     const payload = fetchResponseQueue.shift();
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      '__status' in payload &&
+      '__body' in payload &&
+      typeof (payload as { __status?: unknown }).__status === 'number'
+    ) {
+      return new Response(JSON.stringify((payload as { __body: unknown }).__body), {
+        status: (payload as { __status: number }).__status,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify(payload), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -479,5 +500,25 @@ describe('completeAssistantTurn', () => {
     const session = createSession();
 
     await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/round-trip limit/i);
+  });
+
+  it('classifies previous interaction id failures from Gemini responses', async () => {
+    enqueueGeminiHttpResponse(400, {
+      error: {
+        message: 'Invalid previous_interaction_id: interaction not found.',
+      },
+    });
+
+    const settings = createSettingsForToolTests();
+    const session = createSession('continue', 'interaction-old');
+
+    let caught: unknown;
+    try {
+      await completeAssistantTurn(session, settings);
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(isInvalidPreviousInteractionIdError(caught)).toBe(true);
   });
 });

@@ -25,6 +25,22 @@ interface ExecutedFunctionCall {
   isError?: boolean;
 }
 
+export class InvalidPreviousInteractionIdError extends Error {
+  readonly cause: unknown;
+
+  constructor(message: string, cause: unknown) {
+    super(message);
+    this.name = 'InvalidPreviousInteractionIdError';
+    this.cause = cause;
+  }
+}
+
+export function isInvalidPreviousInteractionIdError(
+  error: unknown,
+): error is InvalidPreviousInteractionIdError {
+  return error instanceof InvalidPreviousInteractionIdError;
+}
+
 const geminiClients = new Map<string, GoogleGenAI>();
 
 const LOCAL_FUNCTION_TOOLS: Record<string, LocalToolDefinition> = {
@@ -295,9 +311,20 @@ async function callGeminiInteraction(input: {
   request: unknown;
 }): Promise<GeminiInteraction> {
   const client = getGeminiClient(input.settings.apiKey);
-  const response = (await client.interactions.create(
-    input.request as unknown as SDKCreateInteractionRequest,
-  )) as unknown;
+  let response: unknown;
+  try {
+    response = (await client.interactions.create(
+      input.request as unknown as SDKCreateInteractionRequest,
+    )) as unknown;
+  } catch (error: unknown) {
+    if (isPreviousInteractionIdError(error)) {
+      throw new InvalidPreviousInteractionIdError(
+        'Gemini rejected previous_interaction_id for this conversation.',
+        error,
+      );
+    }
+    throw error;
+  }
   if (!isRecord(response)) {
     throw new Error('Gemini response payload was not a JSON object.');
   }
@@ -317,6 +344,31 @@ async function callGeminiInteraction(input: {
     id: interactionId,
     outputs,
   };
+}
+
+function isPreviousInteractionIdError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  if (
+    message.includes('previous_interaction_id') ||
+    (message.includes('previous interaction') && message.includes('id'))
+  ) {
+    return true;
+  }
+
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const errorMessage =
+    typeof error.message === 'string'
+      ? error.message.toLowerCase()
+      : typeof error.error === 'string'
+        ? error.error.toLowerCase()
+        : '';
+  return (
+    errorMessage.includes('previous_interaction_id') ||
+    (errorMessage.includes('previous interaction') && errorMessage.includes('id'))
+  );
 }
 
 function extractAssistantContent(interaction: GeminiInteraction): GeminiContent {

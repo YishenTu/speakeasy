@@ -23,6 +23,7 @@
     "@biomejs/biome": "1.9.4",
     "@types/chrome": "0.0.293",
     "dependency-cruiser": "17.3.8",
+    "fake-indexeddb": "6.2.5",
     "tailwindcss": "3.4.17",
     "typescript": "5.9.2"
   },

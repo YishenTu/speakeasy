@@ -25,6 +25,7 @@ export interface GeminiSettings {
 
 export const GEMINI_SETTINGS_STORAGE_KEY = 'geminiSettings';
 export const ACTIVE_CHAT_STORAGE_KEY = 'activeChatId';
+export const CHAT_STORAGE_SCHEMA_VERSION_STORAGE_KEY = 'chatStorageSchemaVersion';
 
 const DEFAULT_SETTINGS: GeminiSettings = {
   apiKey: '',
