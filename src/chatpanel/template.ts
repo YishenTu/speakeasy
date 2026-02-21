@@ -7,17 +7,24 @@ export function getChatPanelTemplate(): string {
 
       .shell {
         position: fixed;
-        right: 18px;
-        bottom: 18px;
+        top: 18px;
+        left: 18px;
+        width: min(390px, calc(100vw - 24px));
+        height: min(620px, calc(100vh - 96px));
         z-index: 2147483647;
         font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
         color: #f8fafc;
+        box-sizing: border-box;
+      }
+
+      .shell[hidden] {
+        display: none;
       }
 
       .panel {
-        width: min(390px, calc(100vw - 24px));
-        height: min(620px, calc(100vh - 96px));
-        margin-top: 10px;
+        width: 100%;
+        height: 100%;
+        position: relative;
         border-radius: 8px;
         overflow: hidden;
         display: grid;
@@ -29,10 +36,6 @@ export function getChatPanelTemplate(): string {
         box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
       }
 
-      .panel[hidden] {
-        display: none;
-      }
-
       .top {
         padding: 14px 16px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
@@ -40,6 +43,9 @@ export function getChatPanelTemplate(): string {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        cursor: move;
+        user-select: none;
+        touch-action: none;
       }
 
       .brand-title {
@@ -75,6 +81,13 @@ export function getChatPanelTemplate(): string {
         line-height: 1;
         cursor: pointer;
         transition: color 120ms ease, background 120ms ease;
+      }
+
+      .controls,
+      .control-btn {
+        cursor: pointer;
+        user-select: auto;
+        touch-action: manipulation;
       }
 
       .control-btn:hover {
@@ -158,7 +171,7 @@ export function getChatPanelTemplate(): string {
       .composer-inner {
         display: flex;
         align-items: flex-end;
-        background: rgba(0, 0, 0, 0.2);
+        background: transparent;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 8px;
         padding: 2px 4px;
@@ -167,7 +180,7 @@ export function getChatPanelTemplate(): string {
 
       .composer-inner:focus-within {
         border-color: rgba(255, 255, 255, 0.3);
-        background: rgba(0, 0, 0, 0.4);
+        background: transparent;
       }
 
       .composer[aria-busy="true"] .composer-inner {
@@ -213,23 +226,84 @@ export function getChatPanelTemplate(): string {
         outline: none;
       }
 
-      @media (max-width: 620px) {
-        .shell {
-          right: 12px;
-          left: 12px;
-          bottom: 12px;
-        }
+      .resize-zone {
+        position: absolute;
+        z-index: 2;
+        background: transparent;
+        touch-action: none;
+      }
 
-        .panel {
-          width: calc(100vw - 24px);
-          height: min(72vh, 560px);
-        }
+      .resize-top {
+        top: 0;
+        left: 12px;
+        right: 12px;
+        height: 10px;
+        cursor: ns-resize;
+      }
+
+      .resize-right {
+        top: 12px;
+        right: 0;
+        bottom: 12px;
+        width: 10px;
+        cursor: ew-resize;
+      }
+
+      .resize-bottom {
+        right: 12px;
+        bottom: 0;
+        left: 12px;
+        height: 10px;
+        cursor: ns-resize;
+      }
+
+      .resize-left {
+        top: 12px;
+        bottom: 12px;
+        left: 0;
+        width: 10px;
+        cursor: ew-resize;
+      }
+
+      .resize-corner {
+        width: 14px;
+        height: 14px;
+      }
+
+      .resize-top-left {
+        top: 0;
+        left: 0;
+        cursor: nwse-resize;
+      }
+
+      .resize-top-right {
+        top: 0;
+        right: 0;
+        cursor: nesw-resize;
+      }
+
+      .resize-bottom-right {
+        right: 0;
+        bottom: 0;
+        cursor: nwse-resize;
+      }
+
+      .resize-bottom-left {
+        bottom: 0;
+        left: 0;
+        cursor: nesw-resize;
+      }
+
+      .resize-zone::before {
+        content: '';
+        position: absolute;
+        inset: 0;
       }
     </style>
 
-    <div class="shell">
-      <section id="speakeasy-panel" class="panel" hidden>
-        <header class="top">
+    <div id="speakeasy-shell" class="shell" hidden>
+      <section id="speakeasy-panel" class="panel">
+        <header id="speakeasy-drag-handle" class="top">
           <h2 class="brand-title">
             <svg class="brand-logo" viewBox="0 0 28.01 28" xmlns="http://www.w3.org/2000/svg" width="2500" height="2499"><radialGradient id="a" cx="-576.08" cy="491.7" gradientTransform="matrix(28.2302 9.54441 76.4642 -226.16369 -21336.18 116711.38)" gradientUnits="userSpaceOnUse" r="1"><stop offset=".07" stop-color="#9168c0"/><stop offset=".34" stop-color="#5684d1"/><stop offset=".67" stop-color="#1ba1e3"/></radialGradient><path d="M14 28c0-1.94-.37-3.76-1.12-5.46-.72-1.7-1.72-3.19-2.98-4.45s-2.74-2.25-4.44-2.97C3.76 14.37 1.94 14 0 14c1.94 0 3.76-.36 5.46-1.09 1.7-.75 3.19-1.75 4.44-3.01 1.26-1.26 2.25-2.74 2.98-4.44C13.63 3.76 14 1.94 14 0c0 1.94.36 3.76 1.09 5.46.75 1.7 1.75 3.19 3.01 4.44 1.26 1.26 2.74 2.26 4.45 3.01 1.7.72 3.52 1.09 5.46 1.09-1.94 0-3.76.37-5.46 1.12-1.7.72-3.19 1.71-4.45 2.97s-2.26 2.74-3.01 4.45A13.86 13.86 0 0 0 14 28z" fill="url(#a)"/></svg>
             Speakeasy
@@ -249,6 +323,14 @@ export function getChatPanelTemplate(): string {
           </div>
         </form>
       </section>
+      <div class="resize-zone resize-top" data-resize="top"></div>
+      <div class="resize-zone resize-right" data-resize="right"></div>
+      <div class="resize-zone resize-bottom" data-resize="bottom"></div>
+      <div class="resize-zone resize-left" data-resize="left"></div>
+      <div class="resize-zone resize-corner resize-top-left" data-resize="top-left"></div>
+      <div class="resize-zone resize-corner resize-top-right" data-resize="top-right"></div>
+      <div class="resize-zone resize-corner resize-bottom-right" data-resize="bottom-right"></div>
+      <div class="resize-zone resize-corner resize-bottom-left" data-resize="bottom-left"></div>
     </div>
   `;
 }

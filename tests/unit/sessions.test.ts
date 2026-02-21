@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   createSession,
   getOrCreateSession,
+  mapSessionToChatMessages,
   readSessions,
+  toAssistantChatMessage,
   writeSessions,
 } from '../../src/background/sessions';
 import type { ChatSession } from '../../src/background/types';
@@ -131,6 +133,49 @@ describe('sessions', () => {
     expect(typeof parsed?.createdAt).toBe('string');
     expect(parsed?.createdAt.length).toBeGreaterThan(0);
     expect(parsed?.updatedAt).toBe(parsed?.createdAt);
+  });
+
+  it('returns empty sessions when persisted data is not an object', async () => {
+    storageState[CHAT_SESSIONS_STORAGE_KEY] = 'invalid-store';
+
+    const sessions = await readSessions();
+
+    expect(sessions).toEqual({});
+  });
+
+  it('maps persisted content to chat messages and skips empty renderings', () => {
+    const session: ChatSession = {
+      id: 'chat-1',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      contents: [
+        { role: 'user', parts: [{ text: 'Question' }] },
+        { role: 'model', parts: [{ text: 'Answer' }] },
+        { role: 'model', parts: [{ unknown: true }] },
+      ],
+    };
+
+    const messages = mapSessionToChatMessages(session);
+
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      content: 'Question',
+    });
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Answer',
+    });
+  });
+
+  it('provides a fallback assistant message when content is not displayable', () => {
+    const message = toAssistantChatMessage({
+      role: 'model',
+      parts: [{ someHiddenPayload: true }],
+    });
+
+    expect(message.role).toBe('assistant');
+    expect(message.content).toBe('Gemini returned a response with no displayable text.');
   });
 
   it('createSession produces empty content history', () => {
