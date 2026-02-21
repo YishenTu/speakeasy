@@ -86,5 +86,3 @@ export interface ChatStreamDeltaEvent {
   textDelta?: string;
   thinkingDelta?: string;
 }
-
-export type RuntimePushEvent = ChatStreamDeltaEvent;

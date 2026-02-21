@@ -431,34 +431,31 @@ function createStreamDeltaEmitter(
     return undefined;
   }
 
-  const frameId = typeof sender?.frameId === 'number' ? sender.frameId : undefined;
+  const sendOptions = typeof sender?.frameId === 'number' ? { frameId: sender.frameId } : undefined;
+  const swallowDisconnect = () => {
+    void chrome.runtime.lastError;
+  };
+
   return (delta: GeminiStreamDelta) => {
-    const hasText = typeof delta.textDelta === 'string' && delta.textDelta.length > 0;
-    const hasThinking = typeof delta.thinkingDelta === 'string' && delta.thinkingDelta.length > 0;
-    if (!hasText && !hasThinking) {
+    if (!delta.textDelta && !delta.thinkingDelta) {
       return;
     }
 
     const payload: ChatStreamDeltaEvent = {
       type: 'chat/stream-delta',
       requestId,
-      ...(hasText ? { textDelta: delta.textDelta } : {}),
-      ...(hasThinking ? { thinkingDelta: delta.thinkingDelta } : {}),
+      ...(delta.textDelta ? { textDelta: delta.textDelta } : {}),
+      ...(delta.thinkingDelta ? { thinkingDelta: delta.thinkingDelta } : {}),
     };
 
     try {
-      if (frameId !== undefined) {
-        chrome.tabs.sendMessage(tabId, payload, { frameId }, () => {
-          void chrome.runtime.lastError;
-        });
-        return;
+      if (sendOptions) {
+        chrome.tabs.sendMessage(tabId, payload, sendOptions, swallowDisconnect);
+      } else {
+        chrome.tabs.sendMessage(tabId, payload, swallowDisconnect);
       }
-
-      chrome.tabs.sendMessage(tabId, payload, () => {
-        void chrome.runtime.lastError;
-      });
     } catch {
-      // Best-effort stream updates should not fail the chat request lifecycle.
+      // Best-effort: don't fail the chat request lifecycle.
     }
   };
 }

@@ -91,4 +91,50 @@ describe('chatpanel markdown', () => {
     expect(container.querySelector('math')).not.toBeNull();
     expect(container.querySelector('mtable')).not.toBeNull();
   });
+
+  it('supports align environments inside display fences by normalizing to aligned', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      String.raw`$$\begin{align}
+(a+b)^2 &= (a+b)(a+b) \\
+&= a^2 + ab + ba + b^2 \\
+&= a^2 + 2ab + b^2
+\end{align}$$`,
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    expect(container.querySelector('math')).not.toBeNull();
+    expect(container.querySelector('mtable')).not.toBeNull();
+  });
+
+  it('auto-inserts aligned anchors for explicit aligned rows without ampersands', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      String.raw`$$\begin{aligned}
+(a+b)^2 = (a+b)(a+b) \\
+= a^2 + ab + ba + b^2 \\
+= a^2 + 2ab + b^2
+\end{aligned}$$`,
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    const rows = Array.from(container.querySelectorAll('mtr'));
+    expect(rows.length).toBeGreaterThan(0);
+    const firstRowCells = rows[0]?.querySelectorAll('mtd') ?? [];
+    expect(firstRowCells.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('wraps multiline step equations in aligned when no environment is provided', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      ['$$', '(a+b)^2 = (a+b)(a+b)', '= a^2 + ab + ba + b^2', '= a^2 + 2ab + b^2', '$$'].join('\n'),
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    expect(container.querySelector('math')).not.toBeNull();
+    expect(container.querySelector('mtable')).not.toBeNull();
+  });
 });

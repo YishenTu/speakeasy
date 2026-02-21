@@ -1,15 +1,6 @@
 import type { ChatMessage } from '../shared/chat';
 import { renderMarkdownToSafeHtml } from './markdown';
 
-export function createWelcomeMessage(): ChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content:
-      'Speakeasy is ready. Ask a question, or open Settings to configure your Gemini API key.',
-  };
-}
-
 export function renderAll(messages: ChatMessage[], messageList: HTMLOListElement): void {
   const fragment = document.createDocumentFragment();
   for (const message of messages) {
@@ -66,16 +57,9 @@ function createMessageNode(message: ChatMessage): HTMLLIElement {
   item.dataset.messageId = message.id;
 
   bubble.className = message.role === 'user' ? 'bubble bubble-user' : 'bubble bubble-assistant';
-  if (message.content) {
-    const text = document.createElement('div');
-    text.className = 'message-text';
-    text.innerHTML = renderMarkdownToSafeHtml(message.content, text.ownerDocument);
-    enforceLinkBehavior(text);
-    bindCodeCopyButtons(text);
-    bubble.append(text);
-  }
-
   const thinkingSummary = message.role === 'assistant' ? message.thinkingSummary?.trim() : '';
+  const attachments = message.attachments ?? [];
+  const hasRenderableContent = message.content.trim().length > 0;
   if (thinkingSummary) {
     const disclosure = document.createElement('details');
     disclosure.className = 'thinking-disclosure';
@@ -85,19 +69,23 @@ function createMessageNode(message: ChatMessage): HTMLLIElement {
     summary.className = 'thinking-disclosure-label';
     summary.textContent = 'Thinking process';
 
-    const content = document.createElement('p');
-    content.className = 'thinking-summary';
-    content.textContent = thinkingSummary;
+    const content = createThinkingSummaryNode(thinkingSummary);
 
     disclosure.append(summary, content);
     bubble.append(disclosure);
   }
 
-  if (message.attachments && message.attachments.length > 0) {
+  if (hasRenderableContent) {
+    bubble.append(createMarkdownNode(message.content, 'message-text'));
+  } else if (message.role === 'assistant' && !thinkingSummary && attachments.length === 0) {
+    bubble.append(createThinkingPlaceholderNode());
+  }
+
+  if (attachments.length > 0) {
     const attachmentList = document.createElement('div');
     attachmentList.className = 'attachment-list';
 
-    for (const attachment of message.attachments) {
+    for (const attachment of attachments) {
       if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
         const previewUrl = attachment.previewUrl;
         const image = document.createElement('img');
@@ -127,6 +115,48 @@ function createMessageNode(message: ChatMessage): HTMLLIElement {
 
   item.append(bubble);
   return item;
+}
+
+function createThinkingPlaceholderNode(): HTMLDivElement {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'message-text message-thinking-placeholder';
+
+  const label = document.createElement('span');
+  label.className = 'thinking-placeholder-label';
+  label.textContent = 'Thinking';
+
+  const dots = document.createElement('span');
+  dots.className = 'thinking-placeholder-dots';
+  dots.setAttribute('aria-hidden', 'true');
+
+  for (let index = 0; index < 3; index += 1) {
+    const dot = document.createElement('span');
+    dot.className = 'thinking-placeholder-dot';
+    dot.textContent = '.';
+    dots.append(dot);
+  }
+
+  placeholder.append(label, dots);
+  return placeholder;
+}
+
+function createMarkdownNode(markdown: string, className: string): HTMLDivElement {
+  const container = document.createElement('div');
+  container.className = className;
+  container.innerHTML = renderMarkdownToSafeHtml(markdown, container.ownerDocument);
+  enforceLinkBehavior(container);
+  bindCodeCopyButtons(container);
+  return container;
+}
+
+function createThinkingSummaryNode(thinkingSummary: string): HTMLDivElement {
+  const container = createMarkdownNode(thinkingSummary, 'thinking-summary message-text');
+  if (!container.hasChildNodes()) {
+    const fallback = document.createElement('p');
+    fallback.textContent = thinkingSummary;
+    container.append(fallback);
+  }
+  return container;
 }
 
 function isImageMimeType(mimeType: string): boolean {
@@ -191,12 +221,5 @@ function findMessageNodeById(
   messageList: HTMLOListElement,
   messageId: string,
 ): HTMLLIElement | null {
-  for (const node of Array.from(messageList.children)) {
-    const candidate = node as HTMLElement;
-    if (candidate.tagName === 'LI' && candidate.dataset.messageId === messageId) {
-      return candidate as HTMLLIElement;
-    }
-  }
-
-  return null;
+  return messageList.querySelector<HTMLLIElement>(`li[data-message-id="${messageId}"]`);
 }

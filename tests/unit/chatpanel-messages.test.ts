@@ -266,6 +266,46 @@ describe('chatpanel messages', () => {
     expect(disclosure?.open).toBe(true);
     expect(disclosure?.querySelector('summary')?.textContent).toBe('Thinking process');
     expect(disclosure?.textContent).toContain('Checked assumptions before answering.');
+
+    const bubble = messageList.querySelector('.bubble-assistant');
+    const firstChild = bubble?.firstElementChild as HTMLElement | null;
+    expect(firstChild?.className).toBe('thinking-disclosure');
+  });
+
+  it('renders markdown and tex in the assistant thinking disclosure', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-thinking-md',
+        role: 'assistant',
+        content: 'Final answer',
+        thinkingSummary: [
+          '**Evaluated options** with inline math $x^2$.',
+          '',
+          '[Reference](https://example.com)',
+          '',
+          '```ts',
+          'const value = 7;',
+          '```',
+        ].join('\n'),
+      },
+      messageList,
+    );
+
+    const thinkingSummary = messageList.querySelector('.thinking-summary');
+    expect(thinkingSummary).not.toBeNull();
+    expect(thinkingSummary?.querySelector('strong')?.textContent).toBe('Evaluated options');
+    expect(thinkingSummary?.querySelector('math')).not.toBeNull();
+    expect(thinkingSummary?.querySelector('.code-lang')?.textContent).toBe('ts');
+
+    const link = thinkingSummary?.querySelector('a');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute('href')).toBe('https://example.com');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+
+    expect(thinkingSummary?.querySelector('strong')).not.toBeNull();
   });
 
   it('replaces and removes messages by id for streaming placeholder updates', () => {
@@ -295,6 +335,42 @@ describe('chatpanel messages', () => {
     const removed = removeMessageById('user-1', messageList);
     expect(removed).toBe(true);
     expect(messageList.textContent).not.toContain('Question');
+  });
+
+  it('shows a temporary thinking placeholder until streamed content arrives', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    renderAll([{ id: 'assistant-stream', role: 'assistant', content: '' }], messageList);
+
+    expect(messageList.textContent).toContain('Thinking...');
+    const dots = messageList.querySelectorAll('.thinking-placeholder-dot');
+    expect(dots).toHaveLength(3);
+
+    const replacedWithThinking = replaceMessageById(
+      'assistant-stream',
+      {
+        id: 'assistant-stream',
+        role: 'assistant',
+        content: '',
+        thinkingSummary: 'Checking assumptions.',
+      },
+      messageList,
+    );
+    expect(replacedWithThinking).toBe(true);
+    expect(messageList.textContent).not.toContain('Thinking...');
+    expect(messageList.textContent).toContain('Checking assumptions.');
+
+    const replacedWithResponse = replaceMessageById(
+      'assistant-stream',
+      {
+        id: 'assistant-stream',
+        role: 'assistant',
+        content: 'Final answer',
+      },
+      messageList,
+    );
+    expect(replacedWithResponse).toBe(true);
+    expect(messageList.textContent).toContain('Final answer');
+    expect(messageList.textContent).not.toContain('Thinking...');
   });
 
   it('falls back to a generic error message for non-Error values', () => {

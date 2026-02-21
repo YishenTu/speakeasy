@@ -15,7 +15,6 @@ import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 import { createInputToolbar } from './input-toolbar';
 import {
   appendMessage,
-  createWelcomeMessage,
   removeMessageById,
   renderAll,
   replaceMessageById,
@@ -378,10 +377,10 @@ function mountChatPanel(): void {
       return;
     }
 
-    if (typeof textDelta === 'string' && textDelta.length > 0) {
+    if (textDelta) {
       draft.text += textDelta;
     }
-    if (typeof thinkingDelta === 'string' && thinkingDelta.length > 0) {
+    if (thinkingDelta) {
       draft.thinkingSummary += thinkingDelta;
     }
 
@@ -502,7 +501,7 @@ function mountChatPanel(): void {
           if (deleted && activeChatId === session.chatId) {
             activeChatId = (await getActiveChatId()) ?? null;
             clearStagedFiles(true);
-            renderAll([createWelcomeMessage()], messageList);
+            renderAll([], messageList);
           }
           await refreshHistoryDropdown();
           if (historySessions.length === 0) {
@@ -538,11 +537,7 @@ function mountChatPanel(): void {
   async function loadChatFromHistory(chatId: string): Promise<void> {
     const payload = await loadChatMessagesById(chatId);
     activeChatId = payload.chatId;
-    if (payload.messages.length > 0) {
-      renderAll(payload.messages, messageList);
-    } else {
-      renderAll([createWelcomeMessage()], messageList);
-    }
+    renderAll(payload.messages, messageList);
     await refreshHistoryDropdown();
   }
 
@@ -678,7 +673,7 @@ function mountChatPanel(): void {
       const chatId = await createNewChat();
       activeChatId = chatId;
       clearStagedFiles(true);
-      renderAll([createWelcomeMessage()], messageList);
+      renderAll([], messageList);
       await refreshHistoryDropdown();
       setHistoryMenuOpen(false);
       input.focus();
@@ -826,15 +821,14 @@ function mountChatPanel(): void {
 
     switch (request.type) {
       case 'chat/stream-delta': {
-        const requestId = typeof request.requestId === 'string' ? request.requestId.trim() : '';
-        if (!requestId) {
-          break;
+        const rid = typeof request.requestId === 'string' ? request.requestId.trim() : '';
+        if (rid) {
+          applyStreamDelta(
+            rid,
+            typeof request.textDelta === 'string' ? request.textDelta : undefined,
+            typeof request.thinkingDelta === 'string' ? request.thinkingDelta : undefined,
+          );
         }
-
-        const textDelta = typeof request.textDelta === 'string' ? request.textDelta : undefined;
-        const thinkingDelta =
-          typeof request.thinkingDelta === 'string' ? request.thinkingDelta : undefined;
-        applyStreamDelta(requestId, textDelta, thinkingDelta);
         break;
       }
       case 'overlay/toggle':
@@ -902,11 +896,7 @@ function mountChatPanel(): void {
         async () => {
           const history = await loadChatMessages();
           activeChatId = history.chatId;
-          if (history.messages.length > 0) {
-            renderAll(history.messages, messageList);
-          } else {
-            renderAll([createWelcomeMessage()], messageList);
-          }
+          renderAll(history.messages, messageList);
           await refreshHistoryDropdown();
         },
         () => {
@@ -916,7 +906,6 @@ function mountChatPanel(): void {
     } catch (error: unknown) {
       renderAll(
         [
-          createWelcomeMessage(),
           {
             id: crypto.randomUUID(),
             role: 'assistant',

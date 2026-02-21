@@ -501,6 +501,36 @@ describe('completeAssistantTurn', () => {
     expect(fetchRequestBodies[0]).toMatchObject({ stream: true });
   });
 
+  it('uses streamed deltas as fallback when interaction.complete omits outputs', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        delta: { type: 'text', text: 'Partial answer.' },
+      },
+      {
+        event_type: 'content.delta',
+        delta: {
+          type: 'thought_summary',
+          content: { type: 'text', text: 'Checked constraints first.' },
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-no-outputs',
+        },
+      },
+    );
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const content = await completeAssistantTurn(session, settings, undefined, () => {});
+
+    expect(renderContentForChat(content)).toBe('Partial answer.');
+    expect(renderThinkingSummaryForChat(content)).toBe('Checked constraints first.');
+    expect(session.lastInteractionId).toBe('interaction-stream-no-outputs');
+  });
+
   it('throws when Gemini returns a non-object payload', async () => {
     enqueueGeminiResponses(42);
     const settings = createSettingsForToolTests();
