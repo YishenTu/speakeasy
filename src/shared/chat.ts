@@ -1,13 +1,8 @@
+import type { ChatMessage } from './messages';
 import type { ChatLoadPayload, ChatNewPayload, ChatSendPayload, RuntimeRequest } from './runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from './settings';
 
-export type MessageRole = 'assistant' | 'user';
-
-export interface ChatMessage {
-  id: string;
-  role: MessageRole;
-  content: string;
-}
+export type { ChatMessage, MessageRole } from './messages';
 
 async function readActiveChatId(): Promise<string | undefined> {
   const stored = await chrome.storage.local.get(ACTIVE_CHAT_STORAGE_KEY);

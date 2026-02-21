@@ -14,10 +14,8 @@ It runs as an in-page overlay on regular websites (`http/https`).
 ## Project structure
 
 - `src/background/background.ts`: Gemini backend service (multi-turn sessions, tool loop, storage)
-- `src/content/content.ts`: in-page overlay chat UI (content script)
-- `src/popup/popup.html`: legacy popup shell (not the primary UI)
-- `src/popup/popup.ts`: legacy popup chat surface
-- `src/shared/chat.ts`: popup-to-background chat bridge
+- `src/chatpanel/chatpanel.ts`: in-page chat panel UI (content script)
+- `src/shared/chat.ts`: chatpanel-to-background chat bridge
 - `src/shared/runtime.ts`: runtime message contracts
 - `src/shared/settings.ts`: Gemini settings schema and normalization
 - `src/options/options.html`: options page UI for Gemini settings
@@ -25,6 +23,7 @@ It runs as an in-page overlay on regular websites (`http/https`).
 - `src/manifest.json`: extension manifest source
 - `scripts/build.ts`: produces loadable extension output in `dist/`
 - `scripts/test-gemini.ts`: live Gemini API format verifier using `.env`
+- `.dependency-cruiser.cjs`: import-boundary and circular-dependency rules
 
 ## Setup
 
@@ -42,6 +41,7 @@ GEMINI_API_KEY=your-real-gemini-key
 
 ```bash
 bun run dev
+bun run deps:check
 bun run lint
 bun run typecheck
 bun run build
@@ -49,8 +49,17 @@ bun run test:gemini
 ```
 
 `bun run dev` watches source files and rebuilds `dist/` automatically.
+`bun run deps:check` enforces module boundaries and blocks circular imports.
 `bun run build` outputs a complete unpacked extension in `dist/`.
 `bun run test:gemini` verifies request formats against Gemini using `gemini-3-flash-preview`.
+
+## Dependency direction
+
+- `src/shared` can only depend on `src/shared`.
+- `src/background` can depend on `src/shared`, never on `src/chatpanel` or `src/options`.
+- `src/chatpanel` can depend on `src/shared`, never on `src/background` or `src/options`.
+- `src/options` can depend on `src/shared`, never on `src/background` or `src/chatpanel`.
+- Circular dependencies are forbidden globally.
 
 ## Chat backend behavior
 

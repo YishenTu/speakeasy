@@ -7,7 +7,6 @@ const distDir = join(rootDir, 'dist');
 
 const staticFileCopies: ReadonlyArray<[string, string]> = [
   ['src/manifest.json', 'manifest.json'],
-  ['src/popup/popup.html', 'popup.html'],
   ['src/options/options.html', 'options.html'],
 ];
 
@@ -20,8 +19,7 @@ async function buildTypeScript(): Promise<void> {
   const result = await Bun.build({
     entrypoints: [
       join(rootDir, 'src/background/background.ts'),
-      join(rootDir, 'src/content/content.ts'),
-      join(rootDir, 'src/popup/popup.ts'),
+      join(rootDir, 'src/chatpanel/chatpanel.ts'),
       join(rootDir, 'src/options/options.ts'),
     ],
     outdir: distDir,
