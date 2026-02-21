@@ -263,7 +263,8 @@ export function getChatPanelTemplate(): string {
         border-radius: 0;
         font-size: 13px;
         line-height: 1.5;
-        white-space: pre-wrap;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
 
       .bubble-user {
@@ -283,7 +284,160 @@ export function getChatPanelTemplate(): string {
 
       .message-text {
         margin: 0;
+      }
+
+      .message-text > * {
+        margin: 0 0 8px;
+      }
+
+      .message-text > *:last-child {
+        margin-bottom: 0;
+      }
+
+      .message-text p {
         white-space: pre-wrap;
+      }
+
+      .message-text h1,
+      .message-text h2,
+      .message-text h3,
+      .message-text h4,
+      .message-text h5,
+      .message-text h6 {
+        line-height: 1.35;
+        font-weight: 600;
+      }
+
+      .message-text h1 {
+        font-size: 1.12em;
+      }
+
+      .message-text h2 {
+        font-size: 1.08em;
+      }
+
+      .message-text h3,
+      .message-text h4,
+      .message-text h5,
+      .message-text h6 {
+        font-size: 1.02em;
+      }
+
+      .message-text ul,
+      .message-text ol {
+        padding-left: 18px;
+      }
+
+      .message-text li {
+        margin: 4px 0;
+      }
+
+      .message-text li > input[type='checkbox'] {
+        margin: 0 6px 0 0;
+        vertical-align: middle;
+      }
+
+      .message-text blockquote {
+        margin: 0;
+        padding-left: 10px;
+        border-left: 2px solid rgba(255, 255, 255, 0.24);
+        color: rgba(255, 255, 255, 0.74);
+      }
+
+      .message-text code {
+        font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
+        font-size: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        padding: 1px 4px;
+      }
+
+      .message-text pre {
+        position: relative;
+        margin: 0 0 8px;
+        overflow-x: auto;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 10px;
+      }
+
+      .message-text pre .code-lang {
+        position: absolute;
+        top: 0;
+        right: 0;
+        padding: 2px 8px;
+        font-family: inherit;
+        font-size: 10px;
+        color: rgba(255, 255, 255, 0.4);
+        cursor: pointer;
+        user-select: none;
+        line-height: 1.5;
+        transition: color 120ms ease;
+      }
+
+      .message-text pre .code-lang:hover {
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .message-text pre:last-child {
+        margin-bottom: 0;
+      }
+
+      .message-text pre code {
+        background: transparent;
+        border-radius: 0;
+        padding: 0;
+        display: block;
+        white-space: pre;
+      }
+
+      .message-text table {
+        width: 100%;
+        table-layout: fixed;
+        border-collapse: collapse;
+        border-spacing: 0;
+      }
+
+      .message-text th,
+      .message-text td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+        overflow-wrap: anywhere;
+        vertical-align: top;
+      }
+
+      .message-text thead th {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        font-weight: 600;
+      }
+
+      .message-text hr {
+        border: 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .message-text a {
+        color: rgba(181, 224, 255, 0.98);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .message-text a:hover {
+        color: rgba(228, 242, 255, 0.98);
+      }
+
+      .message-text math[display='block'] {
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        margin: 0 auto 8px;
+        overflow: hidden;
+      }
+
+      .message-text math[display='block']:last-child {
+        margin-bottom: 0;
       }
 
       .attachment-list {

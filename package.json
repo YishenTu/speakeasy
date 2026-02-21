@@ -32,6 +32,9 @@
     "@google/genai": "1.42.0",
     "@modelcontextprotocol/sdk": "1.26.0",
     "baseline-browser-mapping": "2.10.0",
-    "caniuse-lite": "1.0.30001770"
+    "caniuse-lite": "1.0.30001770",
+    "dompurify": "3.3.1",
+    "katex": "0.16.28",
+    "marked": "17.0.3"
   }
 }
