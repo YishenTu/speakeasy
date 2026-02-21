@@ -440,13 +440,38 @@ export function getChatPanelTemplate(): string {
         margin-bottom: 0;
       }
 
+      .thinking-disclosure {
+        margin: 8px 0 0;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .thinking-disclosure-label {
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.82);
+        user-select: none;
+      }
+
+      .thinking-summary {
+        margin: 8px 0 0;
+        font-size: 12px;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, 0.74);
+        white-space: pre-wrap;
+      }
+
       .attachment-list {
         display: flex;
         flex-direction: column;
         gap: 8px;
       }
 
-      .message-text + .attachment-list {
+      .message-text + .attachment-list,
+      .thinking-disclosure + .attachment-list {
         margin-top: 8px;
       }
 

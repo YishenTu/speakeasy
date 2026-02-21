@@ -26,6 +26,10 @@ describe('sessions', () => {
         { role: 'model', parts: [{ text: 'Answer' }] },
         {
           role: 'model',
+          parts: [{ thoughtSummary: 'Compared two parsing strategies.' }],
+        },
+        {
+          role: 'model',
           parts: [
             {
               fileData: {
@@ -42,7 +46,7 @@ describe('sessions', () => {
 
     const messages = mapSessionToChatMessages(session);
 
-    expect(messages).toHaveLength(3);
+    expect(messages).toHaveLength(4);
     expect(messages[0]).toMatchObject({
       role: 'user',
       content: 'Question',
@@ -52,6 +56,11 @@ describe('sessions', () => {
       content: 'Answer',
     });
     expect(messages[2]).toMatchObject({
+      role: 'assistant',
+      content: '',
+      thinkingSummary: 'Compared two parsing strategies.',
+    });
+    expect(messages[3]).toMatchObject({
       role: 'assistant',
       content: '',
       attachments: [
@@ -72,6 +81,17 @@ describe('sessions', () => {
 
     expect(message.role).toBe('assistant');
     expect(message.content).toBe('Gemini returned a response with no displayable text.');
+  });
+
+  it('does not use fallback content when thinking summary exists', () => {
+    const message = toAssistantChatMessage({
+      role: 'model',
+      parts: [{ thoughtSummary: 'Validated boundary behavior.' }],
+    });
+
+    expect(message.role).toBe('assistant');
+    expect(message.content).toBe('');
+    expect(message.thinkingSummary).toBe('Validated boundary behavior.');
   });
 
   it('returns attachment metadata for attachment-only assistant responses', () => {

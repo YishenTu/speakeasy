@@ -25,6 +25,31 @@ export function appendMessage(message: ChatMessage, messageList: HTMLOListElemen
   messageList.scrollTop = messageList.scrollHeight;
 }
 
+export function replaceMessageById(
+  messageId: string,
+  message: ChatMessage,
+  messageList: HTMLOListElement,
+): boolean {
+  const existing = findMessageNodeById(messageList, messageId);
+  if (!existing) {
+    return false;
+  }
+
+  existing.replaceWith(createMessageNode(message));
+  messageList.scrollTop = messageList.scrollHeight;
+  return true;
+}
+
+export function removeMessageById(messageId: string, messageList: HTMLOListElement): boolean {
+  const existing = findMessageNodeById(messageList, messageId);
+  if (!existing) {
+    return false;
+  }
+
+  existing.remove();
+  return true;
+}
+
 export function toErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -38,6 +63,7 @@ function createMessageNode(message: ChatMessage): HTMLLIElement {
   const bubble = document.createElement('div');
 
   item.className = message.role === 'user' ? 'row row-user' : 'row row-assistant';
+  item.dataset.messageId = message.id;
 
   bubble.className = message.role === 'user' ? 'bubble bubble-user' : 'bubble bubble-assistant';
   if (message.content) {
@@ -47,6 +73,24 @@ function createMessageNode(message: ChatMessage): HTMLLIElement {
     enforceLinkBehavior(text);
     bindCodeCopyButtons(text);
     bubble.append(text);
+  }
+
+  const thinkingSummary = message.role === 'assistant' ? message.thinkingSummary?.trim() : '';
+  if (thinkingSummary) {
+    const disclosure = document.createElement('details');
+    disclosure.className = 'thinking-disclosure';
+    disclosure.open = true;
+
+    const summary = document.createElement('summary');
+    summary.className = 'thinking-disclosure-label';
+    summary.textContent = 'Thinking process';
+
+    const content = document.createElement('p');
+    content.className = 'thinking-summary';
+    content.textContent = thinkingSummary;
+
+    disclosure.append(summary, content);
+    bubble.append(disclosure);
   }
 
   if (message.attachments && message.attachments.length > 0) {
@@ -141,4 +185,18 @@ function isSafeLinkHref(href: string): boolean {
   } catch {
     return false;
   }
+}
+
+function findMessageNodeById(
+  messageList: HTMLOListElement,
+  messageId: string,
+): HTMLLIElement | null {
+  for (const node of Array.from(messageList.children)) {
+    const candidate = node as HTMLElement;
+    if (candidate.tagName === 'LI' && candidate.dataset.messageId === messageId) {
+      return candidate as HTMLLIElement;
+    }
+  }
+
+  return null;
 }

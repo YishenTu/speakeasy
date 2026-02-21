@@ -7,6 +7,7 @@ import {
   isInvalidPreviousInteractionIdError,
   normalizeContent,
   renderContentForChat,
+  renderThinkingSummaryForChat,
 } from '../../src/background/gemini';
 import {
   buildGeminiRequestToolSelection,
@@ -59,6 +60,20 @@ function enqueueGeminiHttpResponse(status: number, body: unknown): void {
   });
 }
 
+function enqueueGeminiSseEvents(...events: unknown[]): void {
+  const streamBody = [
+    ...events.map((event) => `data: ${JSON.stringify(event)}\n\n`),
+    'data: [DONE]\n\n',
+  ].join('');
+  fetchResponseQueue.push({
+    __status: 200,
+    __body: streamBody,
+    __headers: {
+      'content-type': 'text/event-stream',
+    },
+  });
+}
+
 function createSession(prompt = 'hello', lastInteractionId?: string): ChatSession {
   return {
     id: `session-${crypto.randomUUID()}`,
@@ -94,9 +109,17 @@ beforeEach(() => {
       '__body' in payload &&
       typeof (payload as { __status?: unknown }).__status === 'number'
     ) {
-      return new Response(JSON.stringify((payload as { __body: unknown }).__body), {
+      const headers =
+        (payload as { __headers?: Record<string, string> }).__headers ??
+        ({ 'content-type': 'application/json' } as Record<string, string>);
+      const body = (payload as { __body: unknown }).__body;
+      const serializedBody =
+        typeof body === 'string' && headers['content-type'] === 'text/event-stream'
+          ? body
+          : JSON.stringify(body);
+      return new Response(serializedBody, {
         status: (payload as { __status: number }).__status,
-        headers: { 'content-type': 'application/json' },
+        headers,
       });
     }
 
@@ -213,6 +236,16 @@ describe('renderContentForChat', () => {
 
     expect(renderContentForChat(content)).toBe('```text\nx = 1\n```');
   });
+
+  it('keeps thought summaries out of assistant text rendering', () => {
+    const content: GeminiContent = {
+      role: 'model',
+      parts: [{ thoughtSummary: 'Plan: inspect constraints first.' }, { text: 'Final answer' }],
+    };
+
+    expect(renderContentForChat(content)).toBe('Final answer');
+    expect(renderThinkingSummaryForChat(content)).toBe('Plan: inspect constraints first.');
+  });
 });
 
 describe('extractAttachments', () => {
@@ -312,7 +345,10 @@ describe('composeGeminiInteractionRequest', () => {
     });
 
     expect(plan.request.system_instruction).toBe('Be concise.');
-    expect(plan.request.generation_config).toEqual({ thinking_level: 'high' });
+    expect(plan.request.generation_config).toEqual({
+      thinking_level: 'high',
+      thinking_summaries: 'auto',
+    });
     expect(plan.request.previous_interaction_id).toBe('int-1');
     expect(plan.request.store).toBe(true);
   });
@@ -408,6 +444,61 @@ describe('completeAssistantTurn', () => {
     expect(fetchRequestBodies).toHaveLength(1);
     expect(fetchRequestBodies[0]?.input).toEqual([{ type: 'text', text: 'hello' }]);
     expect(fetchRequestBodies[0]?.previous_interaction_id).toBeUndefined();
+  });
+
+  it('parses thought outputs into thinking summaries and excludes them from final text', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-thought',
+      outputs: [
+        {
+          type: 'thought',
+          summary: [{ type: 'text', text: 'I compared two approaches.' }],
+        },
+        { type: 'text', text: 'Use the simpler approach.' },
+      ],
+    });
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const content = await completeAssistantTurn(session, settings);
+
+    expect(renderContentForChat(content)).toBe('Use the simpler approach.');
+    expect(renderThinkingSummaryForChat(content)).toBe('I compared two approaches.');
+  });
+
+  it('streams text and thought deltas when a stream callback is provided', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        delta: { type: 'text', text: 'Draft ' },
+      },
+      {
+        event_type: 'content.delta',
+        delta: {
+          type: 'thought_summary',
+          content: { type: 'text', text: 'Checking assumptions.' },
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream',
+          outputs: [{ type: 'text', text: 'Final response' }],
+        },
+      },
+    );
+
+    const deltas: Array<{ textDelta?: string; thinkingDelta?: string }> = [];
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const content = await completeAssistantTurn(session, settings, undefined, (delta) => {
+      deltas.push(delta);
+    });
+
+    expect(deltas).toEqual([{ textDelta: 'Draft ' }, { thinkingDelta: 'Checking assumptions.' }]);
+    expect(content.parts).toEqual([{ text: 'Final response' }]);
+    expect(session.lastInteractionId).toBe('interaction-stream');
+    expect(fetchRequestBodies[0]).toMatchObject({ stream: true });
   });
 
   it('throws when Gemini returns a non-object payload', async () => {

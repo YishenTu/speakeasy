@@ -1,4 +1,5 @@
 import {
+  type ChatMessage,
   createNewChat,
   deleteChatById,
   getActiveChatId,
@@ -12,9 +13,15 @@ import { isRecord } from '../shared/utils';
 import { queryRequiredElement } from './dom';
 import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 import { createInputToolbar } from './input-toolbar';
-import { appendMessage, createWelcomeMessage, renderAll, toErrorMessage } from './messages';
+import {
+  appendMessage,
+  createWelcomeMessage,
+  removeMessageById,
+  renderAll,
+  replaceMessageById,
+  toErrorMessage,
+} from './messages';
 import { requestOpenSettings } from './runtime';
-import { sendChatTurnWithOptimisticUserMessage } from './send-flow';
 import { runWithSuccessCommit } from './success-commit';
 import { getChatPanelTemplate } from './template';
 import { uploadFilesToGemini } from './uploads';
@@ -82,6 +89,12 @@ type StagedFile = {
   previewUrl?: string;
 };
 
+type ActiveStreamDraft = {
+  assistantMessageId: string;
+  text: string;
+  thinkingSummary: string;
+};
+
 if (window.top === window) {
   mountChatPanel();
 }
@@ -140,6 +153,7 @@ function mountChatPanel(): void {
   let activeChatId: string | null = null;
   let historySessions: ChatSessionSummary[] = [];
   let isHistoryMenuOpen = false;
+  const activeStreamDrafts = new Map<string, ActiveStreamDraft>();
 
   applyPanelLayout(shell, panelLayout);
   historyToggleButton.setAttribute('aria-expanded', 'false');
@@ -335,6 +349,49 @@ function mountChatPanel(): void {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: message,
+      },
+      messageList,
+    );
+  }
+
+  function buildOptimisticUserMessage(text: string, files: StagedFile[]): ChatMessage {
+    const attachments = files.map((staged) => {
+      const isImage = staged.mimeType.toLowerCase().startsWith('image/');
+      return {
+        name: staged.name,
+        mimeType: staged.mimeType,
+        ...(isImage ? { previewUrl: URL.createObjectURL(staged.file) } : {}),
+      };
+    });
+
+    return {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: text,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    };
+  }
+
+  function applyStreamDelta(requestId: string, textDelta?: string, thinkingDelta?: string): void {
+    const draft = activeStreamDrafts.get(requestId);
+    if (!draft) {
+      return;
+    }
+
+    if (typeof textDelta === 'string' && textDelta.length > 0) {
+      draft.text += textDelta;
+    }
+    if (typeof thinkingDelta === 'string' && thinkingDelta.length > 0) {
+      draft.thinkingSummary += thinkingDelta;
+    }
+
+    replaceMessageById(
+      draft.assistantMessageId,
+      {
+        id: draft.assistantMessageId,
+        role: 'assistant',
+        content: draft.text,
+        ...(draft.thinkingSummary ? { thinkingSummary: draft.thinkingSummary } : {}),
       },
       messageList,
     );
@@ -692,35 +749,62 @@ function mountChatPanel(): void {
     }
 
     const stagedSnapshot = [...stagedFiles];
+    let optimisticUserMessageId: string | undefined;
+    let assistantPlaceholderId: string | undefined;
+    let streamRequestId: string | undefined;
     setBusyState(true);
 
     try {
       const selectedModel = toolbar.selectedModel();
       const selectedThinking = toolbar.selectedThinkingLevel();
-      const assistantMessage = await sendChatTurnWithOptimisticUserMessage(
-        {
-          text: userText,
-          stagedFiles: stagedSnapshot,
-          model: selectedModel,
-          thinkingLevel: selectedThinking,
-        },
-        {
-          appendMessage: (message) => {
-            appendMessage(message, messageList);
-          },
-          onUserMessageAppended: () => {
-            input.value = '';
-            input.style.height = 'auto';
-            clearStagedFiles(true);
-          },
-          uploadFiles: uploadFilesToGemini,
-          sendMessage,
-        },
+      const uploadedAttachments = await uploadFilesToGemini(
+        stagedSnapshot.map((staged) => staged.file),
       );
-      appendMessage(assistantMessage, messageList);
+      streamRequestId = crypto.randomUUID();
+      const optimisticUserMessage = buildOptimisticUserMessage(userText, stagedSnapshot);
+      optimisticUserMessageId = optimisticUserMessage.id;
+      assistantPlaceholderId = crypto.randomUUID();
+      appendMessage(optimisticUserMessage, messageList);
+      appendMessage(
+        {
+          id: assistantPlaceholderId,
+          role: 'assistant',
+          content: '',
+        },
+        messageList,
+      );
+
+      input.value = '';
+      input.style.height = 'auto';
+      clearStagedFiles(true);
+
+      activeStreamDrafts.set(streamRequestId, {
+        assistantMessageId: assistantPlaceholderId,
+        text: '',
+        thinkingSummary: '',
+      });
+
+      const assistantMessage = await sendMessage(
+        userText,
+        selectedModel,
+        selectedThinking,
+        uploadedAttachments,
+        streamRequestId,
+      );
+      activeStreamDrafts.delete(streamRequestId);
+      replaceMessageById(assistantPlaceholderId, assistantMessage, messageList);
       activeChatId = (await getActiveChatId()) ?? null;
       await refreshHistoryDropdown();
     } catch (error: unknown) {
+      if (streamRequestId) {
+        activeStreamDrafts.delete(streamRequestId);
+      }
+      if (assistantPlaceholderId) {
+        removeMessageById(assistantPlaceholderId, messageList);
+      }
+      if (optimisticUserMessageId) {
+        removeMessageById(optimisticUserMessageId, messageList);
+      }
       appendMessage(
         {
           id: crypto.randomUUID(),
@@ -741,6 +825,18 @@ function mountChatPanel(): void {
     }
 
     switch (request.type) {
+      case 'chat/stream-delta': {
+        const requestId = typeof request.requestId === 'string' ? request.requestId.trim() : '';
+        if (!requestId) {
+          break;
+        }
+
+        const textDelta = typeof request.textDelta === 'string' ? request.textDelta : undefined;
+        const thinkingDelta =
+          typeof request.thinkingDelta === 'string' ? request.thinkingDelta : undefined;
+        applyStreamDelta(requestId, textDelta, thinkingDelta);
+        break;
+      }
       case 'overlay/toggle':
         void togglePanel();
         break;

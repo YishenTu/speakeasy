@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
-import { appendMessage, renderAll, toErrorMessage } from '../../src/chatpanel/messages';
+import {
+  appendMessage,
+  removeMessageById,
+  renderAll,
+  replaceMessageById,
+  toErrorMessage,
+} from '../../src/chatpanel/messages';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
 
 describe('chatpanel messages', () => {
@@ -240,6 +246,55 @@ describe('chatpanel messages', () => {
     expect(revokeSpy).toHaveBeenCalledWith('blob:preview-image');
 
     revokeSpy.mockRestore();
+  });
+
+  it('renders assistant thinking disclosure expanded by default', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-thinking',
+        role: 'assistant',
+        content: 'Answer text',
+        thinkingSummary: 'Checked assumptions before answering.',
+      },
+      messageList,
+    );
+
+    const disclosure = messageList.querySelector('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.open).toBe(true);
+    expect(disclosure?.querySelector('summary')?.textContent).toBe('Thinking process');
+    expect(disclosure?.textContent).toContain('Checked assumptions before answering.');
+  });
+
+  it('replaces and removes messages by id for streaming placeholder updates', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    renderAll(
+      [
+        { id: 'user-1', role: 'user', content: 'Question' },
+        { id: 'assistant-1', role: 'assistant', content: 'Draft' },
+      ],
+      messageList,
+    );
+
+    const replaced = replaceMessageById(
+      'assistant-1',
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Final answer',
+        thinkingSummary: 'Summarized internal reasoning.',
+      },
+      messageList,
+    );
+    expect(replaced).toBe(true);
+    expect(messageList.textContent).toContain('Final answer');
+    expect(messageList.textContent).toContain('Thinking process');
+
+    const removed = removeMessageById('user-1', messageList);
+    expect(removed).toBe(true);
+    expect(messageList.textContent).not.toContain('Question');
   });
 
   it('falls back to a generic error message for non-Error values', () => {

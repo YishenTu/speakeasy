@@ -5,6 +5,7 @@ import type {
   ChatNewPayload,
   ChatSendPayload,
   ChatSessionSummary,
+  ChatStreamDeltaEvent,
   FileDataAttachmentPayload,
   OpenOptionsPayload,
   RuntimeRequest,
@@ -18,6 +19,7 @@ import {
 import { type ChatRepository, createChatRepository } from './chat-repository';
 import { bootstrapChatStorage } from './chat-storage-bootstrap';
 import {
+  type GeminiStreamDelta,
   completeAssistantTurn,
   generateSessionTitle,
   isInvalidPreviousInteractionIdError,
@@ -42,10 +44,15 @@ interface RuntimeDependencies {
     session: ChatSession,
     settings: GeminiSettings,
     thinkingLevel?: string,
+    onStreamDelta?: (delta: GeminiStreamDelta) => void,
   ) => Promise<GeminiContent>;
   generateSessionTitle: (apiKey: string, firstUserQuery: string) => Promise<string>;
   openOptionsPage: () => Promise<void>;
   now: () => Date;
+}
+
+interface RuntimeRequestContext {
+  sender?: chrome.runtime.MessageSender;
 }
 
 interface PendingSessionTitleGeneration {
@@ -67,12 +74,12 @@ const EXPIRED_INTERACTION_MESSAGE =
 export function registerBackgroundRuntimeHandlers(): void {
   const handleRuntimeRequest = createRuntimeRequestHandler();
 
-  chrome.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((request: unknown, sender, sendResponse) => {
     if (!isRuntimeRequest(request)) {
       return false;
     }
 
-    void handleRuntimeRequest(request)
+    void handleRuntimeRequest(request, { sender })
       .then((payload) => {
         const response: RuntimeResponse<typeof payload> = {
           ok: true,
@@ -94,7 +101,7 @@ export function registerBackgroundRuntimeHandlers(): void {
 
 export function createRuntimeRequestHandler(
   overrides: Partial<RuntimeDependencies> = {},
-): (request: RuntimeRequest) => Promise<RuntimePayload> {
+): (request: RuntimeRequest, context?: RuntimeRequestContext) => Promise<RuntimePayload> {
   const dependencies: RuntimeDependencies = {
     repository: createChatRepository(),
     bootstrapChatStorage,
@@ -125,7 +132,10 @@ export function createRuntimeRequestHandler(
     return task;
   };
 
-  return async (request: RuntimeRequest): Promise<RuntimePayload> => {
+  return async (
+    request: RuntimeRequest,
+    context?: RuntimeRequestContext,
+  ): Promise<RuntimePayload> => {
     await ready;
 
     switch (request.type) {
@@ -141,6 +151,8 @@ export function createRuntimeRequestHandler(
             request.chatId,
             request.model,
             request.thinkingLevel,
+            request.streamRequestId,
+            context?.sender,
             request.attachments,
             dependencies,
           );
@@ -227,6 +239,8 @@ async function handleSendMessage(
   chatId: string | undefined,
   model: string | undefined,
   thinkingLevel: string | undefined,
+  streamRequestId: string | undefined,
+  sender: chrome.runtime.MessageSender | undefined,
   attachments: FileDataAttachmentPayload[] | undefined,
   dependencies: RuntimeDependencies,
 ): Promise<SendMessageResult> {
@@ -266,12 +280,14 @@ async function handleSendMessage(
     parts: userParts,
   });
 
+  const streamDeltaEmitter = createStreamDeltaEmitter(streamRequestId, sender);
   let assistantContent: GeminiContent;
   try {
     assistantContent = await dependencies.completeAssistantTurn(
       workingSession,
       settings,
       thinkingLevel,
+      streamDeltaEmitter,
     );
   } catch (error: unknown) {
     if (isInvalidPreviousInteractionIdError(error)) {
@@ -399,6 +415,52 @@ function normalizeFileDataAttachments(
   }
 
   return normalized;
+}
+
+function createStreamDeltaEmitter(
+  streamRequestId: string | undefined,
+  sender: chrome.runtime.MessageSender | undefined,
+): ((delta: GeminiStreamDelta) => void) | undefined {
+  const requestId = typeof streamRequestId === 'string' ? streamRequestId.trim() : '';
+  if (!requestId) {
+    return undefined;
+  }
+
+  const tabId = sender?.tab?.id;
+  if (typeof tabId !== 'number') {
+    return undefined;
+  }
+
+  const frameId = typeof sender?.frameId === 'number' ? sender.frameId : undefined;
+  return (delta: GeminiStreamDelta) => {
+    const hasText = typeof delta.textDelta === 'string' && delta.textDelta.length > 0;
+    const hasThinking = typeof delta.thinkingDelta === 'string' && delta.thinkingDelta.length > 0;
+    if (!hasText && !hasThinking) {
+      return;
+    }
+
+    const payload: ChatStreamDeltaEvent = {
+      type: 'chat/stream-delta',
+      requestId,
+      ...(hasText ? { textDelta: delta.textDelta } : {}),
+      ...(hasThinking ? { thinkingDelta: delta.thinkingDelta } : {}),
+    };
+
+    try {
+      if (frameId !== undefined) {
+        chrome.tabs.sendMessage(tabId, payload, { frameId }, () => {
+          void chrome.runtime.lastError;
+        });
+        return;
+      }
+
+      chrome.tabs.sendMessage(tabId, payload, () => {
+        void chrome.runtime.lastError;
+      });
+    } catch {
+      // Best-effort stream updates should not fail the chat request lifecycle.
+    }
+  };
 }
 
 async function readGeminiSettings(): Promise<GeminiSettings> {

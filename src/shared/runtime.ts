@@ -14,6 +14,7 @@ export type RuntimeRequest =
       chatId?: string;
       model: string;
       thinkingLevel?: string;
+      streamRequestId?: string;
       attachments?: FileDataAttachmentPayload[];
     }
   | {
@@ -78,3 +79,12 @@ export interface ChatListPayload {
 export interface OpenOptionsPayload {
   opened: true;
 }
+
+export interface ChatStreamDeltaEvent {
+  type: 'chat/stream-delta';
+  requestId: string;
+  textDelta?: string;
+  thinkingDelta?: string;
+}
+
+export type RuntimePushEvent = ChatStreamDeltaEvent;

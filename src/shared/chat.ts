@@ -74,8 +74,10 @@ export async function sendMessage(
   model: string,
   thinkingLevel?: string,
   attachments?: FileDataAttachmentPayload[],
+  streamRequestId?: string,
 ): Promise<ChatMessage> {
   const normalizedInput = userInput.trim();
+  const normalizedStreamRequestId = streamRequestId?.trim();
   const normalizedAttachments = attachments?.filter(
     (attachment) => attachment.fileUri.trim().length > 0,
   );
@@ -92,6 +94,7 @@ export async function sendMessage(
     ...(normalizedAttachments && normalizedAttachments.length > 0
       ? { attachments: normalizedAttachments }
       : {}),
+    ...(normalizedStreamRequestId ? { streamRequestId: normalizedStreamRequestId } : {}),
     ...(chatId ? { chatId } : {}),
   });
 

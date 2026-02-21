@@ -805,6 +805,153 @@ describe('runtime chat storage handler', () => {
     });
   });
 
+  it('forwards streaming deltas to the originating tab frame when stream request id is provided', async () => {
+    repository.sessions.set('chat-stream', createSession('chat-stream'));
+    const sentEvents: Array<{
+      tabId: number;
+      payload: unknown;
+      options?: chrome.tabs.MessageSendOptions;
+    }> = [];
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        lastError: undefined,
+      },
+      tabs: {
+        sendMessage: (
+          tabId: number,
+          payload: unknown,
+          optionsOrCallback?: chrome.tabs.MessageSendOptions | ((response?: unknown) => void),
+          callback?: (response?: unknown) => void,
+        ) => {
+          const options = typeof optionsOrCallback === 'function' ? undefined : optionsOrCallback;
+          sentEvents.push({ tabId, payload, ...(options ? { options } : {}) });
+          if (typeof optionsOrCallback === 'function') {
+            optionsOrCallback();
+          } else {
+            callback?.();
+          }
+        },
+      },
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session, _settings, _thinkingLevel, onStreamDelta) => {
+          onStreamDelta?.({ textDelta: 'Draft' });
+          onStreamDelta?.({ thinkingDelta: 'Reasoning' });
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'Final answer' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      const payload = await handler(
+        {
+          type: 'chat/send',
+          chatId: 'chat-stream',
+          text: 'stream this',
+          model: 'gemini-3-flash-preview',
+          streamRequestId: 'stream-1',
+        },
+        {
+          sender: {
+            tab: { id: 321 } as chrome.tabs.Tab,
+            frameId: 7,
+          },
+        },
+      );
+
+      expect(payload).toMatchObject({
+        assistantMessage: {
+          content: 'Final answer',
+        },
+      });
+      expect(sentEvents).toEqual([
+        {
+          tabId: 321,
+          payload: {
+            type: 'chat/stream-delta',
+            requestId: 'stream-1',
+            textDelta: 'Draft',
+          },
+          options: { frameId: 7 },
+        },
+        {
+          tabId: 321,
+          payload: {
+            type: 'chat/stream-delta',
+            requestId: 'stream-1',
+            thinkingDelta: 'Reasoning',
+          },
+          options: { frameId: 7 },
+        },
+      ]);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    }
+  });
+
+  it('does not forward streaming deltas when sender tab context is unavailable', async () => {
+    repository.sessions.set(
+      'chat-stream-missing-sender',
+      createSession('chat-stream-missing-sender'),
+    );
+    let sendMessageCalls = 0;
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        lastError: undefined,
+      },
+      tabs: {
+        sendMessage: () => {
+          sendMessageCalls += 1;
+        },
+      },
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session, _settings, _thinkingLevel, onStreamDelta) => {
+          onStreamDelta?.({ textDelta: 'Draft' });
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'Done' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      await handler({
+        type: 'chat/send',
+        chatId: 'chat-stream-missing-sender',
+        text: 'stream this',
+        model: 'gemini-3-flash-preview',
+        streamRequestId: 'stream-2',
+      });
+
+      expect(sendMessageCalls).toBe(0);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    }
+  });
+
   it('surfaces options-page failures to callers', async () => {
     const handler = createRuntimeRequestHandler({
       repository,
