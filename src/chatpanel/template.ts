@@ -38,7 +38,7 @@ export function getChatPanelTemplate(): string {
 
       .top {
         padding: 14px 16px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: none;
         background: transparent;
         display: flex;
         align-items: center;
@@ -200,7 +200,8 @@ export function getChatPanelTemplate(): string {
       }
 
       .composer {
-        padding: 12px 14px;
+        padding: 0 14px;
+        margin-bottom: 8px;
         background: transparent;
       }
 
@@ -210,7 +211,7 @@ export function getChatPanelTemplate(): string {
         background: transparent;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 8px;
-        padding: 2px 4px;
+        padding: 0 4px;
         transition: border-color 150ms ease, background 150ms ease;
       }
 
@@ -223,21 +224,21 @@ export function getChatPanelTemplate(): string {
       .attach-btn {
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.58);
-        width: 32px;
-        min-width: 32px;
-        height: 32px;
-        border-radius: 6px;
+        color: rgba(255, 255, 255, 0.35);
+        padding: 0;
+        width: auto;
+        min-width: 0;
+        height: auto;
+        border-radius: 0;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        transition: color 120ms ease, background 120ms ease;
+        transition: color 120ms ease;
       }
 
       .attach-btn:hover {
         color: rgba(255, 255, 255, 0.95);
-        background: rgba(255, 255, 255, 0.1);
       }
 
       .attach-btn:disabled {
@@ -306,7 +307,7 @@ export function getChatPanelTemplate(): string {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 4px 8px 6px;
+        padding: 2px 8px 4px;
       }
 
       .input-toolbar .attach-btn {
@@ -320,26 +321,25 @@ export function getChatPanelTemplate(): string {
       .dropup-trigger {
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.5);
+        color: rgba(255, 255, 255, 0.35);
         font-family: inherit;
         font-size: 11px;
-        padding: 4px 18px 4px 6px;
+        padding: 0 14px 0 0;
         border-radius: 0;
         cursor: pointer;
         outline: none;
-        transition: color 120ms ease, background 120ms ease;
-        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.5)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        transition: color 120ms ease;
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.35)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
-        background-position: right 4px center;
+        background-position: right 0 center;
       }
 
       .dropup-trigger:hover,
       .dropup.open .dropup-trigger {
-        color: rgba(255, 255, 255, 0.9);
-        background-color: rgba(255, 255, 255, 0.08);
-        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.9)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        color: rgba(255, 255, 255, 0.95);
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.95)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
         background-repeat: no-repeat;
-        background-position: right 4px center;
+        background-position: right 0 center;
       }
 
       .dropup-menu {
