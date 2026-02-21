@@ -905,4 +905,29 @@ describe('completeAssistantTurn', () => {
 
     expect(isInvalidPreviousInteractionIdError(caught)).toBe(true);
   });
+
+  it('classifies previous interaction id failures from Gemini streaming error events', async () => {
+    enqueueGeminiSseEvents({
+      event_type: 'error',
+      error: {
+        message: 'Invalid previous_interaction_id: interaction not found.',
+      },
+    });
+
+    const settings = createSettingsForToolTests();
+    const session = createSession('continue', 'interaction-old');
+
+    let caught: unknown;
+    try {
+      await completeAssistantTurn(session, settings, undefined, () => {});
+    } catch (error: unknown) {
+      caught = error;
+    }
+
+    expect(fetchRequestBodies[0]).toMatchObject({
+      stream: true,
+      previous_interaction_id: 'interaction-old',
+    });
+    expect(isInvalidPreviousInteractionIdError(caught)).toBe(true);
+  });
 });

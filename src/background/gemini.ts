@@ -9,6 +9,8 @@ import { isRecord, toErrorMessage } from './utils';
 const MAX_GEMINI_CLIENT_CACHE_SIZE = 4;
 const SESSION_TITLE_MODEL = 'gemini-flash-lite-latest';
 const MAX_SESSION_TITLE_LENGTH = 60;
+const INVALID_PREVIOUS_INTERACTION_ID_ERROR_MESSAGE =
+  'Gemini rejected previous_interaction_id for this conversation.';
 
 type SDKCreateInteractionRequest = Parameters<GoogleGenAI['interactions']['create']>[0];
 
@@ -462,9 +464,23 @@ async function callGeminiInteractionStream(input: {
         break;
       }
       case 'error': {
-        const errorRecord = isRecord(rawEvent.error) ? rawEvent.error : null;
-        const message = errorRecord ? readStringField(errorRecord, 'message') : '';
-        throw new Error(message || 'Gemini streaming interaction failed.');
+        const rawError = rawEvent.error;
+        const errorRecord = isRecord(rawError) ? rawError : null;
+        const message =
+          typeof rawError === 'string'
+            ? rawError.trim()
+            : errorRecord
+              ? readStringField(errorRecord, 'message')
+              : '';
+        const streamError = new Error(message || 'Gemini streaming interaction failed.');
+        const classifiedError = asInvalidPreviousInteractionIdError(
+          errorRecord ?? (typeof rawError === 'string' ? rawError : rawEvent),
+          streamError,
+        );
+        if (classifiedError) {
+          throw classifiedError;
+        }
+        throw streamError;
       }
     }
   }
@@ -563,14 +579,26 @@ async function createInteraction(apiKey: string, request: unknown): Promise<unkn
       request as unknown as SDKCreateInteractionRequest,
     )) as unknown;
   } catch (error: unknown) {
-    if (isPreviousInteractionIdError(error)) {
-      throw new InvalidPreviousInteractionIdError(
-        'Gemini rejected previous_interaction_id for this conversation.',
-        error,
-      );
+    const classifiedError = asInvalidPreviousInteractionIdError(error);
+    if (classifiedError) {
+      throw classifiedError;
     }
     throw error;
   }
+}
+
+function asInvalidPreviousInteractionIdError(
+  error: unknown,
+  cause: unknown = error,
+): InvalidPreviousInteractionIdError | null {
+  if (!isPreviousInteractionIdError(error)) {
+    return null;
+  }
+
+  return new InvalidPreviousInteractionIdError(
+    INVALID_PREVIOUS_INTERACTION_ID_ERROR_MESSAGE,
+    cause,
+  );
 }
 
 function isPreviousInteractionIdError(error: unknown): boolean {

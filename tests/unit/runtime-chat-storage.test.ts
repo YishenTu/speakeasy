@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import type { ChatRepository } from '../../src/background/chat-repository';
-import { InvalidPreviousInteractionIdError } from '../../src/background/gemini';
+import {
+  InvalidPreviousInteractionIdError,
+  completeAssistantTurn,
+} from '../../src/background/gemini';
 import { createRuntimeRequestHandler } from '../../src/background/runtime';
 import type { ChatSession, GeminiContent } from '../../src/background/types';
 import type { RuntimeRequest } from '../../src/shared/runtime';
@@ -343,6 +346,72 @@ describe('runtime chat storage handler', () => {
     expect(resetSession?.lastInteractionId).toBeUndefined();
     expect(resetSession?.contents).toHaveLength(1);
     expect(repository.upsertCalls).toHaveLength(1);
+  });
+
+  it('resets continuation token when streamed Gemini errors report invalid previous interaction id', async () => {
+    const chained = createSession('chat-stream-expired');
+    chained.lastInteractionId = 'interaction-old';
+    repository.sessions.set(chained.id, chained);
+
+    const originalFetch = globalThis.fetch;
+    let capturedRequestBody: Record<string, unknown> | undefined;
+    const streamBody = [
+      `data: ${JSON.stringify({
+        event_type: 'error',
+        error: {
+          message: 'Invalid previous_interaction_id: interaction not found.',
+        },
+      })}\n\n`,
+      'data: [DONE]\n\n',
+    ].join('');
+    (globalThis as { fetch: typeof fetch }).fetch = (async (_input, init) => {
+      capturedRequestBody = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      return new Response(streamBody, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    }) as typeof fetch;
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn,
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      await expect(
+        handler(
+          {
+            type: 'chat/send',
+            chatId: chained.id,
+            text: 'retry',
+            model: 'gemini-3-flash-preview',
+            streamRequestId: 'stream-1',
+          },
+          {
+            sender: {
+              tab: { id: 321 } as chrome.tabs.Tab,
+              frameId: 7,
+            },
+          },
+        ),
+      ).rejects.toThrow(/resend your last message/i);
+
+      expect(capturedRequestBody).toMatchObject({
+        stream: true,
+        previous_interaction_id: 'interaction-old',
+      });
+      const resetSession = repository.sessions.get(chained.id);
+      expect(resetSession?.lastInteractionId).toBeUndefined();
+      expect(resetSession?.contents).toHaveLength(1);
+      expect(repository.upsertCalls).toHaveLength(1);
+    } finally {
+      (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
+    }
   });
 
   it('surfaces reset persistence failures separately from expired interaction errors', async () => {
