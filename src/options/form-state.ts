@@ -3,7 +3,7 @@ import type { OptionsDom } from './dom';
 
 export function applySettingsToForm(dom: OptionsDom, settings: GeminiSettings): void {
   dom.apiKeyInput.value = settings.apiKey;
-  dom.modelInput.value = settings.model;
+  dom.modelInput.value = settings.customModels[0] ?? '';
   dom.systemInstructionInput.value = settings.systemInstruction;
   dom.maxToolRoundTripsInput.value = String(settings.maxToolRoundTrips);
 
@@ -25,9 +25,11 @@ export function applySettingsToForm(dom: OptionsDom, settings: GeminiSettings): 
 }
 
 export function readFormState(dom: OptionsDom): Partial<GeminiSettings> {
+  const customModel = dom.modelInput.value.trim();
   return {
     apiKey: dom.apiKeyInput.value.trim(),
-    model: dom.modelInput.value.trim(),
+    model: customModel || 'gemini-3-flash-preview',
+    customModels: customModel ? [customModel] : [],
     systemInstruction: dom.systemInstructionInput.value.trim(),
     maxToolRoundTrips: Number(dom.maxToolRoundTripsInput.value),
     tools: {

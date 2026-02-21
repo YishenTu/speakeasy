@@ -96,7 +96,7 @@ afterEach(() => {
   (globalThis as { fetch: typeof fetch }).fetch = originalFetch;
 
   if (originalChrome === undefined) {
-    delete (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = undefined;
   } else {
     (globalThis as { chrome?: unknown }).chrome = originalChrome;
   }
@@ -373,9 +373,7 @@ describe('completeAssistantTurn', () => {
     const settings = createSettingsForToolTests();
     const session = createSession();
 
-    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(
-      /tools are disabled/i,
-    );
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/tools are disabled/i);
   });
 
   it('throws when Gemini returns no candidate content', async () => {
@@ -392,8 +390,6 @@ describe('completeAssistantTurn', () => {
     settings.maxToolRoundTrips = 0;
     const session = createSession();
 
-    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(
-      /round-trip limit/i,
-    );
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/round-trip limit/i);
   });
 });

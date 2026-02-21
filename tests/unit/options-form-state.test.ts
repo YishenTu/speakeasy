@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import { defaultGeminiSettings } from '../../src/shared/settings';
 import type { OptionsDom } from '../../src/options/dom';
 import { applySettingsToForm, readFormState } from '../../src/options/form-state';
+import { defaultGeminiSettings } from '../../src/shared/settings';
 
 function createInput(value = '', checked = false): HTMLInputElement {
   return { value, checked } as HTMLInputElement;
@@ -42,6 +42,7 @@ describe('options form state', () => {
     const settings = defaultGeminiSettings();
     settings.apiKey = 'api-key';
     settings.model = 'gemini-2.5-pro';
+    settings.customModels = ['gemini-2.5-pro'];
     settings.systemInstruction = 'Be direct.';
     settings.maxToolRoundTrips = 9;
     settings.tools.googleSearch = false;
@@ -116,6 +117,7 @@ describe('options form state', () => {
     expect(state).toEqual({
       apiKey: 'key-123',
       model: 'gemini-2.5-flash',
+      customModels: ['gemini-2.5-flash'],
       systemInstruction: 'Use tools when needed.',
       maxToolRoundTrips: 7,
       tools: {

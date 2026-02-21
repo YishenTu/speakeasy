@@ -1,4 +1,9 @@
 import { createNewChat, loadChatMessages, sendMessage } from '../shared/chat';
+import {
+  GEMINI_SETTINGS_STORAGE_KEY,
+  type GeminiSettings,
+  normalizeGeminiSettings,
+} from '../shared/settings';
 import { isRecord } from '../shared/utils';
 import { queryRequiredElement } from './dom';
 import { appendMessage, createWelcomeMessage, renderAll, toErrorMessage } from './messages';
@@ -75,6 +80,18 @@ function mountChatPanel(): void {
   const form = queryRequiredElement<HTMLFormElement>(shadowRoot, '#speakeasy-form');
   const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
+  const modelDropup = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-model-dropup');
+  const modelTrigger = queryRequiredElement<HTMLButtonElement>(modelDropup, '.dropup-trigger');
+  const modelMenu = queryRequiredElement<HTMLElement>(modelDropup, '.dropup-menu');
+  const thinkingDropup = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-thinking-dropup',
+  );
+  const thinkingTrigger = queryRequiredElement<HTMLButtonElement>(
+    thinkingDropup,
+    '.dropup-trigger',
+  );
+  const thinkingMenu = queryRequiredElement<HTMLElement>(thinkingDropup, '.dropup-menu');
   if (resizeHandles.length === 0) {
     throw new Error('Missing resize zones in chat panel template.');
   }
@@ -91,6 +108,144 @@ function mountChatPanel(): void {
         form.requestSubmit();
       }
     }
+  });
+
+  const MODEL_ALIASES: Record<string, string> = {
+    'gemini-3-flash-preview': 'Flash',
+    'gemini-3.1-pro-preview': 'Pro',
+  };
+  const BUILTIN_THINKING_LEVELS: Record<string, string[]> = {
+    'gemini-3-flash-preview': ['minimal', 'low', 'medium', 'high'],
+    'gemini-3.1-pro-preview': ['low', 'medium', 'high'],
+  };
+  const DEFAULT_THINKING_DEFAULTS: Record<string, string> = {
+    'gemini-3-flash-preview': 'minimal',
+    'gemini-3.1-pro-preview': 'high',
+  };
+  const DEFAULT_THINKING_LEVELS = ['low', 'medium', 'high'];
+  const THINKING_LABELS: Record<string, string> = {
+    high: 'High',
+    medium: 'Med',
+    low: 'Low',
+    minimal: 'Min',
+  };
+
+  function closeAllDropups(): void {
+    modelDropup.classList.remove('open');
+    thinkingDropup.classList.remove('open');
+  }
+
+  function selectDropupItem(
+    dropup: HTMLElement,
+    trigger: HTMLButtonElement,
+    value: string,
+    label: string,
+  ): void {
+    trigger.dataset.value = value;
+    trigger.textContent = label;
+    const menu = dropup.querySelector('.dropup-menu');
+    if (menu) {
+      for (const item of Array.from(menu.querySelectorAll('.dropup-item'))) {
+        item.setAttribute(
+          'aria-selected',
+          item.getAttribute('data-value') === value ? 'true' : 'false',
+        );
+      }
+    }
+  }
+
+  modelTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasOpen = modelDropup.classList.contains('open');
+    closeAllDropups();
+    if (!wasOpen) modelDropup.classList.add('open');
+  });
+
+  thinkingTrigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasOpen = thinkingDropup.classList.contains('open');
+    closeAllDropups();
+    if (!wasOpen) thinkingDropup.classList.add('open');
+  });
+
+  modelMenu.addEventListener('click', (e) => {
+    const item = (e.target as Element).closest('.dropup-item') as HTMLElement | null;
+    if (!item) return;
+    const value = item.dataset.value ?? '';
+    const label = item.textContent ?? value;
+    selectDropupItem(modelDropup, modelTrigger, value, label);
+    closeAllDropups();
+    updateThinkingOptions(value);
+  });
+
+  thinkingMenu.addEventListener('click', (e) => {
+    const item = (e.target as Element).closest('.dropup-item') as HTMLElement | null;
+    if (!item) return;
+    const value = item.dataset.value ?? '';
+    const label = item.textContent ?? value;
+    selectDropupItem(thinkingDropup, thinkingTrigger, value, label);
+    closeAllDropups();
+  });
+
+  shadowRoot.addEventListener('click', () => {
+    closeAllDropups();
+  });
+
+  function updateThinkingOptions(model: string): void {
+    const levels = BUILTIN_THINKING_LEVELS[model] ?? DEFAULT_THINKING_LEVELS;
+    const defaultLevel = DEFAULT_THINKING_DEFAULTS[model] ?? 'high';
+    thinkingMenu.innerHTML = '';
+    for (const level of [...levels].reverse()) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dropup-item';
+      btn.dataset.value = level;
+      btn.textContent = THINKING_LABELS[level] ?? level;
+      btn.setAttribute('aria-selected', level === defaultLevel ? 'true' : 'false');
+      thinkingMenu.appendChild(btn);
+    }
+    selectDropupItem(
+      thinkingDropup,
+      thinkingTrigger,
+      defaultLevel,
+      THINKING_LABELS[defaultLevel] ?? defaultLevel,
+    );
+  }
+
+  function applyCustomModels(customModels: string[]): void {
+    const existing = new Set<string>();
+    for (const item of Array.from(modelMenu.querySelectorAll('.dropup-item'))) {
+      if ((item as HTMLElement).dataset.custom) {
+        item.remove();
+      } else {
+        existing.add(item.getAttribute('data-value') ?? '');
+      }
+    }
+    for (const model of customModels) {
+      if (!existing.has(model)) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dropup-item';
+        btn.dataset.value = model;
+        btn.dataset.custom = '1';
+        btn.textContent = MODEL_ALIASES[model] ?? model;
+        modelMenu.appendChild(btn);
+      }
+    }
+  }
+
+  void chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY).then((stored) => {
+    const settings = normalizeGeminiSettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
+    applyCustomModels(settings.customModels);
+  });
+
+  chrome.storage.onChanged.addListener((changes) => {
+    const settingsChange = changes[GEMINI_SETTINGS_STORAGE_KEY];
+    if (!settingsChange) {
+      return;
+    }
+    const settings = normalizeGeminiSettings(settingsChange.newValue);
+    applyCustomModels(settings.customModels);
   });
 
   let isPanelOpen = false;
@@ -275,7 +430,9 @@ function mountChatPanel(): void {
     setBusyState(true);
 
     try {
-      const assistantMessage = await sendMessage(userText);
+      const selectedModel = modelTrigger.dataset.value ?? 'gemini-3-flash-preview';
+      const selectedThinking = thinkingTrigger.dataset.value ?? 'minimal';
+      const assistantMessage = await sendMessage(userText, selectedModel, selectedThinking);
       appendMessage(assistantMessage, messageList);
     } catch (error: unknown) {
       appendMessage(

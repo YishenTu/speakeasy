@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { createNewChat, loadChatMessages, sendMessage } from '../../src/shared/chat';
-import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
 import type { RuntimeRequest } from '../../src/shared/runtime';
+import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
 
 const storageState: Record<string, unknown> = {};
 const runtimeRequests: RuntimeRequest[] = [];
@@ -111,12 +111,18 @@ describe('shared chat client', () => {
       },
     });
 
-    const assistantMessage = await sendMessage('   hello there   ');
+    const assistantMessage = await sendMessage(
+      '   hello there   ',
+      'gemini-3-flash-preview',
+      'high',
+    );
 
     expect(runtimeRequests).toEqual([
       {
         type: 'chat/send',
         text: 'hello there',
+        model: 'gemini-3-flash-preview',
+        thinkingLevel: 'high',
         chatId: 'chat-10',
       },
     ]);
@@ -129,7 +135,7 @@ describe('shared chat client', () => {
   });
 
   it('rejects empty user messages before calling runtime', async () => {
-    await expect(sendMessage('   ')).rejects.toThrow(/empty message/i);
+    await expect(sendMessage('   ', 'gemini-3-flash-preview')).rejects.toThrow(/empty message/i);
     expect(runtimeRequests).toEqual([]);
   });
 

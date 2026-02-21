@@ -141,6 +141,33 @@ describe('Gemini request contract', () => {
     expect(missingLongitude.request.config?.toolConfig).toBeUndefined();
   });
 
+  it('includes thinkingConfig when thinkingLevel is provided', () => {
+    const settings = createBaseSettings();
+    const contents: GeminiContent[] = [{ role: 'user', parts: [{ text: 'think hard' }] }];
+
+    const plan = composeGeminiGenerateContentRequest({
+      settings,
+      contents,
+      functionDeclarations: FUNCTION_DECLARATIONS,
+      thinkingLevel: 'high',
+    });
+
+    expect(plan.request.config?.thinkingConfig).toEqual({ thinkingLevel: 'high' });
+  });
+
+  it('omits thinkingConfig when thinkingLevel is not provided', () => {
+    const settings = createBaseSettings();
+    const contents: GeminiContent[] = [{ role: 'user', parts: [{ text: 'hello' }] }];
+
+    const plan = composeGeminiGenerateContentRequest({
+      settings,
+      contents,
+      functionDeclarations: FUNCTION_DECLARATIONS,
+    });
+
+    expect(plan.request.config).toBeUndefined();
+  });
+
   it('preserves conversation content structure for thought-signature safety', () => {
     const settings = createBaseSettings();
     const contents: GeminiContent[] = [

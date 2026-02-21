@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { defaultGeminiSettings } from '../../src/shared/settings';
 import { validateSettings } from '../../src/options/validation';
+import { defaultGeminiSettings } from '../../src/shared/settings';
 
 function createValidSettings() {
   const settings = defaultGeminiSettings();
@@ -53,7 +53,9 @@ describe('validateSettings', () => {
 
     const mcp = createValidSettings();
     mcp.tools.mcpServers = true;
-    expect(validateSettings(mcp)).toBe('MCP servers are enabled but no MCP server URLs are configured.');
+    expect(validateSettings(mcp)).toBe(
+      'MCP servers are enabled but no MCP server URLs are configured.',
+    );
   });
 
   it('requires both or neither map coordinates', () => {

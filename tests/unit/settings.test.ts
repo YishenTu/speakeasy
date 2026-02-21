@@ -30,6 +30,7 @@ describe('defaultGeminiSettings', () => {
       mapsLatitude: null,
       mapsLongitude: null,
       computerUseExcludedActions: [],
+      customModels: [],
     });
 
     first.tools.googleSearch = false;

@@ -170,12 +170,95 @@ export function getChatPanelTemplate(): string {
 
       .composer-inner {
         display: flex;
-        align-items: flex-end;
+        flex-direction: column;
         background: transparent;
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 8px;
         padding: 2px 4px;
         transition: border-color 150ms ease, background 150ms ease;
+      }
+
+      .composer-row {
+        display: flex;
+        align-items: flex-end;
+      }
+
+      .input-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px 6px;
+      }
+
+      .dropup {
+        position: relative;
+      }
+
+      .dropup-trigger {
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.5);
+        font-family: inherit;
+        font-size: 11px;
+        padding: 4px 18px 4px 6px;
+        border-radius: 0;
+        cursor: pointer;
+        outline: none;
+        transition: color 120ms ease, background 120ms ease;
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.5)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 4px center;
+      }
+
+      .dropup-trigger:hover,
+      .dropup.open .dropup-trigger {
+        color: rgba(255, 255, 255, 0.9);
+        background-color: rgba(255, 255, 255, 0.08);
+        background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 5l4-4 4 4' stroke='rgba(255,255,255,0.9)' fill='none' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 4px center;
+      }
+
+      .dropup-menu {
+        display: none;
+        position: absolute;
+        bottom: calc(100% + 4px);
+        left: 0;
+        min-width: 100%;
+        background: rgba(24, 24, 24, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        padding: 2px 0;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        z-index: 10;
+        flex-direction: column;
+      }
+
+      .dropup.open .dropup-menu {
+        display: flex;
+      }
+
+      .dropup-item {
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.6);
+        font-family: inherit;
+        font-size: 11px;
+        padding: 5px 12px;
+        cursor: pointer;
+        text-align: left;
+        white-space: nowrap;
+        transition: color 80ms ease, background 80ms ease;
+      }
+
+      .dropup-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.95);
+      }
+
+      .dropup-item[aria-selected="true"] {
+        color: rgba(255, 255, 255, 0.95);
       }
 
       .composer-inner:focus-within {
@@ -319,7 +402,27 @@ export function getChatPanelTemplate(): string {
 
         <form id="speakeasy-form" class="composer" autocomplete="off">
           <div class="composer-inner">
-            <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3" required></textarea>
+            <div class="composer-row">
+              <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3" required></textarea>
+            </div>
+            <div class="input-toolbar">
+              <div class="dropup" id="speakeasy-model-dropup">
+                <button type="button" class="dropup-trigger" data-value="gemini-3-flash-preview">Flash</button>
+                <div class="dropup-menu">
+                  <button type="button" class="dropup-item" data-value="gemini-3-flash-preview" aria-selected="true">Flash</button>
+                  <button type="button" class="dropup-item" data-value="gemini-3.1-pro-preview">Pro</button>
+                </div>
+              </div>
+              <div class="dropup" id="speakeasy-thinking-dropup">
+                <button type="button" class="dropup-trigger" data-value="minimal">Min</button>
+                <div class="dropup-menu">
+                  <button type="button" class="dropup-item" data-value="high">High</button>
+                  <button type="button" class="dropup-item" data-value="medium">Med</button>
+                  <button type="button" class="dropup-item" data-value="low">Low</button>
+                  <button type="button" class="dropup-item" data-value="minimal" aria-selected="true">Min</button>
+                </div>
+              </div>
+            </div>
           </div>
         </form>
       </section>

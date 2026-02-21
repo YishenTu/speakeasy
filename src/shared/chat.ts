@@ -50,7 +50,11 @@ export async function createNewChat(): Promise<string> {
   return payload.chatId;
 }
 
-export async function sendMessage(userInput: string): Promise<ChatMessage> {
+export async function sendMessage(
+  userInput: string,
+  model: string,
+  thinkingLevel?: string,
+): Promise<ChatMessage> {
   const normalizedInput = userInput.trim();
   if (!normalizedInput) {
     throw new Error('Cannot send an empty message.');
@@ -60,6 +64,8 @@ export async function sendMessage(userInput: string): Promise<ChatMessage> {
   const payload = await sendRuntimeRequest<ChatSendPayload>({
     type: 'chat/send',
     text: normalizedInput,
+    model,
+    ...(thinkingLevel ? { thinkingLevel } : {}),
     ...(chatId ? { chatId } : {}),
   });
 

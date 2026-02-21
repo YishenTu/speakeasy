@@ -71,7 +71,7 @@ async function handleRuntimeRequest(
     case 'chat/new':
       return handleNewChat();
     case 'chat/send':
-      return handleSendMessage(request.text, request.chatId);
+      return handleSendMessage(request.text, request.chatId, request.model, request.thinkingLevel);
     case 'app/open-options':
       await openOptionsPage();
       return {
@@ -118,6 +118,8 @@ async function handleNewChat(): Promise<ChatNewPayload> {
 async function handleSendMessage(
   text: string,
   chatId: string | undefined,
+  model?: string,
+  thinkingLevel?: string,
 ): Promise<ChatSendPayload> {
   const normalizedText = text.trim();
   if (!normalizedText) {
@@ -129,6 +131,10 @@ async function handleSendMessage(
     throw new Error('Gemini API key is missing. Add it in Speakeasy Settings.');
   }
 
+  if (model) {
+    settings.model = model;
+  }
+
   const sessions = await readSessions();
   const session = getOrCreateSession(sessions, chatId);
   session.contents.push({
@@ -136,7 +142,7 @@ async function handleSendMessage(
     parts: [{ text: normalizedText }],
   });
 
-  const assistantContent = await completeAssistantTurn(session, settings);
+  const assistantContent = await completeAssistantTurn(session, settings, thinkingLevel);
   session.updatedAt = new Date().toISOString();
   sessions[session.id] = session;
   await writeSessions(sessions);

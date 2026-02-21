@@ -5,6 +5,8 @@ export type RuntimeRequest =
       type: 'chat/send';
       text: string;
       chatId?: string;
+      model: string;
+      thinkingLevel?: string;
     }
   | {
       type: 'chat/load';

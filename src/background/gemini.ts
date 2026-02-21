@@ -89,12 +89,15 @@ const LOCAL_FUNCTION_TOOLS: Record<string, LocalToolDefinition> = {
 export async function completeAssistantTurn(
   session: ChatSession,
   settings: GeminiSettings,
+  thinkingLevel?: string,
 ): Promise<GeminiContent> {
   const functionDeclarations = Object.values(LOCAL_FUNCTION_TOOLS).map((tool) => tool.declaration);
+  const thinkingOpts = thinkingLevel ? { thinkingLevel } : {};
   const { functionCallingEnabled } = composeGeminiGenerateContentRequest({
     settings,
     contents: session.contents,
     functionDeclarations,
+    ...thinkingOpts,
   });
   let latestAssistantContent: GeminiContent | null = null;
 
@@ -103,6 +106,7 @@ export async function completeAssistantTurn(
       settings,
       contents: session.contents,
       functionDeclarations,
+      ...thinkingOpts,
     });
 
     const candidateContent = extractFirstCandidateContent(response);
@@ -201,12 +205,15 @@ async function callGeminiGenerateContent(input: {
   settings: GeminiSettings;
   contents: GeminiContent[];
   functionDeclarations: Array<Record<string, unknown>>;
+  thinkingLevel?: string;
 }): Promise<GenerateContentResponse> {
   const client = getGeminiClient(input.settings.apiKey);
+  const thinkingOpts = input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {};
   const { request } = composeGeminiGenerateContentRequest({
     settings: input.settings,
     contents: input.contents,
     functionDeclarations: input.functionDeclarations,
+    ...thinkingOpts,
   });
 
   const response = (await client.models.generateContent(

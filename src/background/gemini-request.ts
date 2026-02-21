@@ -19,6 +19,9 @@ export interface GeminiGenerateContentRequest {
     };
     tools?: Array<Record<string, unknown>>;
     toolConfig?: Record<string, unknown>;
+    thinkingConfig?: {
+      thinkingLevel: string;
+    };
   };
 }
 
@@ -26,6 +29,7 @@ interface ComposeGeminiRequestInput {
   settings: GeminiSettings;
   contents: GeminiContent[];
   functionDeclarations: Array<Record<string, unknown>>;
+  thinkingLevel?: string;
 }
 
 export function composeGeminiGenerateContentRequest(
@@ -50,6 +54,10 @@ export function composeGeminiGenerateContentRequest(
 
   if (selection.toolConfig) {
     config.toolConfig = selection.toolConfig;
+  }
+
+  if (input.thinkingLevel) {
+    config.thinkingConfig = { thinkingLevel: input.thinkingLevel };
   }
 
   if (!isObjectEmpty(config)) {

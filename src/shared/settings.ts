@@ -20,6 +20,7 @@ export interface GeminiSettings {
   mapsLatitude: number | null;
   mapsLongitude: number | null;
   computerUseExcludedActions: string[];
+  customModels: string[];
 }
 
 export const GEMINI_SETTINGS_STORAGE_KEY = 'geminiSettings';
@@ -45,6 +46,7 @@ const DEFAULT_SETTINGS: GeminiSettings = {
   mapsLatitude: null,
   mapsLongitude: null,
   computerUseExcludedActions: [],
+  customModels: [],
 };
 
 function toStringOrEmpty(value: unknown): string {
@@ -150,6 +152,7 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
     mapsLatitude: toNullableNumber(settings.mapsLatitude),
     mapsLongitude: toNullableNumber(settings.mapsLongitude),
     computerUseExcludedActions: sanitizeStringList(settings.computerUseExcludedActions),
+    customModels: sanitizeStringList(settings.customModels),
   };
 }
 
