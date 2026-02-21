@@ -19,19 +19,14 @@ const iconFiles = [
   'icon-128.png',
 ];
 
-async function cleanDist(): Promise<void> {
-  await rm(distDir, { recursive: true, force: true });
-  await mkdir(distDir, { recursive: true });
-}
-
-async function buildTypeScript(): Promise<void> {
+async function buildTypeScript(outDir: string): Promise<void> {
   const result = await Bun.build({
     entrypoints: [
       join(rootDir, 'src/background/background.ts'),
       join(rootDir, 'src/chatpanel/chatpanel.ts'),
       join(rootDir, 'src/options/options.ts'),
     ],
-    outdir: distDir,
+    outdir: outDir,
     naming: '[name].[ext]',
     target: 'browser',
     format: 'esm',
@@ -50,31 +45,30 @@ async function buildTypeScript(): Promise<void> {
   throw new Error('TypeScript build failed.');
 }
 
-async function buildTailwind(): Promise<void> {
-  await $`bunx tailwindcss -c ./tailwind.config.js -i ./src/styles/tailwind.css -o ./dist/ui.css --minify`;
+async function buildTailwind(outDir: string): Promise<void> {
+  await $`bunx tailwindcss -c ./tailwind.config.js -i ./src/styles/tailwind.css -o ${join(outDir, 'ui.css')} --minify`;
 }
 
-async function copyStaticFiles(): Promise<void> {
-  const iconsDistDir = join(distDir, 'icons');
+async function copyStaticFiles(outDir: string): Promise<void> {
+  const iconsDistDir = join(outDir, 'icons');
   await mkdir(iconsDistDir, { recursive: true });
   await Promise.all([
     ...staticFileCopies.map(([sourcePath, outputName]) =>
-      cp(join(rootDir, sourcePath), join(distDir, outputName)),
+      cp(join(rootDir, sourcePath), join(outDir, outputName)),
     ),
-    ...iconFiles.map((file) =>
-      cp(join(rootDir, iconDir, file), join(iconsDistDir, file)),
-    ),
+    ...iconFiles.map((file) => cp(join(rootDir, iconDir, file), join(iconsDistDir, file))),
   ]);
 }
 
-export async function buildExtension(options?: { clean?: boolean }): Promise<void> {
-  const shouldClean = options?.clean ?? true;
-  if (shouldClean) {
-    await cleanDist();
-  }
+async function buildArtifacts(outDir: string): Promise<void> {
+  await Promise.all([buildTypeScript(outDir), buildTailwind(outDir)]);
+  await copyStaticFiles(outDir);
+}
 
-  await Promise.all([buildTypeScript(), buildTailwind()]);
-  await copyStaticFiles();
+export async function buildExtension(): Promise<void> {
+  await rm(distDir, { recursive: true, force: true });
+  await mkdir(distDir, { recursive: true });
+  await buildArtifacts(distDir);
   console.log('Build complete: dist/ is ready to load as an unpacked extension.');
 }
 

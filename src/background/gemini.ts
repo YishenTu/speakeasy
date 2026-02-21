@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import type { GeminiSettings } from '../shared/settings';
+import { composeGeminiGenerateContentRequest } from './gemini-request';
 import type {
   ChatSession,
   GeminiContent,
@@ -7,12 +8,11 @@ import type {
   GeminiPart,
   GenerateContentResponse,
 } from './types';
-import { isObjectEmpty, isRecord, toErrorMessage } from './utils';
+import { isRecord, toErrorMessage } from './utils';
 
 const MAX_GEMINI_CLIENT_CACHE_SIZE = 4;
 
 type SDKGenerateContentRequest = Parameters<GoogleGenAI['models']['generateContent']>[0];
-type SDKGenerateContentConfig = NonNullable<SDKGenerateContentRequest['config']>;
 
 interface LocalToolDefinition {
   declaration: Record<string, unknown>;
@@ -90,24 +90,20 @@ export async function completeAssistantTurn(
   session: ChatSession,
   settings: GeminiSettings,
 ): Promise<GeminiContent> {
-  const toolSelection = buildToolSelection(settings);
+  const functionDeclarations = Object.values(LOCAL_FUNCTION_TOOLS).map((tool) => tool.declaration);
+  const { functionCallingEnabled } = composeGeminiGenerateContentRequest({
+    settings,
+    contents: session.contents,
+    functionDeclarations,
+  });
   let latestAssistantContent: GeminiContent | null = null;
 
   for (let roundTrip = 0; roundTrip < settings.maxToolRoundTrips; roundTrip += 1) {
-    const response = await callGeminiGenerateContent(
-      toolSelection.toolConfig
-        ? {
-            settings,
-            contents: session.contents,
-            tools: toolSelection.tools,
-            toolConfig: toolSelection.toolConfig,
-          }
-        : {
-            settings,
-            contents: session.contents,
-            tools: toolSelection.tools,
-          },
-    );
+    const response = await callGeminiGenerateContent({
+      settings,
+      contents: session.contents,
+      functionDeclarations,
+    });
 
     const candidateContent = extractFirstCandidateContent(response);
     session.contents.push(candidateContent);
@@ -118,7 +114,7 @@ export async function completeAssistantTurn(
       return candidateContent;
     }
 
-    if (!toolSelection.functionCallingEnabled) {
+    if (!functionCallingEnabled) {
       throw new Error('Gemini requested function calls, but function-calling tools are disabled.');
     }
 
@@ -171,11 +167,11 @@ export function renderContentForChat(content: GeminiContent): string {
       continue;
     }
 
-    const codeExecutionResult = isRecord(part.codeExecutionResult)
-      ? part.codeExecutionResult
-      : isRecord(part.code_execution_result)
-        ? part.code_execution_result
-        : null;
+    const codeExecutionResult = readPartRecord(
+      part,
+      'codeExecutionResult',
+      'code_execution_result',
+    );
     if (codeExecutionResult) {
       const output =
         typeof codeExecutionResult.output === 'string' ? codeExecutionResult.output.trim() : '';
@@ -185,11 +181,7 @@ export function renderContentForChat(content: GeminiContent): string {
       continue;
     }
 
-    const executableCode = isRecord(part.executableCode)
-      ? part.executableCode
-      : isRecord(part.executable_code)
-        ? part.executable_code
-        : null;
+    const executableCode = readPartRecord(part, 'executableCode', 'executable_code');
     if (executableCode) {
       const code = typeof executableCode.code === 'string' ? executableCode.code.trim() : '';
       if (code) {
@@ -205,159 +197,21 @@ export function renderContentForChat(content: GeminiContent): string {
   return blocks.join('\n\n');
 }
 
-function buildToolSelection(settings: GeminiSettings): {
-  tools: Array<Record<string, unknown>>;
-  toolConfig?: Record<string, unknown>;
-  functionCallingEnabled: boolean;
-} {
-  const nativeToolFlags = {
-    googleSearch: settings.tools.googleSearch,
-    googleMaps: settings.tools.googleMaps,
-    codeExecution: settings.tools.codeExecution,
-    urlContext: settings.tools.urlContext,
-    fileSearch: settings.tools.fileSearch,
-    mcpServers: settings.tools.mcpServers,
-    computerUse: settings.tools.computerUse,
-  };
-
-  const nativeToolCount = Object.values(nativeToolFlags).filter(Boolean).length;
-  if (settings.tools.functionCalling && nativeToolCount > 0) {
-    throw new Error(
-      'Native Gemini tools and function calling cannot be enabled together in generateContent. Disable one set in Settings.',
-    );
-  }
-
-  if (settings.tools.fileSearch && settings.fileSearchStoreNames.length === 0) {
-    throw new Error('File Search is enabled but no file store names were configured.');
-  }
-
-  if (settings.tools.mcpServers && settings.mcpServerUrls.length === 0) {
-    throw new Error('MCP servers are enabled but no MCP server URLs were configured.');
-  }
-
-  if (settings.tools.computerUse) {
-    throw new Error(
-      'Computer Use requires a dedicated action/screenshot loop and is not yet wired in this extension backend.',
-    );
-  }
-
-  const tools: Array<Record<string, unknown>> = [];
-
-  if (settings.tools.functionCalling) {
-    tools.push({
-      functionDeclarations: Object.values(LOCAL_FUNCTION_TOOLS).map((tool) => tool.declaration),
-    });
-  }
-
-  if (settings.tools.googleSearch) {
-    tools.push({ googleSearch: {} });
-  }
-
-  if (settings.tools.googleMaps) {
-    tools.push({ googleMaps: {} });
-  }
-
-  if (settings.tools.codeExecution) {
-    tools.push({ codeExecution: {} });
-  }
-
-  if (settings.tools.urlContext) {
-    tools.push({ urlContext: {} });
-  }
-
-  if (settings.tools.fileSearch) {
-    tools.push({
-      fileSearch: {
-        fileSearchStoreNames: settings.fileSearchStoreNames,
-      },
-    });
-  }
-
-  if (settings.tools.mcpServers) {
-    tools.push({
-      mcpServers: settings.mcpServerUrls.map((url, index) => ({
-        name: `mcp_server_${index + 1}`,
-        streamableHttpTransport: {
-          url,
-        },
-      })),
-    });
-  }
-
-  let toolConfig: Record<string, unknown> | undefined;
-
-  if (settings.tools.functionCalling) {
-    toolConfig = {
-      functionCallingConfig: {
-        mode: 'AUTO',
-      },
-    };
-  }
-
-  if (
-    settings.tools.googleMaps &&
-    settings.mapsLatitude !== null &&
-    settings.mapsLongitude !== null
-  ) {
-    const nextToolConfig = toolConfig ?? {};
-    nextToolConfig.retrievalConfig = {
-      latLng: {
-        latitude: settings.mapsLatitude,
-        longitude: settings.mapsLongitude,
-      },
-    };
-    toolConfig = nextToolConfig;
-  }
-
-  if (toolConfig) {
-    return {
-      tools,
-      toolConfig,
-      functionCallingEnabled: settings.tools.functionCalling,
-    };
-  }
-
-  return {
-    tools,
-    functionCallingEnabled: settings.tools.functionCalling,
-  };
-}
-
 async function callGeminiGenerateContent(input: {
   settings: GeminiSettings;
   contents: GeminiContent[];
-  tools: Array<Record<string, unknown>>;
-  toolConfig?: Record<string, unknown>;
+  functionDeclarations: Array<Record<string, unknown>>;
 }): Promise<GenerateContentResponse> {
   const client = getGeminiClient(input.settings.apiKey);
+  const { request } = composeGeminiGenerateContentRequest({
+    settings: input.settings,
+    contents: input.contents,
+    functionDeclarations: input.functionDeclarations,
+  });
 
-  const config: SDKGenerateContentConfig = {};
-  if (input.settings.systemInstruction) {
-    config.systemInstruction = {
-      parts: [{ text: input.settings.systemInstruction }],
-    };
-  }
-
-  if (input.tools.length > 0) {
-    config.tools = input.tools as unknown as NonNullable<SDKGenerateContentConfig['tools']>;
-  }
-
-  if (input.toolConfig) {
-    config.toolConfig = input.toolConfig as unknown as NonNullable<
-      SDKGenerateContentConfig['toolConfig']
-    >;
-  }
-
-  const request: SDKGenerateContentRequest = {
-    model: input.settings.model,
-    contents: input.contents as unknown as SDKGenerateContentRequest['contents'],
-  };
-
-  if (!isObjectEmpty(config)) {
-    request.config = config;
-  }
-
-  const response = (await client.models.generateContent(request)) as unknown;
+  const response = (await client.models.generateContent(
+    request as unknown as SDKGenerateContentRequest,
+  )) as unknown;
   if (!isRecord(response)) {
     throw new Error('Gemini response payload was not a JSON object.');
   }
@@ -375,20 +229,11 @@ function extractFirstCandidateContent(response: GenerateContentResponse): Gemini
 }
 
 function extractFunctionCalls(parts: GeminiPart[]): GeminiFunctionCall[] {
-  const calls: GeminiFunctionCall[] = [];
-
-  for (const part of parts) {
-    const functionCall = parseFunctionCall(part);
-    if (functionCall) {
-      calls.push(functionCall);
-    }
-  }
-
-  return calls;
+  return parts.map(parseFunctionCall).filter((call): call is GeminiFunctionCall => call !== null);
 }
 
 function parseFunctionCall(part: GeminiPart): GeminiFunctionCall | null {
-  const rawFunctionCall = readFunctionCallObject(part);
+  const rawFunctionCall = readPartRecord(part, 'functionCall', 'function_call');
   if (!rawFunctionCall) {
     return null;
   }
@@ -407,17 +252,17 @@ function parseFunctionCall(part: GeminiPart): GeminiFunctionCall | null {
   return { name, args };
 }
 
-function readFunctionCallObject(part: GeminiPart): Record<string, unknown> | null {
-  const camel = part.functionCall;
-  if (isRecord(camel)) {
-    return camel;
+function readPartRecord(
+  part: GeminiPart,
+  camelKey: string,
+  snakeKey: string,
+): Record<string, unknown> | null {
+  if (isRecord(part[camelKey])) {
+    return part[camelKey] as Record<string, unknown>;
   }
-
-  const snake = part.function_call;
-  if (isRecord(snake)) {
-    return snake;
+  if (isRecord(part[snakeKey])) {
+    return part[snakeKey] as Record<string, unknown>;
   }
-
   return null;
 }
 
@@ -443,56 +288,38 @@ function normalizeFunctionCallArgs(value: unknown): Record<string, unknown> {
 async function executeFunctionCalls(functionCalls: GeminiFunctionCall[]): Promise<GeminiPart[]> {
   const responseParts: GeminiPart[] = [];
 
-  for (const functionCall of functionCalls) {
-    const tool = LOCAL_FUNCTION_TOOLS[functionCall.name];
+  for (const call of functionCalls) {
+    const tool = LOCAL_FUNCTION_TOOLS[call.name];
     if (!tool) {
-      const functionResponse = {
-        name: functionCall.name,
-        response: {
-          error: `Unknown function: ${functionCall.name}`,
-        },
-      } as Record<string, unknown>;
-      if (functionCall.id) {
-        functionResponse.id = functionCall.id;
-      }
-
-      responseParts.push({
-        functionResponse,
-      });
+      responseParts.push(
+        buildFunctionResponsePart(call, { error: `Unknown function: ${call.name}` }),
+      );
       continue;
     }
 
     try {
-      const toolResult = await tool.execute(functionCall.args);
-      const functionResponse = {
-        name: functionCall.name,
-        response: toolResult,
-      } as Record<string, unknown>;
-      if (functionCall.id) {
-        functionResponse.id = functionCall.id;
-      }
-
-      responseParts.push({
-        functionResponse,
-      });
+      const toolResult = await tool.execute(call.args);
+      responseParts.push(buildFunctionResponsePart(call, toolResult));
     } catch (error: unknown) {
-      const functionResponse = {
-        name: functionCall.name,
-        response: {
-          error: toErrorMessage(error),
-        },
-      } as Record<string, unknown>;
-      if (functionCall.id) {
-        functionResponse.id = functionCall.id;
-      }
-
-      responseParts.push({
-        functionResponse,
-      });
+      responseParts.push(buildFunctionResponsePart(call, { error: toErrorMessage(error) }));
     }
   }
 
   return responseParts;
+}
+
+function buildFunctionResponsePart(
+  call: GeminiFunctionCall,
+  response: Record<string, unknown>,
+): GeminiPart {
+  const functionResponse: Record<string, unknown> = {
+    name: call.name,
+    response,
+  };
+  if (call.id) {
+    functionResponse.id = call.id;
+  }
+  return { functionResponse };
 }
 
 function getGeminiClient(apiKey: string): GoogleGenAI {

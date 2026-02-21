@@ -24,23 +24,14 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "chatpanel.js"
-      ],
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["chatpanel.js"],
       "run_at": "document_idle"
     }
   ],
   "options_page": "options.html",
-  "permissions": [
-    "storage"
-  ],
-  "host_permissions": [
-    "https://generativelanguage.googleapis.com/*"
-  ],
+  "permissions": ["storage"],
+  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
   "commands": {
     "_execute_action": {
       "suggested_key": {

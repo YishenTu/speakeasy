@@ -33,9 +33,10 @@ async function sendRuntimeRequest<TPayload>(request: RuntimeRequest): Promise<TP
 
 export async function loadChatMessages(): Promise<ChatLoadPayload> {
   const chatId = await readActiveChatId();
-  const payload = await sendRuntimeRequest<ChatLoadPayload>(
-    chatId ? { type: 'chat/load', chatId } : { type: 'chat/load' },
-  );
+  const payload = await sendRuntimeRequest<ChatLoadPayload>({
+    type: 'chat/load',
+    ...(chatId ? { chatId } : {}),
+  });
   if (payload.chatId) {
     await writeActiveChatId(payload.chatId);
   }
@@ -56,18 +57,11 @@ export async function sendMessage(userInput: string): Promise<ChatMessage> {
   }
 
   const chatId = await readActiveChatId();
-  const payload = await sendRuntimeRequest<ChatSendPayload>(
-    chatId
-      ? {
-          type: 'chat/send',
-          text: normalizedInput,
-          chatId,
-        }
-      : {
-          type: 'chat/send',
-          text: normalizedInput,
-        },
-  );
+  const payload = await sendRuntimeRequest<ChatSendPayload>({
+    type: 'chat/send',
+    text: normalizedInput,
+    ...(chatId ? { chatId } : {}),
+  });
 
   await writeActiveChatId(payload.chatId);
   return payload.assistantMessage;

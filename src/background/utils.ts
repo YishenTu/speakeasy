@@ -1,6 +1,4 @@
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
+export { isRecord } from '../shared/utils';
 
 export function isObjectEmpty(value: object): boolean {
   return Object.keys(value).length === 0;

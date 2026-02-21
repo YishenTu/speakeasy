@@ -73,7 +73,7 @@ async function runBuild(reason: string): Promise<void> {
   console.log(`[dev] Rebuilding (${reason})...`);
 
   try {
-    await buildExtension({ clean: true });
+    await buildExtension();
     const elapsedMs = Date.now() - startedAt;
     console.log(`[dev] Build succeeded in ${elapsedMs}ms.`);
   } catch (error: unknown) {

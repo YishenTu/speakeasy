@@ -1,5 +1,6 @@
 import { type ChatMessage, createNewChat, loadChatMessages, sendMessage } from '../shared/chat';
-import { isRecord, queryRequiredElement } from './dom';
+import { isRecord } from '../shared/utils';
+import { queryRequiredElement } from './dom';
 import { appendMessage, createWelcomeMessage, renderAll, toErrorMessage } from './messages';
 import { requestOpenSettings } from './runtime';
 import { getChatPanelTemplate } from './template';
@@ -27,8 +28,22 @@ function mountChatPanel(): void {
   const settingsButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-settings');
   const newChatButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-new-chat');
   const form = queryRequiredElement<HTMLFormElement>(shadowRoot, '#speakeasy-form');
-  const input = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-input');
+  const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
+
+  input.addEventListener('input', () => {
+    input.style.height = 'auto';
+    input.style.height = `${input.scrollHeight}px`;
+  });
+
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      if (!isBusy && input.value.trim()) {
+        form.requestSubmit();
+      }
+    }
+  });
 
   let isPanelOpen = false;
   let isBusy = false;
@@ -88,6 +103,7 @@ function mountChatPanel(): void {
     );
 
     input.value = '';
+    input.style.height = 'auto';
     setBusyState(true);
 
     try {
@@ -113,18 +129,16 @@ function mountChatPanel(): void {
       return;
     }
 
-    if (request.type === 'overlay/toggle') {
-      void togglePanel();
-      return;
-    }
-
-    if (request.type === 'overlay/open') {
-      void openPanel();
-      return;
-    }
-
-    if (request.type === 'overlay/close') {
-      closePanel();
+    switch (request.type) {
+      case 'overlay/toggle':
+        void togglePanel();
+        break;
+      case 'overlay/open':
+        void openPanel();
+        break;
+      case 'overlay/close':
+        closePanel();
+        break;
     }
   });
 

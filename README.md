@@ -45,13 +45,34 @@ bun run deps:check
 bun run lint
 bun run typecheck
 bun run build
-bun run test:gemini
+bun run test:unit
+bun run test:contract
+bun run verify
+bun run test:gemini:canary
 ```
 
 `bun run dev` watches source files and rebuilds `dist/` automatically.
 `bun run deps:check` enforces module boundaries and blocks circular imports.
 `bun run build` outputs a complete unpacked extension in `dist/`.
-`bun run test:gemini` verifies request formats against Gemini using `gemini-3-flash-preview`.
+`bun run test:unit` runs deterministic unit tests from `tests/unit`.
+`bun run test:contract` runs deterministic request-shape contract tests from `tests/contract`.
+`bun run verify` is the canonical local/CI gate:
+`deps:check -> lint -> typecheck -> build -> test:unit -> test:contract`.
+`bun run test:gemini:canary` runs the live Gemini API canary using `gemini-3-flash-preview`.
+
+## CI policy
+
+- Pull requests are merge-blocked by the required `quality-gate` check.
+- `quality-gate` runs `bun run verify` and never performs live Gemini API calls.
+- Live Gemini validation is isolated to the `gemini-canary` workflow on `main` only.
+- `gemini-canary` runs daily (UTC) and supports manual `workflow_dispatch`.
+- `gemini-canary` is informational and is not a required PR status check.
+
+## Testing policy
+
+- Unit and contract tests must stay deterministic and offline.
+- External network/API calls are disallowed in PR CI and local deterministic suites.
+- The only allowed live Gemini check is `test:gemini:canary` in the canary workflow.
 
 ## Dependency direction
 

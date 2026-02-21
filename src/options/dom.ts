@@ -48,25 +48,18 @@ export function getOptionsDom(): OptionsDom {
   };
 }
 
-export function setStatus(
-  statusNode: HTMLElement,
-  message: string,
-  tone: 'success' | 'error' | 'info',
-): void {
+type StatusTone = 'success' | 'error' | 'info';
+
+const TONE_CLASSES: Record<StatusTone, string> = {
+  success: 'text-emerald-300',
+  error: 'text-rose-300',
+  info: 'text-slate-300',
+};
+
+export function setStatus(statusNode: HTMLElement, message: string, tone: StatusTone): void {
   statusNode.textContent = message;
   statusNode.classList.remove('text-slate-300', 'text-emerald-300', 'text-rose-300');
-
-  if (tone === 'success') {
-    statusNode.classList.add('text-emerald-300');
-    return;
-  }
-
-  if (tone === 'error') {
-    statusNode.classList.add('text-rose-300');
-    return;
-  }
-
-  statusNode.classList.add('text-slate-300');
+  statusNode.classList.add(TONE_CLASSES[tone]);
 }
 
 function queryRequiredElement<TElement extends Element>(selector: string): TElement {

@@ -18,7 +18,7 @@ export function getChatPanelTemplate(): string {
         width: min(390px, calc(100vw - 24px));
         height: min(620px, calc(100vh - 96px));
         margin-top: 10px;
-        border-radius: 0;
+        border-radius: 8px;
         overflow: hidden;
         display: grid;
         grid-template-rows: auto minmax(0, 1fr) auto;
@@ -125,14 +125,6 @@ export function getChatPanelTemplate(): string {
         align-items: flex-start;
       }
 
-      .role-label {
-        font-size: 10px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.3);
-        margin: 0 4px;
-      }
-
       .bubble {
         max-width: 85%;
         margin: 0;
@@ -146,27 +138,30 @@ export function getChatPanelTemplate(): string {
       .bubble-user {
         background: rgba(255, 255, 255, 0.12);
         color: rgba(255, 255, 255, 0.95);
+        border-radius: 8px;
       }
 
       .bubble-assistant {
+        width: calc(100% + 28px);
+        max-width: calc(100% + 28px);
+        box-sizing: border-box;
         background: transparent;
         color: rgba(255, 255, 255, 0.85);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        margin: 0 -14px;
       }
 
       .composer {
         padding: 12px 14px;
-        border-top: 1px solid rgba(255, 255, 255, 0.06);
         background: transparent;
       }
 
       .composer-inner {
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         background: rgba(0, 0, 0, 0.2);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 0;
-        padding: 4px 6px;
+        border-radius: 8px;
+        padding: 2px 4px;
         transition: border-color 150ms ease, background 150ms ease;
       }
 
@@ -186,8 +181,28 @@ export function getChatPanelTemplate(): string {
         border: none;
         background: transparent;
         color: rgba(255, 255, 255, 0.95);
-        padding: 8px 10px;
+        padding: 10px 12px;
         font-size: 13px;
+        resize: none;
+        font-family: inherit;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .input::-webkit-scrollbar {
+        width: 8px;
+        background: transparent;
+      }
+
+      .input::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 4px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .input::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.25);
       }
 
       .input::placeholder {
@@ -197,38 +212,6 @@ export function getChatPanelTemplate(): string {
       .input:focus {
         outline: none;
       }
-
-      .send {
-        flex-shrink: 0;
-        border: 0;
-        border-radius: 0;
-        padding: 6px 10px;
-        margin-left: 4px;
-        font-size: 16px;
-        line-height: 1;
-        color: rgba(255, 255, 255, 0.5);
-        cursor: pointer;
-        background: transparent;
-        transition: color 150ms ease, transform 100ms ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .send:hover {
-        color: rgba(255, 255, 255, 0.95);
-      }
-      
-      .send:active {
-        transform: scale(0.95);
-      }
-
-      .send:disabled {
-        opacity: 0.4;
-        cursor: not-allowed;
-        color: rgba(255, 255, 255, 0.3);
-      }
-
 
       @media (max-width: 620px) {
         .shell {
@@ -262,8 +245,7 @@ export function getChatPanelTemplate(): string {
 
         <form id="speakeasy-form" class="composer" autocomplete="off">
           <div class="composer-inner">
-            <input id="speakeasy-input" class="input" type="text" placeholder="Ask anything..." required />
-            <button class="send" type="submit" aria-label="Send">↑</button>
+            <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3" required></textarea>
           </div>
         </form>
       </section>

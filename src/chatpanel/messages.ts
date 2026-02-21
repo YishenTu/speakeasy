@@ -34,16 +34,13 @@ export function toErrorMessage(error: unknown): string {
 
 function createMessageNode(message: ChatMessage): HTMLLIElement {
   const item = document.createElement('li');
-  const label = document.createElement('span');
   const bubble = document.createElement('p');
 
   item.className = message.role === 'user' ? 'row row-user' : 'row row-assistant';
-  label.className = 'role-label';
-  label.textContent = message.role === 'user' ? 'You' : 'Speakeasy';
 
   bubble.className = message.role === 'user' ? 'bubble bubble-user' : 'bubble bubble-assistant';
   bubble.textContent = message.content;
 
-  item.append(label, bubble);
+  item.append(bubble);
   return item;
 }
