@@ -373,6 +373,84 @@ describe('chatpanel messages', () => {
     expect(messageList.textContent).not.toContain('Thinking...');
   });
 
+  it('renders an assistant stats disclosure with token and timing breakdown', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-stats',
+        role: 'assistant',
+        content: 'Final response',
+        stats: {
+          requestDurationMs: 1300,
+          timeToFirstTokenMs: 240,
+          outputTokens: 120,
+          inputTokens: 42,
+          thoughtTokens: 55,
+          toolUseTokens: 8,
+          cachedTokens: 0,
+          totalTokens: 225,
+          outputTokensPerSecond: 88.888,
+          totalTokensPerSecond: 173.076,
+          hasStreamingToken: true,
+        },
+      },
+      messageList,
+    );
+
+    const stats = messageList.querySelector('.message-stats');
+    expect(stats).not.toBeNull();
+    expect(messageList.querySelector('.message-actions')).not.toBeNull();
+    expect(stats?.querySelector('.message-stats-trigger')?.getAttribute('aria-label')).toBe(
+      'Response statistics',
+    );
+    expect(stats?.querySelector('.message-stats-icon')).not.toBeNull();
+    expect(stats?.textContent).toContain('TTFT');
+    expect(stats?.textContent).toContain('240 ms');
+    expect(stats?.textContent).toContain('Output TPS');
+    expect(stats?.textContent).toContain('88.89 tok/s');
+    expect(stats?.textContent).toContain('Total Tokens');
+    expect(stats?.textContent).toContain('225');
+    expect(stats?.textContent).toContain('TTFT Source');
+    expect(stats?.textContent).toContain('stream delta');
+  });
+
+  it('copies the whole assistant response from the action row copy button', async () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    const clipboard = {
+      writeText: (_value: string) => Promise.resolve(),
+    };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+    const writeTextSpy = spyOn(clipboard, 'writeText').mockImplementation(() => Promise.resolve());
+
+    appendMessage(
+      {
+        id: 'assistant-copy',
+        role: 'assistant',
+        content: 'Final answer',
+        thinkingSummary: 'Checked assumptions.',
+      },
+      messageList,
+    );
+
+    const copyButton = messageList.querySelector('.message-copy-btn') as HTMLButtonElement | null;
+    expect(copyButton).not.toBeNull();
+
+    copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    expect(writeTextSpy).toHaveBeenCalledTimes(1);
+    expect(writeTextSpy).toHaveBeenCalledWith(
+      ['Thinking process:', 'Checked assumptions.', '', 'Final answer'].join('\n'),
+    );
+    expect(copyButton?.getAttribute('aria-label')).toBe('Copied');
+    expect(copyButton?.classList.contains('is-copied')).toBe(true);
+  });
+
   it('falls back to a generic error message for non-Error values', () => {
     expect(toErrorMessage(new Error('specific failure'))).toBe('specific failure');
     expect(toErrorMessage('plain string')).toBe('Request failed. Please try again.');

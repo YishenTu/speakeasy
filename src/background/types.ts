@@ -1,9 +1,16 @@
+import type { AssistantResponseStats } from '../shared/messages';
+
 export interface GeminiContent {
   role: 'user' | 'model';
   parts: GeminiPart[];
+  metadata?: GeminiContentMetadata;
 }
 
 export type GeminiPart = Record<string, unknown>;
+
+export interface GeminiContentMetadata {
+  responseStats?: AssistantResponseStats;
+}
 
 export interface GeminiFunctionCall {
   id?: string;

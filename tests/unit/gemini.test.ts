@@ -319,6 +319,41 @@ describe('normalizeContent', () => {
     const defaultedRole = normalizeContent({ role: 'system', parts: [{ text: 'hi' }] });
     expect(defaultedRole.role).toBe('model');
   });
+
+  it('keeps valid response stats metadata and drops invalid metadata', () => {
+    const withStats = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        responseStats: {
+          requestDurationMs: 1000,
+          timeToFirstTokenMs: 140,
+          outputTokens: 21,
+          outputTokensPerSecond: 33.3,
+          hasStreamingToken: true,
+        },
+      },
+    });
+    expect(withStats.metadata?.responseStats).toEqual({
+      requestDurationMs: 1000,
+      timeToFirstTokenMs: 140,
+      outputTokens: 21,
+      outputTokensPerSecond: 33.3,
+      hasStreamingToken: true,
+    });
+
+    const withoutStats = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        responseStats: {
+          requestDurationMs: 'bad',
+          timeToFirstTokenMs: 120,
+        },
+      },
+    });
+    expect(withoutStats.metadata).toBeUndefined();
+  });
 });
 
 describe('InvalidPreviousInteractionIdError', () => {
@@ -529,6 +564,137 @@ describe('completeAssistantTurn', () => {
     expect(renderContentForChat(content)).toBe('Partial answer.');
     expect(renderThinkingSummaryForChat(content)).toBe('Checked constraints first.');
     expect(session.lastInteractionId).toBe('interaction-stream-no-outputs');
+  });
+
+  it('attaches response stats from non-stream interaction usage', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-usage-non-stream',
+      usage: {
+        total_input_tokens: 9,
+        total_output_tokens: 12,
+        total_thought_tokens: 40,
+        total_tool_use_tokens: 0,
+        total_cached_tokens: 3,
+        total_tokens: 64,
+      },
+      outputs: [{ type: 'text', text: 'Measured response' }],
+    });
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const content = await completeAssistantTurn(session, settings);
+    const stats = content.metadata?.responseStats;
+
+    expect(stats).toBeDefined();
+    expect(stats).toMatchObject({
+      inputTokens: 9,
+      outputTokens: 12,
+      thoughtTokens: 40,
+      toolUseTokens: 0,
+      cachedTokens: 3,
+      totalTokens: 64,
+      hasStreamingToken: false,
+    });
+    expect(stats?.requestDurationMs).toBeGreaterThanOrEqual(0);
+    expect(stats?.timeToFirstTokenMs).toBeGreaterThanOrEqual(0);
+    expect(stats?.timeToFirstTokenMs).toBe(stats?.requestDurationMs);
+    expect(stats?.outputTokensPerSecond).toBeGreaterThan(0);
+    expect(stats?.totalTokensPerSecond).toBeGreaterThan(0);
+  });
+
+  it('attaches response stats from streamed usage and marks streamed ttft source', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        delta: { type: 'text', text: 'chunk-' },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-usage-stream',
+          usage: {
+            total_input_tokens: 11,
+            total_output_tokens: 15,
+            total_thought_tokens: 22,
+            total_tool_use_tokens: 0,
+            total_cached_tokens: 0,
+            total_tokens: 48,
+          },
+          outputs: [{ type: 'text', text: 'Streamed final response' }],
+        },
+      },
+    );
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const content = await completeAssistantTurn(session, settings, undefined, () => {});
+    const stats = content.metadata?.responseStats;
+
+    expect(stats).toBeDefined();
+    expect(stats).toMatchObject({
+      inputTokens: 11,
+      outputTokens: 15,
+      thoughtTokens: 22,
+      totalTokens: 48,
+      hasStreamingToken: true,
+    });
+    expect(stats?.requestDurationMs).toBeGreaterThanOrEqual(0);
+    expect(stats?.timeToFirstTokenMs).toBeGreaterThanOrEqual(0);
+    expect(stats?.timeToFirstTokenMs).toBeLessThanOrEqual(stats?.requestDurationMs ?? 0);
+  });
+
+  it('aggregates interaction usage across function-call round trips', async () => {
+    enqueueGeminiResponses(
+      {
+        id: 'interaction-tool-1',
+        usage: {
+          total_input_tokens: 6,
+          total_output_tokens: 5,
+          total_thought_tokens: 10,
+          total_tool_use_tokens: 0,
+          total_cached_tokens: 0,
+          total_tokens: 21,
+        },
+        outputs: [
+          {
+            type: 'function_call',
+            id: 'tool-call-stats-1',
+            name: 'get_extension_info',
+            arguments: {},
+          },
+        ],
+      },
+      {
+        id: 'interaction-tool-2',
+        usage: {
+          total_input_tokens: 8,
+          total_output_tokens: 7,
+          total_thought_tokens: 12,
+          total_tool_use_tokens: 3,
+          total_cached_tokens: 0,
+          total_tokens: 30,
+        },
+        outputs: [{ type: 'text', text: 'Done after round trips' }],
+      },
+    );
+
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+    const session = createSession('tool stats');
+    const content = await completeAssistantTurn(session, settings);
+    const stats = content.metadata?.responseStats;
+
+    expect(stats).toBeDefined();
+    expect(stats).toMatchObject({
+      inputTokens: 14,
+      outputTokens: 12,
+      thoughtTokens: 22,
+      toolUseTokens: 3,
+      cachedTokens: 0,
+      totalTokens: 51,
+      hasStreamingToken: false,
+    });
+    expect(stats?.totalTokensPerSecond).toBeGreaterThan(0);
   });
 
   it('throws when Gemini returns a non-object payload', async () => {

@@ -7,10 +7,25 @@ export interface ChatAttachment {
   previewUrl?: string;
 }
 
+export interface AssistantResponseStats {
+  requestDurationMs: number;
+  timeToFirstTokenMs: number;
+  outputTokens?: number;
+  inputTokens?: number;
+  thoughtTokens?: number;
+  toolUseTokens?: number;
+  cachedTokens?: number;
+  totalTokens?: number;
+  outputTokensPerSecond?: number;
+  totalTokensPerSecond?: number;
+  hasStreamingToken: boolean;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   thinkingSummary?: string;
+  stats?: AssistantResponseStats;
   attachments?: ChatAttachment[];
 }

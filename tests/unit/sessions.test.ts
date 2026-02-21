@@ -26,6 +26,21 @@ describe('sessions', () => {
         { role: 'model', parts: [{ text: 'Answer' }] },
         {
           role: 'model',
+          parts: [{ text: 'Answer with stats' }],
+          metadata: {
+            responseStats: {
+              requestDurationMs: 800,
+              timeToFirstTokenMs: 120,
+              outputTokens: 40,
+              totalTokens: 90,
+              outputTokensPerSecond: 58.5,
+              totalTokensPerSecond: 112.5,
+              hasStreamingToken: true,
+            },
+          },
+        },
+        {
+          role: 'model',
           parts: [{ thoughtSummary: 'Compared two parsing strategies.' }],
         },
         {
@@ -46,7 +61,7 @@ describe('sessions', () => {
 
     const messages = mapSessionToChatMessages(session);
 
-    expect(messages).toHaveLength(4);
+    expect(messages).toHaveLength(5);
     expect(messages[0]).toMatchObject({
       role: 'user',
       content: 'Question',
@@ -57,10 +72,23 @@ describe('sessions', () => {
     });
     expect(messages[2]).toMatchObject({
       role: 'assistant',
+      content: 'Answer with stats',
+      stats: {
+        requestDurationMs: 800,
+        timeToFirstTokenMs: 120,
+        outputTokens: 40,
+        totalTokens: 90,
+        outputTokensPerSecond: 58.5,
+        totalTokensPerSecond: 112.5,
+        hasStreamingToken: true,
+      },
+    });
+    expect(messages[3]).toMatchObject({
+      role: 'assistant',
       content: '',
       thinkingSummary: 'Compared two parsing strategies.',
     });
-    expect(messages[3]).toMatchObject({
+    expect(messages[4]).toMatchObject({
       role: 'assistant',
       content: '',
       attachments: [
@@ -117,6 +145,36 @@ describe('sessions', () => {
         fileUri: 'https://example.invalid/files/report.pdf',
       },
     ]);
+  });
+
+  it('maps assistant response stats from content metadata', () => {
+    const message = toAssistantChatMessage({
+      role: 'model',
+      parts: [{ text: 'Measured answer' }],
+      metadata: {
+        responseStats: {
+          requestDurationMs: 950,
+          timeToFirstTokenMs: 140,
+          inputTokens: 21,
+          outputTokens: 44,
+          totalTokens: 95,
+          outputTokensPerSecond: 54.32,
+          totalTokensPerSecond: 100,
+          hasStreamingToken: true,
+        },
+      },
+    });
+
+    expect(message.stats).toEqual({
+      requestDurationMs: 950,
+      timeToFirstTokenMs: 140,
+      inputTokens: 21,
+      outputTokens: 44,
+      totalTokens: 95,
+      outputTokensPerSecond: 54.32,
+      totalTokensPerSecond: 100,
+      hasStreamingToken: true,
+    });
   });
 
   it('createSession produces empty content history', () => {

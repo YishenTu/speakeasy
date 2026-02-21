@@ -68,6 +68,7 @@ function cloneSession(session: ChatSession): ChatSession {
     contents: session.contents.map((content) => ({
       role: content.role,
       parts: content.parts.map((part) => ({ ...part })),
+      ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
     })),
   };
 }
@@ -148,6 +149,78 @@ describe('runtime chat storage handler', () => {
     expect((listPayload as { sessions: Array<{ chatId: string }> }).sessions).toHaveLength(1);
     expect(bootstrapCalls).toBe(1);
     expect(settingsReadCalls).toBe(1);
+  });
+
+  it('persists assistant response stats in send payload and subsequent loads', async () => {
+    repository.sessions.set('chat-stats', createSession('chat-stats'));
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'answer with metrics' }],
+          metadata: {
+            responseStats: {
+              requestDurationMs: 1200,
+              timeToFirstTokenMs: 180,
+              outputTokens: 90,
+              totalTokens: 200,
+              outputTokensPerSecond: 85.71,
+              totalTokensPerSecond: 166.67,
+              hasStreamingToken: true,
+            },
+          },
+        };
+        session.contents.push(assistantContent);
+        session.lastInteractionId = 'interaction-stats';
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const sendPayload = await handler({
+      type: 'chat/send',
+      chatId: 'chat-stats',
+      text: 'show me stats',
+      model: 'gemini-3-flash-preview',
+    });
+
+    expect(sendPayload).toMatchObject({
+      chatId: 'chat-stats',
+      assistantMessage: {
+        role: 'assistant',
+        content: 'answer with metrics',
+        stats: {
+          requestDurationMs: 1200,
+          timeToFirstTokenMs: 180,
+          outputTokens: 90,
+          totalTokens: 200,
+          outputTokensPerSecond: 85.71,
+          totalTokensPerSecond: 166.67,
+          hasStreamingToken: true,
+        },
+      },
+    });
+
+    const loadPayload = await handler({ type: 'chat/load', chatId: 'chat-stats' });
+    expect(loadPayload.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      content: 'answer with metrics',
+      stats: {
+        requestDurationMs: 1200,
+        timeToFirstTokenMs: 180,
+        outputTokens: 90,
+        totalTokens: 200,
+        outputTokensPerSecond: 85.71,
+        totalTokensPerSecond: 166.67,
+        hasStreamingToken: true,
+      },
+    });
   });
 
   it('does not block requests when bootstrap initialization fails', async () => {

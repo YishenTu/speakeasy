@@ -565,6 +565,139 @@ export function getChatPanelTemplate(): string {
         white-space: pre-wrap;
       }
 
+      .message-stats {
+        margin: 0;
+        border: 0;
+        padding: 0;
+        position: relative;
+      }
+
+      .message-stats-trigger {
+        cursor: pointer;
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.42);
+        user-select: none;
+        transition: color 120ms ease;
+      }
+
+      .message-stats-trigger:hover {
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .message-stats-trigger:focus-visible {
+        outline: 1px solid rgba(255, 255, 255, 0.55);
+        outline-offset: 1px;
+      }
+
+      .message-stats-trigger::-webkit-details-marker {
+        display: none;
+      }
+
+      .message-stats-trigger::marker {
+        content: '';
+      }
+
+      .message-stats-icon {
+        width: 22px;
+        height: 22px;
+        display: block;
+      }
+
+      .message-stats[open] .message-stats-trigger {
+        color: rgba(255, 255, 255, 0.96);
+      }
+
+      .message-stats-panel {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 12;
+        display: grid;
+        gap: 4px;
+        width: min(360px, 100%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.04);
+        border-radius: 6px;
+        padding: 8px 10px;
+      }
+
+      .message-stats-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .message-stats-label {
+        color: rgba(255, 255, 255, 0.62);
+      }
+
+      .message-stats-value {
+        color: rgba(255, 255, 255, 0.9);
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .message-actions {
+        margin-top: 8px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        opacity: 0;
+        transform: translateY(1px);
+        pointer-events: none;
+        transition: opacity 120ms ease, transform 120ms ease;
+      }
+
+      .row-assistant:hover .message-actions,
+      .row-assistant:focus-within .message-actions {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
+
+      .message-action-btn {
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.42);
+        transition: color 120ms ease;
+      }
+
+      .message-action-btn:hover {
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .message-action-btn:focus-visible {
+        outline: 1px solid rgba(255, 255, 255, 0.55);
+        outline-offset: 1px;
+      }
+
+      .message-copy-icon {
+        width: 22px;
+        height: 22px;
+        display: block;
+      }
+
+      .message-copy-btn.is-copied {
+        color: rgba(255, 255, 255, 0.96);
+      }
+
       .attachment-list {
         display: flex;
         flex-direction: column;
@@ -573,6 +706,12 @@ export function getChatPanelTemplate(): string {
 
       .message-text + .attachment-list,
       .thinking-disclosure + .attachment-list {
+        margin-top: 8px;
+      }
+
+      .message-text + .message-stats,
+      .thinking-disclosure + .message-stats,
+      .attachment-list + .message-stats {
         margin-top: 8px;
       }
 

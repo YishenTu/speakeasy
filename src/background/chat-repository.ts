@@ -292,6 +292,7 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
   const contents = session.contents.map((content) => ({
     role: content.role === 'user' ? 'user' : 'model',
     parts: content.parts.map((part) => ({ ...part })),
+    ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
   }));
   const trimmedLastInteractionId =
     typeof session.lastInteractionId === 'string' ? session.lastInteractionId.trim() : '';

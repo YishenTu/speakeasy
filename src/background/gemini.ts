@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
-import type { ChatAttachment } from '../shared/messages';
+import type { AssistantResponseStats, ChatAttachment } from '../shared/messages';
 import type { GeminiSettings } from '../shared/settings';
 import { composeGeminiInteractionRequest } from './gemini-request';
 import type { ChatSession, GeminiContent, GeminiFunctionCall, GeminiPart } from './types';
@@ -22,11 +22,36 @@ interface LocalToolDefinition {
 interface GeminiInteraction {
   id: string;
   outputs?: Array<Record<string, unknown>>;
+  usage?: GeminiInteractionUsage;
 }
 
 export interface GeminiStreamDelta {
   textDelta?: string;
   thinkingDelta?: string;
+}
+
+interface GeminiInteractionUsage {
+  totalInputTokens?: number;
+  totalOutputTokens?: number;
+  totalThoughtTokens?: number;
+  totalToolUseTokens?: number;
+  totalCachedTokens?: number;
+  totalTokens?: number;
+}
+
+interface UsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  thoughtTokens: number;
+  toolUseTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+  hasInputTokens: boolean;
+  hasOutputTokens: boolean;
+  hasThoughtTokens: boolean;
+  hasToolUseTokens: boolean;
+  hasCachedTokens: boolean;
+  hasTotalTokens: boolean;
 }
 
 interface ExecutedFunctionCall {
@@ -138,18 +163,30 @@ export async function completeAssistantTurn(
   });
   const { functionCallingEnabled } = requestPlan;
   let latestAssistantContent: GeminiContent | null = null;
+  const requestStartedAtMs = getMonotonicNowMs();
+  let firstStreamTokenAtMs: number | null = null;
+  const usageTotals = createEmptyUsageTotals();
+  const streamDeltaHandler = onStreamDelta
+    ? (delta: GeminiStreamDelta): void => {
+        if ((delta.textDelta || delta.thinkingDelta) && firstStreamTokenAtMs === null) {
+          firstStreamTokenAtMs = getMonotonicNowMs();
+        }
+        onStreamDelta(delta);
+      }
+    : undefined;
 
   for (let roundTrip = 0; roundTrip < settings.maxToolRoundTrips; roundTrip += 1) {
-    const interaction = onStreamDelta
+    const interaction = streamDeltaHandler
       ? await callGeminiInteractionStream({
           settings,
           request: requestPlan.request,
-          onStreamDelta,
+          onStreamDelta: streamDeltaHandler,
         })
       : await callGeminiInteraction({
           settings,
           request: requestPlan.request,
         });
+    accumulateUsageTotals(usageTotals, interaction.usage);
 
     session.lastInteractionId = interaction.id;
 
@@ -159,7 +196,18 @@ export async function completeAssistantTurn(
 
     const functionCalls = extractFunctionCalls(candidateContent.parts);
     if (functionCalls.length === 0) {
-      return candidateContent;
+      const completedAtMs = getMonotonicNowMs();
+      const finalContent = withAssistantResponseStats(
+        candidateContent,
+        buildAssistantResponseStats({
+          usageTotals,
+          requestStartedAtMs,
+          firstStreamTokenAtMs,
+          completedAtMs,
+        }),
+      );
+      session.contents[session.contents.length - 1] = finalContent;
+      return finalContent;
     }
 
     if (!functionCallingEnabled) {
@@ -182,7 +230,23 @@ export async function completeAssistantTurn(
   }
 
   if (latestAssistantContent) {
-    return latestAssistantContent;
+    const completedAtMs = getMonotonicNowMs();
+    const finalContent = withAssistantResponseStats(
+      latestAssistantContent,
+      buildAssistantResponseStats({
+        usageTotals,
+        requestStartedAtMs,
+        firstStreamTokenAtMs,
+        completedAtMs,
+      }),
+    );
+    for (let index = session.contents.length - 1; index >= 0; index -= 1) {
+      if (session.contents[index]?.role === 'model') {
+        session.contents[index] = finalContent;
+        break;
+      }
+    }
+    return finalContent;
   }
 
   throw new Error('Gemini did not produce a final response before the tool round-trip limit.');
@@ -252,10 +316,102 @@ export function normalizeContent(value: unknown): GeminiContent {
     throw new Error('Gemini returned content with no parts.');
   }
 
+  const metadata = normalizeContentMetadata(value.metadata);
+
   return {
     role,
     parts,
+    ...(metadata ? { metadata } : {}),
   };
+}
+
+function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const responseStats = normalizeAssistantResponseStats(value.responseStats);
+  if (!responseStats) {
+    return undefined;
+  }
+
+  return { responseStats };
+}
+
+function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const requestDurationMs = readNonNegativeIntegerField(
+    value,
+    'requestDurationMs',
+    'request_duration_ms',
+  );
+  const timeToFirstTokenMs = readNonNegativeIntegerField(
+    value,
+    'timeToFirstTokenMs',
+    'time_to_first_token_ms',
+  );
+  const hasStreamingToken =
+    typeof value.hasStreamingToken === 'boolean'
+      ? value.hasStreamingToken
+      : typeof value.has_streaming_token === 'boolean'
+        ? value.has_streaming_token
+        : undefined;
+
+  if (
+    requestDurationMs === undefined ||
+    timeToFirstTokenMs === undefined ||
+    hasStreamingToken === undefined
+  ) {
+    return undefined;
+  }
+
+  const outputTokens = readNonNegativeIntegerField(value, 'outputTokens', 'output_tokens');
+  const inputTokens = readNonNegativeIntegerField(value, 'inputTokens', 'input_tokens');
+  const thoughtTokens = readNonNegativeIntegerField(value, 'thoughtTokens', 'thought_tokens');
+  const toolUseTokens = readNonNegativeIntegerField(value, 'toolUseTokens', 'tool_use_tokens');
+  const cachedTokens = readNonNegativeIntegerField(value, 'cachedTokens', 'cached_tokens');
+  const totalTokens = readNonNegativeIntegerField(value, 'totalTokens', 'total_tokens');
+  const outputTokensPerSecond = readNonNegativeNumberField(
+    value,
+    'outputTokensPerSecond',
+    'output_tokens_per_second',
+  );
+  const totalTokensPerSecond = readNonNegativeNumberField(
+    value,
+    'totalTokensPerSecond',
+    'total_tokens_per_second',
+  );
+
+  return {
+    requestDurationMs,
+    timeToFirstTokenMs,
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(thoughtTokens !== undefined ? { thoughtTokens } : {}),
+    ...(toolUseTokens !== undefined ? { toolUseTokens } : {}),
+    ...(cachedTokens !== undefined ? { cachedTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(outputTokensPerSecond !== undefined ? { outputTokensPerSecond } : {}),
+    ...(totalTokensPerSecond !== undefined ? { totalTokensPerSecond } : {}),
+    hasStreamingToken,
+  };
+}
+
+function readNonNegativeNumberField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return value;
+    }
+  }
+
+  return undefined;
 }
 
 export function renderContentForChat(content: GeminiContent): string {
@@ -504,17 +660,210 @@ function normalizeGeminiInteractionResponse(response: unknown): GeminiInteractio
   if (!interactionId) {
     throw new Error('Gemini interaction response did not include an id.');
   }
+  const usage = normalizeInteractionUsage(response.usage);
 
   const rawOutputs = Array.isArray(response.outputs) ? response.outputs : undefined;
   if (!rawOutputs) {
-    return { id: interactionId };
+    return {
+      id: interactionId,
+      ...(usage ? { usage } : {}),
+    };
   }
 
   const outputs = rawOutputs.filter(isRecord).map((output) => ({ ...output }));
   return {
     id: interactionId,
     outputs,
+    ...(usage ? { usage } : {}),
   };
+}
+
+function normalizeInteractionUsage(value: unknown): GeminiInteractionUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const totalInputTokens = readNonNegativeIntegerField(
+    value,
+    'total_input_tokens',
+    'totalInputTokens',
+  );
+  const totalOutputTokens = readNonNegativeIntegerField(
+    value,
+    'total_output_tokens',
+    'totalOutputTokens',
+  );
+  const totalThoughtTokens = readNonNegativeIntegerField(
+    value,
+    'total_thought_tokens',
+    'totalThoughtTokens',
+  );
+  const totalToolUseTokens = readNonNegativeIntegerField(
+    value,
+    'total_tool_use_tokens',
+    'totalToolUseTokens',
+  );
+  const totalCachedTokens = readNonNegativeIntegerField(
+    value,
+    'total_cached_tokens',
+    'totalCachedTokens',
+  );
+  const totalTokens = readNonNegativeIntegerField(value, 'total_tokens', 'totalTokens');
+
+  if (
+    totalInputTokens === undefined &&
+    totalOutputTokens === undefined &&
+    totalThoughtTokens === undefined &&
+    totalToolUseTokens === undefined &&
+    totalCachedTokens === undefined &&
+    totalTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(totalInputTokens !== undefined ? { totalInputTokens } : {}),
+    ...(totalOutputTokens !== undefined ? { totalOutputTokens } : {}),
+    ...(totalThoughtTokens !== undefined ? { totalThoughtTokens } : {}),
+    ...(totalToolUseTokens !== undefined ? { totalToolUseTokens } : {}),
+    ...(totalCachedTokens !== undefined ? { totalCachedTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+  };
+}
+
+function readNonNegativeIntegerField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return Math.round(value);
+    }
+  }
+  return undefined;
+}
+
+function createEmptyUsageTotals(): UsageTotals {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    thoughtTokens: 0,
+    toolUseTokens: 0,
+    cachedTokens: 0,
+    totalTokens: 0,
+    hasInputTokens: false,
+    hasOutputTokens: false,
+    hasThoughtTokens: false,
+    hasToolUseTokens: false,
+    hasCachedTokens: false,
+    hasTotalTokens: false,
+  };
+}
+
+function accumulateUsageTotals(
+  usageTotals: UsageTotals,
+  usage: GeminiInteractionUsage | undefined,
+): void {
+  if (!usage) {
+    return;
+  }
+
+  if (typeof usage.totalInputTokens === 'number') {
+    usageTotals.inputTokens += usage.totalInputTokens;
+    usageTotals.hasInputTokens = true;
+  }
+  if (typeof usage.totalOutputTokens === 'number') {
+    usageTotals.outputTokens += usage.totalOutputTokens;
+    usageTotals.hasOutputTokens = true;
+  }
+  if (typeof usage.totalThoughtTokens === 'number') {
+    usageTotals.thoughtTokens += usage.totalThoughtTokens;
+    usageTotals.hasThoughtTokens = true;
+  }
+  if (typeof usage.totalToolUseTokens === 'number') {
+    usageTotals.toolUseTokens += usage.totalToolUseTokens;
+    usageTotals.hasToolUseTokens = true;
+  }
+  if (typeof usage.totalCachedTokens === 'number') {
+    usageTotals.cachedTokens += usage.totalCachedTokens;
+    usageTotals.hasCachedTokens = true;
+  }
+  if (typeof usage.totalTokens === 'number') {
+    usageTotals.totalTokens += usage.totalTokens;
+    usageTotals.hasTotalTokens = true;
+  }
+}
+
+function buildAssistantResponseStats(input: {
+  usageTotals: UsageTotals;
+  requestStartedAtMs: number;
+  firstStreamTokenAtMs: number | null;
+  completedAtMs: number;
+}): AssistantResponseStats {
+  const requestDurationMs = toRoundedDurationMs(input.completedAtMs - input.requestStartedAtMs);
+  const timeToFirstTokenMs =
+    input.firstStreamTokenAtMs === null
+      ? requestDurationMs
+      : toRoundedDurationMs(input.firstStreamTokenAtMs - input.requestStartedAtMs);
+  const outputWindowStartedAtMs = input.firstStreamTokenAtMs ?? input.requestStartedAtMs;
+  const outputWindowDurationMs = Math.max(1, input.completedAtMs - outputWindowStartedAtMs);
+  const requestDurationForRateMs = Math.max(1, input.completedAtMs - input.requestStartedAtMs);
+  const outputTokensPerSecond =
+    input.usageTotals.hasOutputTokens && input.usageTotals.outputTokens >= 0
+      ? (input.usageTotals.outputTokens * 1000) / outputWindowDurationMs
+      : undefined;
+  const totalTokensPerSecond =
+    input.usageTotals.hasTotalTokens && input.usageTotals.totalTokens >= 0
+      ? (input.usageTotals.totalTokens * 1000) / requestDurationForRateMs
+      : undefined;
+
+  return {
+    requestDurationMs,
+    timeToFirstTokenMs,
+    ...(input.usageTotals.hasOutputTokens ? { outputTokens: input.usageTotals.outputTokens } : {}),
+    ...(input.usageTotals.hasInputTokens ? { inputTokens: input.usageTotals.inputTokens } : {}),
+    ...(input.usageTotals.hasThoughtTokens
+      ? { thoughtTokens: input.usageTotals.thoughtTokens }
+      : {}),
+    ...(input.usageTotals.hasToolUseTokens
+      ? { toolUseTokens: input.usageTotals.toolUseTokens }
+      : {}),
+    ...(input.usageTotals.hasCachedTokens ? { cachedTokens: input.usageTotals.cachedTokens } : {}),
+    ...(input.usageTotals.hasTotalTokens ? { totalTokens: input.usageTotals.totalTokens } : {}),
+    ...(outputTokensPerSecond !== undefined ? { outputTokensPerSecond } : {}),
+    ...(totalTokensPerSecond !== undefined ? { totalTokensPerSecond } : {}),
+    hasStreamingToken: input.firstStreamTokenAtMs !== null,
+  };
+}
+
+function withAssistantResponseStats(
+  content: GeminiContent,
+  responseStats: AssistantResponseStats,
+): GeminiContent {
+  return {
+    ...content,
+    metadata: {
+      ...(content.metadata ?? {}),
+      responseStats,
+    },
+  };
+}
+
+function toRoundedDurationMs(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(value));
+}
+
+function getMonotonicNowMs(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+
+  return Date.now();
 }
 
 function applyStreamOutputFallback(

@@ -46,6 +46,10 @@ Respect boundaries from `.dependency-cruiser.cjs`: `shared` <- (`background` | `
 - Keep commit messages imperative and scoped to one logical change.
 - PRs should include a concise summary, testing evidence (commands + added/updated tests), linked issue if applicable, and screenshots/GIFs for UI changes in `chatpanel` or `options`.
 - Ensure `quality-gate` CI passes (`bun run verify`).
+- Use GitHub CLI (`gh`) for all GitHub-related actions (for example: PRs, issues, checks, and merges).
+- When merging a PR, always use squash merge and provide an appropriate final commit message.
+- User workflow preference: when the user says "merge", treat it as a GitHub merge via `gh pr merge` (not a local `git merge`) unless they explicitly ask for a local merge.
+- After a GitHub merge, sync local state by pulling `main` from `origin`.
 
 ## Security & Configuration Tips
 - Store secrets in `.env` (e.g., `GEMINI_API_KEY`); never commit credentials.

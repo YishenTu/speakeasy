@@ -16,6 +16,7 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   const rendered = renderContentForChat(content).trim();
   const thinkingSummary = renderThinkingSummaryForChat(content).trim();
   const attachments = extractAttachments(content);
+  const stats = content.metadata?.responseStats;
   return {
     id: crypto.randomUUID(),
     role: 'assistant',
@@ -25,6 +26,7 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
         ? 'Gemini returned a response with no displayable text.'
         : ''),
     ...(thinkingSummary ? { thinkingSummary } : {}),
+    ...(stats ? { stats } : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };
 }
@@ -41,11 +43,13 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
     }
 
     const role = content.role === 'user' ? 'user' : 'assistant';
+    const stats = role === 'assistant' ? content.metadata?.responseStats : undefined;
     messages.push({
       id: crypto.randomUUID(),
       role,
       content: text,
       ...(thinkingSummary ? { thinkingSummary } : {}),
+      ...(stats ? { stats } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
     });
   }
