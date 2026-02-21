@@ -11,6 +11,7 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface PersistedChatSessionRecord {
   id: string;
+  title?: string;
   createdAt: string;
   updatedAt: string;
   updatedAtMs: number;
@@ -274,6 +275,8 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
     throw new Error('Cannot persist chat session without an id.');
   }
 
+  const title = session.title?.trim() || undefined;
+
   const createdAt =
     typeof session.createdAt === 'string' && session.createdAt
       ? session.createdAt
@@ -296,6 +299,7 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
 
   return {
     id,
+    ...(title ? { title } : {}),
     createdAt,
     updatedAt,
     updatedAtMs,
@@ -339,9 +343,12 @@ function parsePersistedSessionRecord(rawValue: unknown): ChatSession | null {
   const trimmedLastInteractionId =
     typeof rawValue.lastInteractionId === 'string' ? rawValue.lastInteractionId.trim() : '';
   const lastInteractionId = trimmedLastInteractionId || undefined;
+  const trimmedTitle = typeof rawValue.title === 'string' ? rawValue.title.trim() : '';
+  const title = trimmedTitle || undefined;
 
   return {
     id,
+    ...(title ? { title } : {}),
     createdAt,
     updatedAt,
     contents,

@@ -110,6 +110,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     const newPayload = await handler({ type: 'chat/new' });
@@ -162,6 +163,7 @@ describe('runtime chat storage handler', () => {
         },
         openOptionsPage: async () => {},
         now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
       });
 
       await expect(handler({ type: 'chat/load' })).resolves.toEqual({ chatId: null, messages: [] });
@@ -195,6 +197,7 @@ describe('runtime chat storage handler', () => {
         },
         openOptionsPage: async () => {},
         now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
       });
 
       const newPayload = await handler({ type: 'chat/new' });
@@ -243,6 +246,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     const sendPromise = handler({
@@ -291,6 +295,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     await expect(
@@ -322,6 +327,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     await expect(
@@ -359,6 +365,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     await expect(
@@ -389,6 +396,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     const sendPayload = await handler({
@@ -405,6 +413,225 @@ describe('runtime chat storage handler', () => {
         role: 'assistant',
         content: 'assistant reply for auto-created session',
       },
+    });
+  });
+
+  it('generates and persists title for first textual sends without blocking send response', async () => {
+    let resolveTitleGeneration: (() => void) | null = null;
+    let titleCalls = 0;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'assistant reply for titled chat' }],
+        };
+        session.contents.push(assistantContent);
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async (_apiKey, firstPrompt) => {
+        titleCalls += 1;
+        expect(firstPrompt).toBe('start titled conversation');
+        await new Promise<void>((resolve) => {
+          resolveTitleGeneration = resolve;
+        });
+        return 'Titled conversation';
+      },
+    });
+
+    const sendPayload = await handler({
+      type: 'chat/send',
+      text: 'start titled conversation',
+      model: 'gemini-3-flash-preview',
+    });
+
+    const chatId = (sendPayload as { chatId: string }).chatId;
+    expect(sendPayload).toMatchObject({
+      assistantMessage: {
+        role: 'assistant',
+        content: 'assistant reply for titled chat',
+      },
+    });
+    expect(titleCalls).toBe(1);
+    expect(repository.sessions.get(chatId)?.title).toBeUndefined();
+
+    if (!resolveTitleGeneration) {
+      throw new Error('expected title generation to be scheduled');
+    }
+    resolveTitleGeneration();
+    await Promise.resolve();
+
+    const payload = await handler({ type: 'chat/list' });
+    expect(payload).toEqual({
+      sessions: [
+        {
+          chatId,
+          title: 'Titled conversation',
+          updatedAt: '2025-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(repository.sessions.get(chatId)?.title).toBe('Titled conversation');
+  });
+
+  it('does not generate titles for attachment-only first sends', async () => {
+    let titleCalls = 0;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'attachment accepted' }],
+        };
+        session.contents.push(assistantContent);
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => {
+        titleCalls += 1;
+        return 'Should not be used';
+      },
+    });
+
+    await handler({
+      type: 'chat/send',
+      text: '   ',
+      model: 'gemini-3-flash-preview',
+      attachments: [
+        {
+          name: 'img',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/image.png',
+        },
+      ],
+    });
+
+    expect(titleCalls).toBe(0);
+  });
+
+  it('does not generate a title for non-first sends on existing chats', async () => {
+    repository.sessions.set('chat-existing', createSession('chat-existing'));
+    let titleCalls = 0;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'follow-up reply' }],
+        };
+        session.contents.push(assistantContent);
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => {
+        titleCalls += 1;
+        return 'Should not be used';
+      },
+    });
+
+    const payload = await handler({
+      type: 'chat/send',
+      chatId: 'chat-existing',
+      text: 'follow up',
+      model: 'gemini-3-flash-preview',
+    });
+
+    expect(payload).toMatchObject({
+      chatId: 'chat-existing',
+      assistantMessage: { content: 'follow-up reply' },
+    });
+    expect(titleCalls).toBe(0);
+  });
+
+  it('keeps send successful when title generation fails', async () => {
+    const originalWarn = console.warn;
+    console.warn = () => {};
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session) => {
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'assistant reply for failed title generation' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => {
+          throw new Error('title generation failed');
+        },
+      });
+
+      const sendPayload = await handler({
+        type: 'chat/send',
+        text: 'start new conversation',
+        model: 'gemini-3-flash-preview',
+      });
+
+      const chatId = (sendPayload as { chatId: string }).chatId;
+      expect(sendPayload).toMatchObject({
+        assistantMessage: {
+          role: 'assistant',
+          content: 'assistant reply for failed title generation',
+        },
+      });
+      await handler({ type: 'chat/list' });
+      expect(repository.sessions.get(chatId)?.title).toBeUndefined();
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it('prefers persisted session title in chat list summaries', async () => {
+    repository.sessions.set('chat-with-custom-title', {
+      id: 'chat-with-custom-title',
+      title: 'Team Weekly Planning',
+      createdAt: '2025-01-01T03:00:00.000Z',
+      updatedAt: '2025-01-01T03:04:05.000Z',
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: 'old fallback text that should not appear in list' }],
+        },
+      ],
+    });
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const payload = await handler({ type: 'chat/list' });
+    expect(payload).toEqual({
+      sessions: [
+        {
+          chatId: 'chat-with-custom-title',
+          title: 'Team Weekly Planning',
+          updatedAt: '2025-01-01T03:04:05.000Z',
+        },
+      ],
     });
   });
 
@@ -437,6 +664,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     const payload = await handler({ type: 'chat/list' });
@@ -464,6 +692,7 @@ describe('runtime chat storage handler', () => {
         opened = true;
       },
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     const payload = await handler({ type: 'app/open-options' } as RuntimeRequest);
@@ -483,6 +712,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     await expect(
@@ -508,6 +738,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     await expect(
@@ -536,6 +767,7 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     const payload = await handler({
@@ -585,6 +817,7 @@ describe('runtime chat storage handler', () => {
         throw new Error('options unavailable');
       },
       now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
     });
 
     await expect(handler({ type: 'app/open-options' })).rejects.toThrow(/options unavailable/i);

@@ -127,6 +127,38 @@ describe('chat repository', () => {
     expect(stored?.lastInteractionId).toBe('interaction-abc');
   });
 
+  it('round-trips persisted session titles', async () => {
+    const repository = createChatRepository();
+    const session = createSession();
+    session.title = 'Sprint Retro Notes';
+    session.contents.push({
+      role: 'user',
+      parts: [{ text: 'Let us capture retro action items' }],
+    });
+
+    await repository.upsertSession(session, Date.UTC(2025, 0, 1));
+    const stored = await repository.getSession(session.id);
+
+    expect(stored?.title).toBe('Sprint Retro Notes');
+  });
+
+  it('ignores blank persisted titles when parsing sessions', async () => {
+    const nowIso = new Date(Date.UTC(2025, 0, 1)).toISOString();
+    await insertRawSessionRecord({
+      id: 'blank-title-session',
+      title: '   ',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      updatedAtMs: Date.UTC(2025, 0, 1),
+      expiresAtMs: Date.UTC(2025, 0, 1) + SESSION_TTL_MS,
+      contents: [{ role: 'model', parts: [{ text: 'valid reply' }] }],
+    });
+
+    const repository = createChatRepository();
+    const stored = await repository.getSession('blank-title-session');
+    expect(stored?.title).toBeUndefined();
+  });
+
   it('skips malformed persisted content entries', async () => {
     const originalWarn = console.warn;
     const warnings: unknown[][] = [];

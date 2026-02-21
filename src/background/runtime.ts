@@ -17,7 +17,11 @@ import {
 } from '../shared/settings';
 import { type ChatRepository, createChatRepository } from './chat-repository';
 import { bootstrapChatStorage } from './chat-storage-bootstrap';
-import { completeAssistantTurn, isInvalidPreviousInteractionIdError } from './gemini';
+import {
+  completeAssistantTurn,
+  generateSessionTitle,
+  isInvalidPreviousInteractionIdError,
+} from './gemini';
 import { createSession, mapSessionToChatMessages, toAssistantChatMessage } from './sessions';
 import type { ChatSession, GeminiContent } from './types';
 import { assertNever, isRecord, toErrorMessage } from './utils';
@@ -39,9 +43,23 @@ interface RuntimeDependencies {
     settings: GeminiSettings,
     thinkingLevel?: string,
   ) => Promise<GeminiContent>;
+  generateSessionTitle: (apiKey: string, firstUserQuery: string) => Promise<string>;
   openOptionsPage: () => Promise<void>;
   now: () => Date;
 }
+
+interface PendingSessionTitleGeneration {
+  chatId: string;
+  apiKey: string;
+  firstUserQuery: string;
+}
+
+interface SendMessageResult {
+  payload: ChatSendPayload;
+  pendingTitleGeneration?: PendingSessionTitleGeneration;
+}
+
+type MutationEnqueuer = <TPayload>(operation: () => Promise<TPayload>) => Promise<TPayload>;
 
 const EXPIRED_INTERACTION_MESSAGE =
   'Conversation context expired. Please resend your last message to continue.';
@@ -82,6 +100,7 @@ export function createRuntimeRequestHandler(
     bootstrapChatStorage,
     readGeminiSettings,
     completeAssistantTurn,
+    generateSessionTitle,
     openOptionsPage,
     now: () => new Date(),
     ...overrides,
@@ -116,16 +135,26 @@ export function createRuntimeRequestHandler(
       case 'chat/new':
         return enqueueMutation(() => handleNewChat(dependencies));
       case 'chat/send':
-        return enqueueMutation(() =>
-          handleSendMessage(
+        return enqueueMutation(async () => {
+          const result = await handleSendMessage(
             request.text,
             request.chatId,
             request.model,
             request.thinkingLevel,
             request.attachments,
             dependencies,
-          ),
-        );
+          );
+
+          if (result.pendingTitleGeneration) {
+            void generateAndPersistSessionTitle(
+              result.pendingTitleGeneration,
+              dependencies,
+              enqueueMutation,
+            );
+          }
+
+          return result.payload;
+        });
       case 'chat/delete':
         return enqueueMutation(() => handleDeleteChat(request.chatId, dependencies));
       case 'chat/list':
@@ -200,7 +229,7 @@ async function handleSendMessage(
   thinkingLevel: string | undefined,
   attachments: FileDataAttachmentPayload[] | undefined,
   dependencies: RuntimeDependencies,
-): Promise<ChatSendPayload> {
+): Promise<SendMessageResult> {
   const normalizedText = text.trim();
   const normalizedAttachments = normalizeFileDataAttachments(attachments);
   if (!normalizedText && normalizedAttachments.length === 0) {
@@ -218,6 +247,8 @@ async function handleSendMessage(
 
   const persistedSession = chatId ? await dependencies.repository.getSession(chatId) : null;
   const baseSession = persistedSession ?? createSession();
+  const shouldGenerateTitle =
+    baseSession.contents.length === 0 && !baseSession.title && normalizedText.length > 0;
   const workingSession: ChatSession = structuredClone(baseSession);
 
   const userParts = [
@@ -264,9 +295,22 @@ async function handleSendMessage(
   await dependencies.repository.upsertSession(workingSession, now.getTime());
   await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
 
-  return {
+  const payload = {
     chatId: workingSession.id,
     assistantMessage: toAssistantChatMessage(assistantContent),
+  };
+
+  if (!shouldGenerateTitle) {
+    return { payload };
+  }
+
+  return {
+    payload,
+    pendingTitleGeneration: {
+      chatId: workingSession.id,
+      apiKey: settings.apiKey,
+      firstUserQuery: normalizedText,
+    },
   };
 }
 
@@ -296,6 +340,33 @@ async function handleListChats(dependencies: RuntimeDependencies): Promise<ChatL
   return {
     sessions: summaries,
   };
+}
+
+async function generateAndPersistSessionTitle(
+  pending: PendingSessionTitleGeneration,
+  dependencies: RuntimeDependencies,
+  enqueueMutation: MutationEnqueuer,
+): Promise<void> {
+  try {
+    const generatedTitle = await dependencies.generateSessionTitle(
+      pending.apiKey,
+      pending.firstUserQuery,
+    );
+    if (!generatedTitle) {
+      return;
+    }
+
+    void enqueueMutation(async () => {
+      const session = await dependencies.repository.getSession(pending.chatId);
+      if (!session || session.title?.trim()) {
+        return;
+      }
+      session.title = generatedTitle;
+      await dependencies.repository.upsertSession(session, dependencies.now().getTime());
+    });
+  } catch (error: unknown) {
+    console.warn('Failed to generate chat session title.', error);
+  }
 }
 
 function normalizeFileDataAttachments(
@@ -350,6 +421,11 @@ function openOptionsPage(): Promise<void> {
 }
 
 function summarizeSessionTitle(session: ChatSession): string {
+  const title = session.title?.trim();
+  if (title) {
+    return title;
+  }
+
   const latestUserText = findLatestContentText(session, 'user');
   if (latestUserText) {
     return truncateForLabel(latestUserText, 48);

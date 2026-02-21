@@ -7,6 +7,8 @@ import type { ChatSession, GeminiContent, GeminiFunctionCall, GeminiPart } from 
 import { isRecord, toErrorMessage } from './utils';
 
 const MAX_GEMINI_CLIENT_CACHE_SIZE = 4;
+const SESSION_TITLE_MODEL = 'gemini-flash-lite-latest';
+const MAX_SESSION_TITLE_LENGTH = 60;
 
 type SDKCreateInteractionRequest = Parameters<GoogleGenAI['interactions']['create']>[0];
 
@@ -172,6 +174,51 @@ export async function completeAssistantTurn(
   throw new Error('Gemini did not produce a final response before the tool round-trip limit.');
 }
 
+export async function generateSessionTitle(
+  apiKey: string,
+  firstUserQuery: string,
+): Promise<string> {
+  const normalizedApiKey = apiKey.trim();
+  const normalizedQuery = firstUserQuery.trim();
+  if (!normalizedApiKey || !normalizedQuery) {
+    return '';
+  }
+
+  const client = getGeminiClient(normalizedApiKey);
+  const response = (await client.interactions.create({
+    model: SESSION_TITLE_MODEL,
+    input: [
+      {
+        type: 'text',
+        text: buildSessionTitlePrompt(normalizedQuery),
+      },
+    ],
+    store: false,
+  } as unknown as SDKCreateInteractionRequest)) as unknown;
+
+  if (!isRecord(response)) {
+    throw new Error('Gemini title generation response payload was not a JSON object.');
+  }
+
+  const rawOutputs = Array.isArray(response.outputs) ? response.outputs : [];
+  for (const rawOutput of rawOutputs) {
+    if (!isRecord(rawOutput)) {
+      continue;
+    }
+
+    if (rawOutput.type !== 'text' || typeof rawOutput.text !== 'string') {
+      continue;
+    }
+
+    const title = sanitizeGeneratedSessionTitle(rawOutput.text);
+    if (title) {
+      return title;
+    }
+  }
+
+  return '';
+}
+
 export function normalizeContent(value: unknown): GeminiContent {
   if (!isRecord(value)) {
     throw new Error('Gemini content must be a JSON object.');
@@ -302,6 +349,46 @@ export function extractAttachments(content: GeminiContent): ChatAttachment[] {
   }
 
   return attachments;
+}
+
+function buildSessionTitlePrompt(firstUserQuery: string): string {
+  return [
+    'Generate a concise session title for a chat history dropdown.',
+    'Return only the title text with no quotes or markdown.',
+    'Keep the title between 3 and 8 words and under 60 characters.',
+    `User query: ${firstUserQuery}`,
+  ].join('\n');
+}
+
+function sanitizeGeneratedSessionTitle(rawTitle: string): string {
+  const firstLine =
+    rawTitle
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? '';
+  const normalized = stripWrappingDelimiters(firstLine.replace(/\s+/g, ' ').trim());
+
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized.length <= MAX_SESSION_TITLE_LENGTH) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, MAX_SESSION_TITLE_LENGTH - 1).trimEnd()}…`;
+}
+
+function stripWrappingDelimiters(value: string): string {
+  let result = value;
+  while (
+    result.length >= 2 &&
+    (result[0] === '"' || result[0] === "'" || result[0] === '`') &&
+    result.endsWith(result[0])
+  ) {
+    result = result.slice(1, -1).trim();
+  }
+  return result;
 }
 
 async function callGeminiInteraction(input: {

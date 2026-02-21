@@ -3,6 +3,7 @@ import {
   InvalidPreviousInteractionIdError,
   completeAssistantTurn,
   extractAttachments,
+  generateSessionTitle,
   isInvalidPreviousInteractionIdError,
   normalizeContent,
   renderContentForChat,
@@ -314,6 +315,64 @@ describe('composeGeminiInteractionRequest', () => {
     expect(plan.request.generation_config).toEqual({ thinking_level: 'high' });
     expect(plan.request.previous_interaction_id).toBe('int-1');
     expect(plan.request.store).toBe(true);
+  });
+});
+
+describe('generateSessionTitle', () => {
+  it('uses gemini-flash-lite-latest and sanitizes quoted model output', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-title-1',
+      outputs: [{ type: 'text', text: '  "Quarterly release planning"  ' }],
+    });
+
+    const title = await generateSessionTitle('test-title-key', 'Plan our Q3 release milestones');
+
+    expect(title).toBe('Quarterly release planning');
+    expect(fetchRequestBodies).toHaveLength(1);
+    expect(fetchRequestBodies[0]?.model).toBe('gemini-flash-lite-latest');
+    expect(fetchRequestBodies[0]?.store).toBe(false);
+
+    const requestInput = fetchRequestBodies[0]?.input;
+    expect(Array.isArray(requestInput)).toBe(true);
+    const firstItem = Array.isArray(requestInput) ? requestInput[0] : null;
+    expect(firstItem).toMatchObject({
+      type: 'text',
+    });
+    const prompt = firstItem && typeof firstItem.text === 'string' ? firstItem.text : '';
+    expect(prompt).toContain('User query:');
+    expect(prompt).toContain('Plan our Q3 release milestones');
+  });
+
+  it('returns empty title when model provides no text outputs', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-title-2',
+      outputs: [{ type: 'function_call', id: 'call-1', name: 'noop', arguments: '{}' }],
+    });
+
+    const title = await generateSessionTitle('test-title-key-2', 'What should we prioritize?');
+    expect(title).toBe('');
+  });
+
+  it('returns empty title without calling Gemini for blank prompts', async () => {
+    const title = await generateSessionTitle('test-title-key-3', '   ');
+    expect(title).toBe('');
+    expect(fetchRequestBodies).toHaveLength(0);
+  });
+
+  it('truncates long generated titles to label length', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-title-4',
+      outputs: [
+        {
+          type: 'text',
+          text: 'Build a detailed migration roadmap for session title persistence across background and storage layers',
+        },
+      ],
+    });
+
+    const title = await generateSessionTitle('test-title-key-4', 'Create migration plan');
+    expect(title.length).toBeLessThanOrEqual(60);
+    expect(title.endsWith('…')).toBe(true);
   });
 });
 
