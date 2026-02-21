@@ -1,18 +1,34 @@
-import { type ChatMessage, sendMessage } from '../shared/chat';
+import { type ChatMessage, createNewChat, loadChatMessages, sendMessage } from '../shared/chat';
 
 const messageList = queryRequiredElement<HTMLOListElement>('#message-list');
 const form = queryRequiredElement<HTMLFormElement>('#chat-form');
 const input = queryRequiredElement<HTMLInputElement>('#chat-input');
+const newChatButton = queryRequiredElement<HTMLButtonElement>('#new-chat');
 
-const initialMessages: ChatMessage[] = [
-  {
-    id: crypto.randomUUID(),
-    role: 'assistant',
-    content: 'Welcome to Speakeasy. This is a scaffold; wire your model in sendMessage().',
-  },
-];
+void initializePopup();
 
-renderAll(initialMessages);
+newChatButton.addEventListener('click', async () => {
+  const previousDisabledState = input.disabled;
+  input.disabled = true;
+  newChatButton.disabled = true;
+  form.setAttribute('aria-busy', 'true');
+
+  try {
+    await createNewChat();
+    renderAll([createWelcomeMessage()]);
+  } catch (error) {
+    appendMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: toErrorMessage(error),
+    });
+  } finally {
+    input.disabled = previousDisabledState;
+    newChatButton.disabled = false;
+    form.removeAttribute('aria-busy');
+    input.focus();
+  }
+});
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -32,25 +48,46 @@ form.addEventListener('submit', async (event) => {
   form.setAttribute('aria-busy', 'true');
   input.value = '';
   input.disabled = true;
+  newChatButton.disabled = true;
 
   try {
     const assistantMessage = await sendMessage(userText);
     appendMessage(assistantMessage);
   } catch (error) {
-    const fallbackText =
-      error instanceof Error ? error.message : 'Unable to send message. Please try again.';
-
     appendMessage({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: fallbackText,
+      content: toErrorMessage(error),
     });
   } finally {
     input.disabled = false;
+    newChatButton.disabled = false;
     input.focus();
     form.removeAttribute('aria-busy');
   }
 });
+
+async function initializePopup(): Promise<void> {
+  try {
+    const history = await loadChatMessages();
+    if (history.messages.length > 0) {
+      renderAll(history.messages);
+      return;
+    }
+  } catch (error) {
+    renderAll([
+      createWelcomeMessage(),
+      {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: toErrorMessage(error),
+      },
+    ]);
+    return;
+  }
+
+  renderAll([createWelcomeMessage()]);
+}
 
 function renderAll(messages: ChatMessage[]): void {
   const fragment = document.createDocumentFragment();
@@ -66,6 +103,22 @@ function renderAll(messages: ChatMessage[]): void {
 function appendMessage(message: ChatMessage): void {
   messageList.append(createMessageNode(message));
   messageList.scrollTop = messageList.scrollHeight;
+}
+
+function createWelcomeMessage(): ChatMessage {
+  return {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: 'Welcome to Speakeasy. Configure your Gemini API key in Settings to start chatting.',
+  };
+}
+
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Unable to send message. Please try again.';
 }
 
 function createMessageNode(message: ChatMessage): HTMLLIElement {

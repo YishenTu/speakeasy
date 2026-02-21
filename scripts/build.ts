@@ -20,6 +20,7 @@ async function buildTypeScript(): Promise<void> {
   const result = await Bun.build({
     entrypoints: [
       join(rootDir, 'src/background/background.ts'),
+      join(rootDir, 'src/content/content.ts'),
       join(rootDir, 'src/popup/popup.ts'),
       join(rootDir, 'src/options/options.ts'),
     ],
@@ -54,14 +55,20 @@ async function copyStaticFiles(): Promise<void> {
   );
 }
 
-async function main(): Promise<void> {
-  await cleanDist();
+export async function buildExtension(options?: { clean?: boolean }): Promise<void> {
+  const shouldClean = options?.clean ?? true;
+  if (shouldClean) {
+    await cleanDist();
+  }
+
   await Promise.all([buildTypeScript(), buildTailwind()]);
   await copyStaticFiles();
   console.log('Build complete: dist/ is ready to load as an unpacked extension.');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (import.meta.main) {
+  buildExtension().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

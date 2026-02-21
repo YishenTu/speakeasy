@@ -5,17 +5,23 @@
   "description": "Speakeasy Chrome extension scaffold.",
   "type": "module",
   "scripts": {
+    "dev": "bun run scripts/dev.ts",
     "build": "bun run scripts/build.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:gemini": "bun run scripts/test-gemini.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/chrome": "0.0.293",
     "tailwindcss": "3.4.17",
     "typescript": "5.9.2"
+  },
+  "dependencies": {
+    "@google/genai": "1.42.0",
+    "@modelcontextprotocol/sdk": "1.26.0"
   }
 }
