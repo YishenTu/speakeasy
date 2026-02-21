@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   createNewChat,
   deleteChatById,
-  deleteCurrentChat,
   listChatSessions,
   loadChatMessages,
   loadChatMessagesById,
@@ -225,7 +224,7 @@ describe('shared chat client', () => {
     await expect(createNewChat()).rejects.toThrow(/failed to handle the request/i);
   });
 
-  it('deletes the current chat and clears active chat id', async () => {
+  it('deletes an active chat id and clears active chat state', async () => {
     storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-123';
     queueRuntimeResponses({
       ok: true,
@@ -235,19 +234,21 @@ describe('shared chat client', () => {
       },
     });
 
-    const deleted = await deleteCurrentChat();
+    const deleted = await deleteChatById('chat-123');
 
     expect(deleted).toBe(true);
     expect(runtimeRequests).toEqual([{ type: 'chat/delete', chatId: 'chat-123' }]);
     expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
   });
 
-  it('returns false when deleting without an active chat', async () => {
-    const deleted = await deleteCurrentChat();
+  it('returns false when deleting a blank chat id', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-keep';
+
+    const deleted = await deleteChatById('   ');
 
     expect(deleted).toBe(false);
     expect(runtimeRequests).toEqual([]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-keep');
   });
 
   it('deletes a specific non-active chat id', async () => {

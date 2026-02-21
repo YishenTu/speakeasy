@@ -11,9 +11,11 @@ import type { ChatAttachment } from '../shared/messages';
 import type { ChatSessionSummary } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
 import { queryRequiredElement } from './dom';
+import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 import { createInputToolbar } from './input-toolbar';
 import { appendMessage, createWelcomeMessage, renderAll, toErrorMessage } from './messages';
 import { requestOpenSettings } from './runtime';
+import { runWithSuccessCommit } from './success-commit';
 import { getChatPanelTemplate } from './template';
 import { uploadFilesToGemini } from './uploads';
 
@@ -432,7 +434,8 @@ function mountChatPanel(): void {
           return;
         }
 
-        if (!window.confirm(`Delete "${session.title}"?`)) {
+        const confirmTitle = sanitizeSessionTitleForConfirmation(session.title);
+        if (!window.confirm(`Delete "${confirmTitle}"?`)) {
           return;
         }
 
@@ -695,6 +698,16 @@ function mountChatPanel(): void {
       const uploadedAttachments = await uploadFilesToGemini(
         stagedSnapshot.map((staged) => staged.file),
       );
+      const selectedModel = toolbar.selectedModel();
+      const selectedThinking = toolbar.selectedThinkingLevel();
+      const assistantMessage = await runWithSuccessCommit(
+        () => sendMessage(userText, selectedModel, selectedThinking, uploadedAttachments),
+        () => {
+          input.value = '';
+          input.style.height = 'auto';
+          clearStagedFiles(true);
+        },
+      );
       const userMessageAttachments: ChatAttachment[] = uploadedAttachments.map(
         (attachment, index) => {
           const staged = stagedSnapshot[index];
@@ -720,19 +733,6 @@ function mountChatPanel(): void {
           ...(userMessageAttachments.length > 0 ? { attachments: userMessageAttachments } : {}),
         },
         messageList,
-      );
-
-      input.value = '';
-      input.style.height = 'auto';
-      clearStagedFiles(true);
-
-      const selectedModel = toolbar.selectedModel();
-      const selectedThinking = toolbar.selectedThinkingLevel();
-      const assistantMessage = await sendMessage(
-        userText,
-        selectedModel,
-        selectedThinking,
-        uploadedAttachments,
       );
       appendMessage(assistantMessage, messageList);
       activeChatId = (await getActiveChatId()) ?? null;
@@ -818,17 +818,22 @@ function mountChatPanel(): void {
   }
 
   async function loadConversationHistory(): Promise<void> {
-    hasLoadedHistory = true;
-
     try {
-      const history = await loadChatMessages();
-      activeChatId = history.chatId;
-      if (history.messages.length > 0) {
-        renderAll(history.messages, messageList);
-      } else {
-        renderAll([createWelcomeMessage()], messageList);
-      }
-      await refreshHistoryDropdown();
+      await runWithSuccessCommit(
+        async () => {
+          const history = await loadChatMessages();
+          activeChatId = history.chatId;
+          if (history.messages.length > 0) {
+            renderAll(history.messages, messageList);
+          } else {
+            renderAll([createWelcomeMessage()], messageList);
+          }
+          await refreshHistoryDropdown();
+        },
+        () => {
+          hasLoadedHistory = true;
+        },
+      );
     } catch (error: unknown) {
       renderAll(
         [
@@ -841,6 +846,7 @@ function mountChatPanel(): void {
         ],
         messageList,
       );
+      hasLoadedHistory = false;
       activeChatId = null;
       historySessions = [];
       renderHistoryMenu();

@@ -1,4 +1,5 @@
 import type { GeminiSettings } from '../shared/settings';
+import { validateGeminiToolConfiguration } from '../shared/tool-validation';
 
 export function validateSettings(settings: GeminiSettings): string | null {
   if (!settings.apiKey) {
@@ -9,24 +10,13 @@ export function validateSettings(settings: GeminiSettings): string | null {
     return 'Gemini model is required.';
   }
 
-  if (settings.tools.googleMaps) {
-    return 'Google Maps is not supported by the Interactions API in this extension yet.';
-  }
-
-  if (settings.tools.fileSearch && settings.fileSearchStoreNames.length === 0) {
-    return 'File Search is enabled but no file store names are configured.';
-  }
-
-  if (settings.tools.mcpServers && settings.mcpServerUrls.length === 0) {
-    return 'MCP servers are enabled but no MCP server URLs are configured.';
-  }
-
   if ((settings.mapsLatitude === null) !== (settings.mapsLongitude === null)) {
     return 'Provide both maps latitude and longitude, or leave both empty.';
   }
 
-  if (settings.tools.computerUse) {
-    return 'Computer Use needs a dedicated action/screenshot loop and is not wired yet.';
+  const toolConfigurationError = validateGeminiToolConfiguration(settings);
+  if (toolConfigurationError) {
+    return toolConfigurationError;
   }
 
   return null;

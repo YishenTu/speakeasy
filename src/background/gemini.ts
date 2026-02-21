@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
 import type { ChatAttachment } from '../shared/messages';
 import type { GeminiSettings } from '../shared/settings';
 import { composeGeminiInteractionRequest } from './gemini-request';
@@ -26,12 +27,9 @@ interface ExecutedFunctionCall {
 }
 
 export class InvalidPreviousInteractionIdError extends Error {
-  readonly cause: unknown;
-
   constructor(message: string, cause: unknown) {
-    super(message);
+    super(message, { cause });
     this.name = 'InvalidPreviousInteractionIdError';
-    this.cause = cause;
   }
 }
 
@@ -519,16 +517,12 @@ function parseFunctionCall(part: GeminiPart): GeminiFunctionCall | null {
 
   const id = typeof rawFunctionCall.id === 'string' ? rawFunctionCall.id.trim() : '';
   const name = typeof rawFunctionCall.name === 'string' ? rawFunctionCall.name.trim() : '';
-  if (!name) {
+  if (!id || !name) {
     return null;
   }
 
   const args = normalizeFunctionCallArgs(rawFunctionCall.args);
-  if (id) {
-    return { id, name, args };
-  }
-
-  return { name, args };
+  return { id, name, args };
 }
 
 function readPartRecord(
@@ -721,23 +715,14 @@ function inferMediaTypeFromMimeType(mimeType: string): 'image' | 'audio' | 'vide
 }
 
 function getGeminiClient(apiKey: string): GoogleGenAI {
-  const cached = geminiClients.get(apiKey);
-  if (cached) {
-    return cached;
-  }
-
-  const client = new GoogleGenAI({
-    apiKey,
-    apiVersion: 'v1beta',
+  return getOrCreateBoundedCacheValue({
+    cache: geminiClients,
+    key: apiKey,
+    maxSize: MAX_GEMINI_CLIENT_CACHE_SIZE,
+    create: () =>
+      new GoogleGenAI({
+        apiKey,
+        apiVersion: 'v1beta',
+      }),
   });
-
-  geminiClients.set(apiKey, client);
-  if (geminiClients.size > MAX_GEMINI_CLIENT_CACHE_SIZE) {
-    const oldestKey = geminiClients.keys().next().value;
-    if (oldestKey) {
-      geminiClients.delete(oldestKey);
-    }
-  }
-
-  return client;
 }

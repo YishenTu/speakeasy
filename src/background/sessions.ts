@@ -12,19 +12,6 @@ export function createSession(): ChatSession {
   };
 }
 
-export function getOrCreateSession(
-  sessions: Record<string, ChatSession>,
-  chatId: string | undefined,
-): ChatSession {
-  if (chatId && sessions[chatId]) {
-    return sessions[chatId];
-  }
-
-  const session = createSession();
-  sessions[session.id] = session;
-  return session;
-}
-
 export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   const rendered = renderContentForChat(content).trim();
   const attachments = extractAttachments(content);

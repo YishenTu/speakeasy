@@ -99,16 +99,6 @@ export async function sendMessage(
   return payload.assistantMessage;
 }
 
-export async function deleteCurrentChat(): Promise<boolean> {
-  const chatId = await readActiveChatId();
-  if (!chatId) {
-    await clearActiveChatId();
-    return false;
-  }
-
-  return deleteChatById(chatId);
-}
-
 export async function deleteChatById(chatId: string): Promise<boolean> {
   const normalizedChatId = chatId.trim();
   if (!normalizedChatId) {

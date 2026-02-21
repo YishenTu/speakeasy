@@ -72,7 +72,7 @@ describe('validateSettings', () => {
     settings.tools.computerUse = true;
 
     expect(validateSettings(settings)).toBe(
-      'Computer Use needs a dedicated action/screenshot loop and is not wired yet.',
+      'Computer Use needs a dedicated action/screenshot loop and is not yet wired.',
     );
   });
 

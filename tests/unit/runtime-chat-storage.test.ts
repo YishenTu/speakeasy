@@ -11,6 +11,9 @@ class InMemoryChatRepository implements ChatRepository {
   readonly sessions = new Map<string, ChatSession>();
   readonly upsertCalls: ChatSession[] = [];
   readonly deleteCalls: string[] = [];
+  upsertFailurePredicate: ((session: ChatSession) => Error | null) | null = null;
+  readonly pruneFailureCalls = new Set<number>();
+  pruneFailureError: Error = new Error('prune failed');
   pruneCallCount = 0;
 
   async getSession(chatId: string): Promise<ChatSession | null> {
@@ -19,6 +22,11 @@ class InMemoryChatRepository implements ChatRepository {
   }
 
   async upsertSession(session: ChatSession): Promise<void> {
+    const maybeError = this.upsertFailurePredicate?.(session) ?? null;
+    if (maybeError) {
+      throw maybeError;
+    }
+
     const cloned = cloneSession(session);
     this.upsertCalls.push(cloned);
     this.sessions.set(cloned.id, cloned);
@@ -37,6 +45,9 @@ class InMemoryChatRepository implements ChatRepository {
 
   async pruneExpiredSessions(): Promise<number> {
     this.pruneCallCount += 1;
+    if (this.pruneFailureCalls.has(this.pruneCallCount)) {
+      throw this.pruneFailureError;
+    }
     return 0;
   }
 }
@@ -133,6 +144,81 @@ describe('runtime chat storage handler', () => {
     expect((listPayload as { sessions: Array<{ chatId: string }> }).sessions).toHaveLength(1);
     expect(bootstrapCalls).toBe(1);
     expect(settingsReadCalls).toBe(1);
+  });
+
+  it('does not block requests when bootstrap initialization fails', async () => {
+    const originalError = console.error;
+    console.error = () => {};
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {
+          throw new Error('bootstrap failed');
+        },
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async () => {
+          throw new Error('not used');
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+      });
+
+      await expect(handler({ type: 'chat/load' })).resolves.toEqual({ chatId: null, messages: [] });
+    } finally {
+      console.error = originalError;
+    }
+  });
+
+  it('treats prune failures after startup as best-effort', async () => {
+    repository.pruneFailureCalls.add(2);
+    repository.pruneFailureCalls.add(3);
+    repository.pruneFailureCalls.add(4);
+    repository.sessions.set('chat-prune', createSession('chat-prune'));
+
+    const originalWarn = console.warn;
+    console.warn = () => {};
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session) => {
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'assistant reply after prune failure' }],
+          };
+          session.contents.push(assistantContent);
+          session.lastInteractionId = 'interaction-prune';
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+      });
+
+      const newPayload = await handler({ type: 'chat/new' });
+      expect((newPayload as { chatId: string }).chatId).toBeString();
+
+      const sendPayload = await handler({
+        type: 'chat/send',
+        chatId: 'chat-prune',
+        text: 'message',
+        model: 'gemini-3-flash-preview',
+      });
+      expect(sendPayload).toMatchObject({
+        chatId: 'chat-prune',
+        assistantMessage: {
+          role: 'assistant',
+          content: 'assistant reply after prune failure',
+        },
+      });
+
+      const deletePayload = await handler({ type: 'chat/delete', chatId: 'chat-prune' });
+      expect(deletePayload).toEqual({ deleted: true, chatId: null });
+    } finally {
+      console.warn = originalWarn;
+    }
   });
 
   it('serializes mutations and makes load wait for in-flight send', async () => {
@@ -253,6 +339,118 @@ describe('runtime chat storage handler', () => {
     expect(repository.upsertCalls).toHaveLength(1);
   });
 
+  it('surfaces reset persistence failures separately from expired interaction errors', async () => {
+    const chained = createSession('chat-reset-failure');
+    chained.lastInteractionId = 'interaction-old';
+    repository.sessions.set(chained.id, chained);
+    repository.upsertFailurePredicate = (session) =>
+      session.id === chained.id && !session.lastInteractionId
+        ? new Error('failed to persist reset session')
+        : null;
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new InvalidPreviousInteractionIdError('invalid previous interaction id', {
+          status: 400,
+        });
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    await expect(
+      handler({
+        type: 'chat/send',
+        chatId: chained.id,
+        text: 'retry',
+        model: 'gemini-3-flash-preview',
+      }),
+    ).rejects.toThrow(/failed to reset expired conversation context/i);
+
+    expect(repository.sessions.get(chained.id)?.lastInteractionId).toBe('interaction-old');
+  });
+
+  it('creates a chat session on send when no chat id is provided', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'assistant reply for auto-created session' }],
+        };
+        session.contents.push(assistantContent);
+        session.lastInteractionId = 'interaction-auto-create';
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    const sendPayload = await handler({
+      type: 'chat/send',
+      text: 'start new conversation',
+      model: 'gemini-3-flash-preview',
+    });
+
+    const chatId = (sendPayload as { chatId: string }).chatId;
+    expect(chatId).toBeString();
+    expect(repository.sessions.has(chatId)).toBe(true);
+    expect(sendPayload).toMatchObject({
+      assistantMessage: {
+        role: 'assistant',
+        content: 'assistant reply for auto-created session',
+      },
+    });
+  });
+
+  it('uses timestamp fallback titles for sessions without text parts', async () => {
+    repository.sessions.set('chat-without-text', {
+      id: 'chat-without-text',
+      createdAt: '2025-01-01T03:00:00.000Z',
+      updatedAt: '2025-01-01T03:04:05.000Z',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              fileData: {
+                fileUri: 'https://example.invalid/files/note.txt',
+                mimeType: 'text/plain',
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    const payload = await handler({ type: 'chat/list' });
+    expect(payload).toEqual({
+      sessions: [
+        {
+          chatId: 'chat-without-text',
+          title: 'Chat 2025-01-01 03:04',
+          updatedAt: '2025-01-01T03:04:05.000Z',
+        },
+      ],
+    });
+  });
+
   it('opens options through runtime request', async () => {
     let opened = false;
     const handler = createRuntimeRequestHandler({
@@ -271,5 +469,124 @@ describe('runtime chat storage handler', () => {
     const payload = await handler({ type: 'app/open-options' } as RuntimeRequest);
     expect(payload).toEqual({ opened: true });
     expect(opened).toBe(true);
+  });
+
+  it('rejects empty sends before hitting Gemini', async () => {
+    let calledGemini = false;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        calledGemini = true;
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    await expect(
+      handler({
+        type: 'chat/send',
+        text: '   ',
+        model: 'gemini-3-flash-preview',
+      }),
+    ).rejects.toThrow(/empty message/i);
+
+    expect(calledGemini).toBe(false);
+  });
+
+  it('rejects sends when Gemini API key is missing from settings', async () => {
+    const settings = createSettings();
+    settings.apiKey = '';
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => settings,
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    await expect(
+      handler({
+        type: 'chat/send',
+        text: 'hello',
+        model: 'gemini-3-flash-preview',
+      }),
+    ).rejects.toThrow(/api key is missing/i);
+  });
+
+  it('supports attachment-only sends and filters invalid attachment entries', async () => {
+    let capturedSession: ChatSession | null = null;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        capturedSession = cloneSession(session);
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'attachment accepted' }],
+        };
+        session.contents.push(assistantContent);
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    const payload = await handler({
+      type: 'chat/send',
+      text: '  ',
+      model: 'gemini-3-flash-preview',
+      attachments: [
+        {
+          name: 'img',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/image.png',
+          fileName: 'gemini-file-1',
+        },
+        {
+          name: '',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/skip.png',
+        },
+      ],
+    });
+
+    expect(payload).toMatchObject({
+      assistantMessage: { content: 'attachment accepted' },
+    });
+    expect(capturedSession?.contents.at(-1)).toEqual({
+      role: 'user',
+      parts: [
+        {
+          fileData: {
+            fileUri: 'https://example.invalid/files/image.png',
+            mimeType: 'image/png',
+          },
+        },
+      ],
+    });
+  });
+
+  it('surfaces options-page failures to callers', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {
+        throw new Error('options unavailable');
+      },
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+    });
+
+    await expect(handler({ type: 'app/open-options' })).rejects.toThrow(/options unavailable/i);
   });
 });

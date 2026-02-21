@@ -27,6 +27,7 @@ export interface ChatRepository {
   pruneExpiredSessions(nowMs?: number): Promise<number>;
 }
 
+// Shared singleton connection for the background worker runtime.
 let databasePromise: Promise<IDBDatabase> | null = null;
 
 export function createChatRepository(): ChatRepository {
@@ -116,6 +117,8 @@ async function listSessions(): Promise<ChatSession[]> {
       const parsed = parsePersistedSessionRecord(cursor.value);
       if (parsed) {
         sessions.push(parsed);
+      } else {
+        console.warn('Skipping malformed chat session while listing history.', cursor.value);
       }
 
       cursor.continue();
@@ -204,13 +207,24 @@ async function openChatDatabase(): Promise<IDBDatabase> {
     return databasePromise;
   }
 
-  databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
+  const openingPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const rejectOpen = (message: string, cause?: unknown): void => {
+      reject(cause ? new Error(message, { cause }) : new Error(message));
+    };
+
     if (typeof indexedDB === 'undefined') {
-      reject(new Error('IndexedDB is not available in this runtime.'));
+      rejectOpen('IndexedDB is not available in this runtime.');
       return;
     }
 
-    const request = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
+    let request: IDBOpenDBRequest;
+    try {
+      request = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
+    } catch (error: unknown) {
+      rejectOpen('Failed to open chat IndexedDB database.', error);
+      return;
+    }
+
     request.onupgradeneeded = () => {
       const database = request.result;
       const store = database.objectStoreNames.contains(CHAT_SESSION_STORE_NAME)
@@ -237,14 +251,21 @@ async function openChatDatabase(): Promise<IDBDatabase> {
       resolve(database);
     };
     request.onerror = () => {
-      reject(new Error('Failed to open chat IndexedDB database.'));
+      rejectOpen('Failed to open chat IndexedDB database.', request.error);
     };
     request.onblocked = () => {
-      reject(new Error('Chat IndexedDB open request was blocked.'));
+      rejectOpen('Chat IndexedDB open request was blocked.');
     };
   });
 
-  return databasePromise;
+  databasePromise = openingPromise;
+  openingPromise.catch(() => {
+    if (databasePromise === openingPromise) {
+      databasePromise = null;
+    }
+  });
+
+  return openingPromise;
 }
 
 function toPersistedSessionRecord(session: ChatSession, nowMs: number): PersistedChatSessionRecord {
@@ -269,10 +290,9 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
     role: content.role === 'user' ? 'user' : 'model',
     parts: content.parts.map((part) => ({ ...part })),
   }));
-  const lastInteractionId =
-    typeof session.lastInteractionId === 'string' && session.lastInteractionId.trim()
-      ? session.lastInteractionId.trim()
-      : undefined;
+  const trimmedLastInteractionId =
+    typeof session.lastInteractionId === 'string' ? session.lastInteractionId.trim() : '';
+  const lastInteractionId = trimmedLastInteractionId || undefined;
 
   return {
     id,
@@ -307,15 +327,18 @@ function parsePersistedSessionRecord(rawValue: unknown): ChatSession | null {
   for (const rawContent of rawContents) {
     try {
       contents.push(normalizeContent(rawContent));
-    } catch {
-      // Skip malformed entries to keep storage resilient to schema changes.
+    } catch (error: unknown) {
+      // Keep storage resilient to schema drift while preserving observability for field debugging.
+      console.warn('Skipping malformed chat content while parsing persisted session.', {
+        rawContent,
+        error,
+      });
     }
   }
 
-  const lastInteractionId =
-    typeof rawValue.lastInteractionId === 'string' && rawValue.lastInteractionId.trim()
-      ? rawValue.lastInteractionId.trim()
-      : undefined;
+  const trimmedLastInteractionId =
+    typeof rawValue.lastInteractionId === 'string' ? rawValue.lastInteractionId.trim() : '';
+  const lastInteractionId = trimmedLastInteractionId || undefined;
 
   return {
     id,

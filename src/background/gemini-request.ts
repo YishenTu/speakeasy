@@ -1,4 +1,5 @@
 import type { GeminiSettings } from '../shared/settings';
+import { validateGeminiToolConfiguration } from '../shared/tool-validation';
 import { isObjectEmpty } from './utils';
 
 export interface GeminiRequestToolSelection {
@@ -67,22 +68,9 @@ export function buildGeminiRequestToolSelection(
   settings: GeminiSettings,
   functionDeclarations: Array<Record<string, unknown>>,
 ): GeminiRequestToolSelection {
-  if (settings.tools.fileSearch && settings.fileSearchStoreNames.length === 0) {
-    throw new Error('File Search is enabled but no file store names were configured.');
-  }
-
-  if (settings.tools.mcpServers && settings.mcpServerUrls.length === 0) {
-    throw new Error('MCP servers are enabled but no MCP server URLs were configured.');
-  }
-
-  if (settings.tools.computerUse) {
-    throw new Error(
-      'Computer Use requires a dedicated action/screenshot loop and is not yet wired in this extension backend.',
-    );
-  }
-
-  if (settings.tools.googleMaps) {
-    throw new Error('Google Maps is not supported by the Interactions API in this extension yet.');
+  const toolConfigurationError = validateGeminiToolConfiguration(settings);
+  if (toolConfigurationError) {
+    throw new Error(toolConfigurationError);
   }
 
   const tools: Array<Record<string, unknown>> = [];

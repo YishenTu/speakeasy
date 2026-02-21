@@ -89,8 +89,12 @@ export function createRuntimeRequestHandler(
 
   let mutationQueue: Promise<void> = Promise.resolve();
   const ready = (async () => {
-    await dependencies.bootstrapChatStorage();
-    await dependencies.repository.pruneExpiredSessions(dependencies.now().getTime());
+    try {
+      await dependencies.bootstrapChatStorage();
+      await pruneExpiredSessionsBestEffort(dependencies, dependencies.now().getTime());
+    } catch (error: unknown) {
+      console.error('Failed to initialize chat storage bootstrap.', error);
+    }
   })();
 
   const enqueueMutation = <TPayload>(operation: () => Promise<TPayload>): Promise<TPayload> => {
@@ -183,7 +187,7 @@ async function handleNewChat(dependencies: RuntimeDependencies): Promise<ChatNew
   const session = createSession();
   const now = dependencies.now();
   await dependencies.repository.upsertSession(session, now.getTime());
-  await dependencies.repository.pruneExpiredSessions(now.getTime());
+  await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
   return {
     chatId: session.id,
   };
@@ -241,18 +245,14 @@ async function handleSendMessage(
   } catch (error: unknown) {
     if (isInvalidPreviousInteractionIdError(error)) {
       if (baseSession.lastInteractionId) {
-        const { lastInteractionId: _lastInteractionId, ...sessionWithoutInteractionId } =
-          baseSession;
-        const resetSession: ChatSession = {
-          ...sessionWithoutInteractionId,
-          contents: baseSession.contents.map((content) => ({
-            role: content.role,
-            parts: content.parts.map((part) => ({ ...part })),
-          })),
-        };
+        const { lastInteractionId: _ignored, ...resetSession } = structuredClone(baseSession);
         const now = dependencies.now();
-        await dependencies.repository.upsertSession(resetSession, now.getTime());
-        await dependencies.repository.pruneExpiredSessions(now.getTime());
+        try {
+          await dependencies.repository.upsertSession(resetSession, now.getTime());
+        } catch (resetError: unknown) {
+          throw new Error('Failed to reset expired conversation context.', { cause: resetError });
+        }
+        await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
       }
       throw new Error(EXPIRED_INTERACTION_MESSAGE);
     }
@@ -262,7 +262,7 @@ async function handleSendMessage(
   const now = dependencies.now();
   workingSession.updatedAt = now.toISOString();
   await dependencies.repository.upsertSession(workingSession, now.getTime());
-  await dependencies.repository.pruneExpiredSessions(now.getTime());
+  await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
 
   return {
     chatId: workingSession.id,
@@ -275,7 +275,7 @@ async function handleDeleteChat(
   dependencies: RuntimeDependencies,
 ): Promise<ChatDeletePayload> {
   const deleted = await dependencies.repository.deleteSession(chatId);
-  await dependencies.repository.pruneExpiredSessions(dependencies.now().getTime());
+  await pruneExpiredSessionsBestEffort(dependencies, dependencies.now().getTime());
 
   return {
     deleted,
@@ -285,7 +285,7 @@ async function handleDeleteChat(
 
 async function handleListChats(dependencies: RuntimeDependencies): Promise<ChatListPayload> {
   const nowMs = dependencies.now().getTime();
-  await dependencies.repository.pruneExpiredSessions(nowMs);
+  await pruneExpiredSessionsBestEffort(dependencies, nowMs);
   const sessions = await dependencies.repository.listSessions();
   const summaries: ChatSessionSummary[] = sessions.map((session) => ({
     chatId: session.id,
@@ -388,4 +388,15 @@ function truncateForLabel(text: string, maxLength: number): string {
   }
 
   return `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+async function pruneExpiredSessionsBestEffort(
+  dependencies: RuntimeDependencies,
+  nowMs: number,
+): Promise<void> {
+  try {
+    await dependencies.repository.pruneExpiredSessions(nowMs);
+  } catch (error: unknown) {
+    console.warn('Failed to prune expired chat sessions.', error);
+  }
 }

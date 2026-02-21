@@ -2,6 +2,8 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   CHAT_DB_NAME,
+  CHAT_SESSION_BY_EXPIRES_AT_INDEX,
+  CHAT_SESSION_BY_UPDATED_AT_INDEX,
   CHAT_SESSION_STORE_NAME,
   SESSION_TTL_MS,
   closeChatDatabaseForTests,
@@ -25,8 +27,19 @@ async function insertRawSessionRecord(record: unknown): Promise<void> {
     const openRequest = indexedDB.open(CHAT_DB_NAME, 1);
     openRequest.onupgradeneeded = () => {
       const database = openRequest.result;
-      if (!database.objectStoreNames.contains(CHAT_SESSION_STORE_NAME)) {
-        database.createObjectStore(CHAT_SESSION_STORE_NAME, { keyPath: 'id' });
+      const store = database.objectStoreNames.contains(CHAT_SESSION_STORE_NAME)
+        ? openRequest.transaction?.objectStore(CHAT_SESSION_STORE_NAME)
+        : database.createObjectStore(CHAT_SESSION_STORE_NAME, { keyPath: 'id' });
+
+      if (!store) {
+        throw new Error('Failed to initialize test chat session store.');
+      }
+
+      if (!store.indexNames.contains(CHAT_SESSION_BY_EXPIRES_AT_INDEX)) {
+        store.createIndex(CHAT_SESSION_BY_EXPIRES_AT_INDEX, 'expiresAtMs');
+      }
+      if (!store.indexNames.contains(CHAT_SESSION_BY_UPDATED_AT_INDEX)) {
+        store.createIndex(CHAT_SESSION_BY_UPDATED_AT_INDEX, 'updatedAtMs');
       }
     };
     openRequest.onerror = () => reject(new Error('Failed to open test chat database.'));
@@ -115,26 +128,89 @@ describe('chat repository', () => {
   });
 
   it('skips malformed persisted content entries', async () => {
+    const originalWarn = console.warn;
+    const warnings: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+
     const nowIso = new Date(Date.UTC(2025, 0, 1)).toISOString();
-    await insertRawSessionRecord({
-      id: 'malformed-session',
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      updatedAtMs: Date.UTC(2025, 0, 1),
-      expiresAtMs: Date.UTC(2025, 0, 1) + SESSION_TTL_MS,
-      lastInteractionId: 'interaction-123',
-      contents: [
-        { role: 'model', parts: [{ text: 'valid reply' }] },
-        'bad-entry',
-        { role: 'model', parts: [] },
-      ],
-    });
+    try {
+      await insertRawSessionRecord({
+        id: 'malformed-session',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        updatedAtMs: Date.UTC(2025, 0, 1),
+        expiresAtMs: Date.UTC(2025, 0, 1) + SESSION_TTL_MS,
+        lastInteractionId: 'interaction-123',
+        contents: [
+          { role: 'model', parts: [{ text: 'valid reply' }] },
+          'bad-entry',
+          { role: 'model', parts: [] },
+        ],
+      });
 
+      const repository = createChatRepository();
+      const stored = await repository.getSession('malformed-session');
+
+      expect(stored).toBeDefined();
+      expect(stored?.lastInteractionId).toBe('interaction-123');
+      expect(stored?.contents).toEqual([{ role: 'model', parts: [{ text: 'valid reply' }] }]);
+      expect(
+        warnings.some((call) => String(call[0] ?? '').includes('Skipping malformed chat content')),
+      ).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it('warns when listing malformed persisted session records', async () => {
+    const originalWarn = console.warn;
+    const warnings: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+
+    const nowIso = new Date(Date.UTC(2025, 0, 1)).toISOString();
+    try {
+      await insertRawSessionRecord({
+        id: '   ',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        updatedAtMs: Date.UTC(2025, 0, 1),
+        expiresAtMs: Date.UTC(2025, 0, 1) + SESSION_TTL_MS,
+        contents: [{ role: 'model', parts: [{ text: 'valid reply' }] }],
+      });
+
+      const repository = createChatRepository();
+      await expect(repository.listSessions()).resolves.toEqual([]);
+      expect(
+        warnings.some((call) => String(call[0] ?? '').includes('Skipping malformed chat session')),
+      ).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it('retries database open after a transient IndexedDB open failure', async () => {
     const repository = createChatRepository();
-    const stored = await repository.getSession('malformed-session');
+    const idbFactory = indexedDB as unknown as { open: typeof indexedDB.open };
+    const originalOpen = idbFactory.open;
+    let openCallCount = 0;
+    idbFactory.open = function (...args: Parameters<IDBFactory['open']>) {
+      openCallCount += 1;
+      if (openCallCount === 1) {
+        throw new Error('transient IndexedDB open failure');
+      }
+      return originalOpen.apply(this, args);
+    } as typeof indexedDB.open;
 
-    expect(stored).toBeDefined();
-    expect(stored?.lastInteractionId).toBe('interaction-123');
-    expect(stored?.contents).toEqual([{ role: 'model', parts: [{ text: 'valid reply' }] }]);
+    try {
+      await expect(repository.listSessions()).rejects.toThrow(/failed to open chat indexeddb/i);
+      await expect(repository.listSessions()).resolves.toEqual([]);
+      expect(openCallCount).toBe(2);
+    } finally {
+      idbFactory.open = originalOpen;
+    }
   });
 });

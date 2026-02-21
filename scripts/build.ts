@@ -61,7 +61,8 @@ async function buildTypeScript(outDir: string): Promise<void> {
 }
 
 async function buildTailwind(outDir: string): Promise<void> {
-  await $`bunx tailwindcss -c ./tailwind.config.js -i ./src/styles/tailwind.css -o ${join(outDir, 'ui.css')} --minify`;
+  // Tailwind's bundled Browserslist data can become stale independently of this project.
+  await $`BROWSERSLIST_IGNORE_OLD_DATA=true bunx tailwindcss -c ./tailwind.config.js -i ./src/styles/tailwind.css -o ${join(outDir, 'ui.css')} --minify`;
 }
 
 async function copyStaticFiles(outDir: string): Promise<void> {

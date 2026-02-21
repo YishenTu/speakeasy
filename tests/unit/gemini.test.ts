@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
+  InvalidPreviousInteractionIdError,
   completeAssistantTurn,
   extractAttachments,
   isInvalidPreviousInteractionIdError,
@@ -286,6 +287,16 @@ describe('normalizeContent', () => {
   });
 });
 
+describe('InvalidPreviousInteractionIdError', () => {
+  it('uses standard Error.cause semantics', () => {
+    const rootCause = new Error('root cause');
+    const error = new InvalidPreviousInteractionIdError('outer message', rootCause);
+
+    expect(error.cause).toBe(rootCause);
+    expect(Object.prototype.propertyIsEnumerable.call(error, 'cause')).toBe(false);
+  });
+});
+
 describe('composeGeminiInteractionRequest', () => {
   it('adds system instructions and thinking config when provided', () => {
     const settings = createSettingsForToolTests();
@@ -307,6 +318,20 @@ describe('composeGeminiInteractionRequest', () => {
 });
 
 describe('completeAssistantTurn', () => {
+  it('throws when the latest session content is not a user message', async () => {
+    const settings = createSettingsForToolTests();
+    const session: ChatSession = {
+      id: 'session-missing-user',
+      createdAt: new Date('2025-01-01T00:00:00.000Z').toISOString(),
+      updatedAt: new Date('2025-01-01T00:00:00.000Z').toISOString(),
+      contents: [{ role: 'model', parts: [{ text: 'assistant first' }] }],
+    };
+
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(
+      /expected a user message/i,
+    );
+  });
+
   it('returns first assistant response and persists interaction id', async () => {
     enqueueGeminiResponses({
       id: 'interaction-1',
@@ -324,6 +349,24 @@ describe('completeAssistantTurn', () => {
     expect(fetchRequestBodies).toHaveLength(1);
     expect(fetchRequestBodies[0]?.input).toEqual([{ type: 'text', text: 'hello' }]);
     expect(fetchRequestBodies[0]?.previous_interaction_id).toBeUndefined();
+  });
+
+  it('throws when Gemini returns a non-object payload', async () => {
+    enqueueGeminiResponses(42);
+    const settings = createSettingsForToolTests();
+    const session = createSession();
+
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/json object/i);
+  });
+
+  it('throws when Gemini response is missing interaction id', async () => {
+    enqueueGeminiResponses({
+      outputs: [{ type: 'text', text: 'missing id response' }],
+    });
+    const settings = createSettingsForToolTests();
+    const session = createSession();
+
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/include an id/i);
   });
 
   it('continues from the stored previous interaction id', async () => {
@@ -399,6 +442,32 @@ describe('completeAssistantTurn', () => {
       },
     ]);
     expect(session.lastInteractionId).toBe('interaction-2');
+  });
+
+  it('does not throw when Gemini returns function calls without call ids', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-1',
+      outputs: [
+        {
+          type: 'function_call',
+          name: 'get_extension_info',
+          arguments: {},
+        },
+      ],
+    });
+
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+    const session = createSession('call tool');
+
+    const assistantContent = await completeAssistantTurn(session, settings);
+
+    expect(assistantContent.parts).toEqual([
+      { functionCall: { name: 'get_extension_info', args: {} } },
+    ]);
+    expect(fetchRequestBodies).toHaveLength(1);
+    expect(session.contents).toHaveLength(2);
+    expect(session.lastInteractionId).toBe('interaction-1');
   });
 
   it('returns tool error responses for unknown tools and malformed JSON args', async () => {
@@ -492,6 +561,141 @@ describe('completeAssistantTurn', () => {
     await expect(completeAssistantTurn(session, settings)).rejects.toThrow(
       /did not return any outputs/i,
     );
+  });
+
+  it('maps multimodal outputs into chat attachments', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-media',
+      outputs: [
+        {
+          type: 'image',
+          mime_type: 'image/png',
+          uri: 'https://example.invalid/files/pic.png',
+        },
+        {
+          type: 'audio',
+          mime_type: 'audio/wav',
+          data: 'AAAB',
+        },
+      ],
+    });
+
+    const settings = createSettingsForToolTests();
+    const session = createSession('show attachments');
+    const content = await completeAssistantTurn(session, settings);
+
+    expect(extractAttachments(content)).toEqual([
+      {
+        name: 'pic.png',
+        mimeType: 'image/png',
+        fileUri: 'https://example.invalid/files/pic.png',
+      },
+      {
+        name: 'attachment',
+        mimeType: 'audio/wav',
+      },
+    ]);
+  });
+
+  it('maps code-execution calls and unknown output summaries', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-code-output',
+      outputs: [
+        {
+          type: 'code_execution_call',
+          arguments: {
+            language: 'python',
+            code: 'print(7)',
+          },
+        },
+        {
+          type: 'unknown_signal',
+          name: 'mystery',
+          id: 'm-1',
+          result: [1, 2],
+        },
+      ],
+    });
+
+    const settings = createSettingsForToolTests();
+    const session = createSession('execute');
+    const content = await completeAssistantTurn(session, settings);
+
+    expect(content.parts).toEqual([
+      {
+        executableCode: {
+          language: 'python',
+          code: 'print(7)',
+        },
+      },
+      {
+        interactionOutput: {
+          type: 'unknown_signal',
+          name: 'mystery',
+          id: 'm-1',
+          resultCount: 2,
+        },
+      },
+    ]);
+  });
+
+  it('maps user attachment mime types to interactions input media types', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-input-media',
+      outputs: [{ type: 'text', text: 'ok' }],
+    });
+
+    const session: ChatSession = {
+      id: 'session-media-input',
+      createdAt: new Date('2025-01-01T00:00:00.000Z').toISOString(),
+      updatedAt: new Date('2025-01-01T00:00:00.000Z').toISOString(),
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              fileData: {
+                fileUri: 'https://example.invalid/files/clip.wav',
+                mimeType: 'audio/wav',
+              },
+            },
+            {
+              fileData: {
+                fileUri: 'https://example.invalid/files/movie.mp4',
+                mimeType: 'video/mp4',
+              },
+            },
+            {
+              inlineData: {
+                mimeType: 'application/pdf',
+                data: 'AAAB',
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const settings = createSettingsForToolTests();
+    await completeAssistantTurn(session, settings);
+
+    expect(fetchRequestBodies[0]?.input).toEqual([
+      {
+        type: 'audio',
+        mime_type: 'audio/wav',
+        uri: 'https://example.invalid/files/clip.wav',
+      },
+      {
+        type: 'video',
+        mime_type: 'video/mp4',
+        uri: 'https://example.invalid/files/movie.mp4',
+      },
+      {
+        type: 'document',
+        mime_type: 'application/pdf',
+        data: 'AAAB',
+      },
+    ]);
   });
 
   it('throws when max tool round-trips is zero', async () => {

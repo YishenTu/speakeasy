@@ -1,22 +1,19 @@
 import { describe, expect, it } from 'bun:test';
 import {
   createSession,
-  getOrCreateSession,
   mapSessionToChatMessages,
   toAssistantChatMessage,
 } from '../../src/background/sessions';
 import type { ChatSession } from '../../src/background/types';
 
 describe('sessions', () => {
-  it('creates sessions and returns existing session when chatId is known', () => {
-    const sessions: Record<string, ChatSession> = {};
+  it('createSession returns independent session objects', () => {
+    const first = createSession();
+    const second = createSession();
 
-    const created = getOrCreateSession(sessions, undefined);
-    expect(created.id.length).toBeGreaterThan(0);
-    expect(sessions[created.id]).toBe(created);
-
-    const resolved = getOrCreateSession(sessions, created.id);
-    expect(resolved).toBe(created);
+    expect(first.id.length).toBeGreaterThan(0);
+    expect(second.id.length).toBeGreaterThan(0);
+    expect(first.id).not.toBe(second.id);
   });
 
   it('maps persisted content to chat messages and keeps attachment-only entries', () => {

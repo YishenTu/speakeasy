@@ -1,21 +1,52 @@
 import { GoogleGenAI } from '@google/genai';
+import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
 import type { FileDataAttachmentPayload } from '../shared/runtime';
 import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../shared/settings';
 
 const MAX_GEMINI_CLIENT_CACHE_SIZE = 2;
 const geminiClients = new Map<string, GoogleGenAI>();
 
-export async function uploadFilesToGemini(files: File[]): Promise<FileDataAttachmentPayload[]> {
+interface UploadFileClient {
+  files: {
+    upload: (input: {
+      file: File;
+      config: {
+        displayName: string;
+        mimeType?: string;
+      };
+    }) => Promise<{
+      uri?: string;
+      mimeType?: string;
+      name?: string;
+    }>;
+  };
+}
+
+interface UploadDependencies {
+  readGeminiApiKey: () => Promise<string>;
+  getGeminiClient: (apiKey: string) => UploadFileClient;
+}
+
+export async function uploadFilesToGemini(
+  files: File[],
+  overrides: Partial<UploadDependencies> = {},
+): Promise<FileDataAttachmentPayload[]> {
   if (files.length === 0) {
     return [];
   }
 
-  const apiKey = await readGeminiApiKey();
+  const dependencies: UploadDependencies = {
+    readGeminiApiKey,
+    getGeminiClient,
+    ...overrides,
+  };
+
+  const apiKey = await dependencies.readGeminiApiKey();
   if (!apiKey) {
     throw new Error('Gemini API key is missing. Add it in Speakeasy Settings.');
   }
 
-  const client = getGeminiClient(apiKey);
+  const client = dependencies.getGeminiClient(apiKey);
   const uploadedAttachments: FileDataAttachmentPayload[] = [];
 
   for (const file of files) {
@@ -54,23 +85,14 @@ async function readGeminiApiKey(): Promise<string> {
 }
 
 function getGeminiClient(apiKey: string): GoogleGenAI {
-  const cached = geminiClients.get(apiKey);
-  if (cached) {
-    return cached;
-  }
-
-  const client = new GoogleGenAI({
-    apiKey,
-    apiVersion: 'v1beta',
+  return getOrCreateBoundedCacheValue({
+    cache: geminiClients,
+    key: apiKey,
+    maxSize: MAX_GEMINI_CLIENT_CACHE_SIZE,
+    create: () =>
+      new GoogleGenAI({
+        apiKey,
+        apiVersion: 'v1beta',
+      }),
   });
-
-  geminiClients.set(apiKey, client);
-  if (geminiClients.size > MAX_GEMINI_CLIENT_CACHE_SIZE) {
-    const oldestKey = geminiClients.keys().next().value;
-    if (oldestKey) {
-      geminiClients.delete(oldestKey);
-    }
-  }
-
-  return client;
 }
