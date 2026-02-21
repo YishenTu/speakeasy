@@ -7,7 +7,6 @@ import {
   loadChatMessagesById,
   sendMessage,
 } from '../shared/chat';
-import type { ChatAttachment } from '../shared/messages';
 import type { ChatSessionSummary } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
 import { queryRequiredElement } from './dom';
@@ -15,6 +14,7 @@ import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 import { createInputToolbar } from './input-toolbar';
 import { appendMessage, createWelcomeMessage, renderAll, toErrorMessage } from './messages';
 import { requestOpenSettings } from './runtime';
+import { sendChatTurnWithOptimisticUserMessage } from './send-flow';
 import { runWithSuccessCommit } from './success-commit';
 import { getChatPanelTemplate } from './template';
 import { uploadFilesToGemini } from './uploads';
@@ -695,44 +695,27 @@ function mountChatPanel(): void {
     setBusyState(true);
 
     try {
-      const uploadedAttachments = await uploadFilesToGemini(
-        stagedSnapshot.map((staged) => staged.file),
-      );
       const selectedModel = toolbar.selectedModel();
       const selectedThinking = toolbar.selectedThinkingLevel();
-      const assistantMessage = await runWithSuccessCommit(
-        () => sendMessage(userText, selectedModel, selectedThinking, uploadedAttachments),
-        () => {
-          input.value = '';
-          input.style.height = 'auto';
-          clearStagedFiles(true);
-        },
-      );
-      const userMessageAttachments: ChatAttachment[] = uploadedAttachments.map(
-        (attachment, index) => {
-          const staged = stagedSnapshot[index];
-          let previewUrl: string | undefined;
-          if (staged?.mimeType.startsWith('image/')) {
-            previewUrl = URL.createObjectURL(staged.file);
-          }
-
-          return {
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            fileUri: attachment.fileUri,
-            ...(previewUrl ? { previewUrl } : {}),
-          };
-        },
-      );
-
-      appendMessage(
+      const assistantMessage = await sendChatTurnWithOptimisticUserMessage(
         {
-          id: crypto.randomUUID(),
-          role: 'user',
-          content: userText,
-          ...(userMessageAttachments.length > 0 ? { attachments: userMessageAttachments } : {}),
+          text: userText,
+          stagedFiles: stagedSnapshot,
+          model: selectedModel,
+          thinkingLevel: selectedThinking,
         },
-        messageList,
+        {
+          appendMessage: (message) => {
+            appendMessage(message, messageList);
+          },
+          onUserMessageAppended: () => {
+            input.value = '';
+            input.style.height = 'auto';
+            clearStagedFiles(true);
+          },
+          uploadFiles: uploadFilesToGemini,
+          sendMessage,
+        },
       );
       appendMessage(assistantMessage, messageList);
       activeChatId = (await getActiveChatId()) ?? null;

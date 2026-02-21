@@ -4,3 +4,8 @@ name = "speakeasy"
 
 [setup]
 script = "bun install"
+
+[[actions]]
+name = "build"
+icon = "run"
+command = "bun run build"
