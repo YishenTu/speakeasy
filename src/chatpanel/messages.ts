@@ -129,10 +129,9 @@ function enforceLinkBehavior(container: ParentNode): void {
 }
 
 const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
-const SCHEME_PREFIX_PATTERN = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
 
 function isSafeLinkHref(href: string): boolean {
-  if (!SCHEME_PREFIX_PATTERN.test(href)) {
+  if (!/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href)) {
     return false;
   }
 

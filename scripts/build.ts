@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { $ } from 'bun';
 
@@ -96,39 +96,8 @@ async function buildArtifacts(outDir: string): Promise<void> {
 }
 
 async function mirrorBuildArtifacts(sourceDir: string, targetDir: string): Promise<void> {
-  const parentDir = dirname(targetDir);
-  const mirrorId = `${process.pid}-${Date.now()}`;
-  const stagingDir = join(parentDir, `.dist-staging-${mirrorId}`);
-  const backupDir = join(parentDir, `.dist-backup-${mirrorId}`);
-
-  await mkdir(parentDir, { recursive: true });
-  await rm(stagingDir, { recursive: true, force: true });
-  await rm(backupDir, { recursive: true, force: true });
-  await cp(sourceDir, stagingDir, { recursive: true });
-
-  let movedExistingTarget = false;
-  try {
-    await rename(targetDir, backupDir);
-    movedExistingTarget = true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== 'ENOENT') {
-      throw error;
-    }
-  }
-
-  try {
-    await rename(stagingDir, targetDir);
-  } catch (error) {
-    if (movedExistingTarget) {
-      await rename(backupDir, targetDir).catch(() => {});
-    }
-    throw error;
-  }
-
-  if (movedExistingTarget) {
-    await rm(backupDir, { recursive: true, force: true });
-  }
+  await rm(targetDir, { recursive: true, force: true });
+  await cp(sourceDir, targetDir, { recursive: true });
 }
 
 async function sanitizeJavaScriptBundles(rootDirPath: string): Promise<void> {
@@ -155,52 +124,10 @@ async function sanitizeJavaScriptBundles(rootDirPath: string): Promise<void> {
 }
 
 function escapeUnicodeNoncharacters(source: string): string {
-  let output = '';
-  let hasChanges = false;
-
-  for (let index = 0; index < source.length; index += 1) {
-    const codePoint = source.codePointAt(index);
-    if (codePoint === undefined) {
-      break;
-    }
-
-    const isSurrogatePair = codePoint > 0xffff;
-    if (isSurrogatePair) {
-      index += 1;
-    }
-
-    if (isUnicodeNoncharacter(codePoint)) {
-      output += escapeCodePoint(codePoint);
-      hasChanges = true;
-      continue;
-    }
-
-    output += String.fromCodePoint(codePoint);
-  }
-
-  return hasChanges ? output : source;
-}
-
-function isUnicodeNoncharacter(codePoint: number): boolean {
-  if (codePoint >= 0xfdd0 && codePoint <= 0xfdef) {
-    return true;
-  }
-
-  const lowerWord = codePoint & 0xffff;
-  return lowerWord === 0xfffe || lowerWord === 0xffff;
-}
-
-function escapeCodePoint(codePoint: number): string {
-  if (codePoint <= 0xffff) {
-    return `\\u${codePoint.toString(16).toUpperCase().padStart(4, '0')}`;
-  }
-
-  const shifted = codePoint - 0x10000;
-  const highSurrogate = 0xd800 + (shifted >> 10);
-  const lowSurrogate = 0xdc00 + (shifted & 0x3ff);
-  const high = highSurrogate.toString(16).toUpperCase().padStart(4, '0');
-  const low = lowSurrogate.toString(16).toUpperCase().padStart(4, '0');
-  return `\\u${high}\\u${low}`;
+  return source.replace(
+    /[\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
+    (ch) => `\\u${ch.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`,
+  );
 }
 
 export async function buildExtension(): Promise<void> {

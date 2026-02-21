@@ -110,12 +110,11 @@ function normalizeTexLineBreaks(tex: string): string {
 }
 
 function normalizeMarkdownForTex(markdown: string): string {
-  return markdown.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, body) => {
-    const textBody = typeof body === 'string' ? body : '';
-    if (!textBody.includes('\n')) {
+  return markdown.replace(/\$\$([\s\S]*?)\$\$/g, (fullMatch, body: string) => {
+    if (!body.includes('\n')) {
       return fullMatch;
     }
 
-    return `$$${normalizeTexLineBreaks(textBody)}$$`;
+    return `$$${normalizeTexLineBreaks(body)}$$`;
   });
 }
