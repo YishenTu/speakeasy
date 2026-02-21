@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Speakeasy",
+  "version": "0.1.0",
+  "description": "Speakeasy is a Chrome popup chatbot scaffold.",
+  "action": {
+    "default_title": "Speakeasy",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage"],
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space",
+        "mac": "Command+Shift+Space"
+      },
+      "description": "Open Speakeasy"
+    }
+  }
+}
