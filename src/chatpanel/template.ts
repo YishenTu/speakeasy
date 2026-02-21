@@ -14,55 +14,19 @@ export function getChatPanelTemplate(): string {
         color: #f8fafc;
       }
 
-      .launcher {
-        width: 56px;
-        height: 56px;
-        border: 0;
-        border-radius: 16px;
-        background:
-          radial-gradient(circle at 20% 20%, #22d3ee 0%, rgba(34, 211, 238, 0.6) 35%, transparent 70%),
-          linear-gradient(155deg, #0f172a 0%, #111827 52%, #1f2937 100%);
-        color: #e2e8f0;
-        cursor: pointer;
-        box-shadow: 0 16px 38px rgba(2, 6, 23, 0.45), inset 0 0 0 1px rgba(148, 163, 184, 0.28);
-        transition: transform 140ms ease, box-shadow 140ms ease;
-      }
-
-      .launcher:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 18px 42px rgba(2, 6, 23, 0.5), inset 0 0 0 1px rgba(148, 163, 184, 0.36);
-      }
-
-      .launcher:focus-visible {
-        outline: 2px solid #22d3ee;
-        outline-offset: 2px;
-      }
-
-      .launcher.is-open {
-        background:
-          radial-gradient(circle at 20% 20%, #14b8a6 0%, rgba(20, 184, 166, 0.62) 35%, transparent 70%),
-          linear-gradient(155deg, #0f172a 0%, #111827 52%, #1f2937 100%);
-      }
-
-      .launcher-label {
-        font-size: 11px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        font-weight: 600;
-      }
-
       .panel {
         width: min(390px, calc(100vw - 24px));
         height: min(620px, calc(100vh - 96px));
         margin-top: 10px;
-        border-radius: 20px;
+        border-radius: 0;
         overflow: hidden;
         display: grid;
         grid-template-rows: auto minmax(0, 1fr) auto;
-        border: 1px solid rgba(100, 116, 139, 0.42);
-        background:
-          linear-gradient(170deg, rgba(15, 23, 42, 0.97) 0%, rgba(17, 24, 39, 0.98) 42%, rgba(30, 41, 59, 0.97) 100%);
-        box-shadow: 0 26px 72px rgba(2, 6, 23, 0.58), inset 0 1px 0 rgba(148, 163, 184, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(18, 18, 18, 0.65);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
       }
 
       .panel[hidden] {
@@ -70,73 +34,81 @@ export function getChatPanelTemplate(): string {
       }
 
       .top {
-        padding: 14px 14px 12px;
-        border-bottom: 1px solid rgba(71, 85, 105, 0.52);
-        background: linear-gradient(180deg, rgba(15, 23, 42, 0.88) 0%, rgba(15, 23, 42, 0.35) 100%);
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        background: transparent;
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
-        gap: 10px;
       }
 
       .brand-title {
         margin: 0;
-        font-size: 15px;
-        font-weight: 650;
-        letter-spacing: 0.01em;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.85);
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
-
-      .brand-subtitle {
-        margin: 2px 0 0;
-        font-size: 12px;
-        color: #94a3b8;
+      
+      .brand-logo {
+        width: 18px;
+        height: 18px;
       }
 
       .controls {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
       }
 
       .control-btn {
-        border: 1px solid rgba(71, 85, 105, 0.7);
-        background: rgba(15, 23, 42, 0.8);
-        color: #cbd5e1;
-        border-radius: 10px;
-        padding: 6px 9px;
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.5);
+        border-radius: 0;
+        padding: 6px 8px;
         font-size: 11px;
         line-height: 1;
         cursor: pointer;
-        transition: border-color 120ms ease, background 120ms ease;
+        transition: color 120ms ease, background 120ms ease;
       }
 
       .control-btn:hover {
-        border-color: rgba(148, 163, 184, 0.8);
-        background: rgba(30, 41, 59, 0.82);
+        color: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.08);
       }
 
       .control-btn:disabled {
-        opacity: 0.5;
+        opacity: 0.3;
         cursor: not-allowed;
       }
 
       .messages {
         margin: 0;
-        padding: 14px 14px 12px;
+        padding: 16px;
         overflow: auto;
         list-style: none;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 12px;
+        scroll-behavior: smooth;
       }
 
       .messages::-webkit-scrollbar {
-        width: 8px;
+        width: 4px;
       }
 
       .messages::-webkit-scrollbar-thumb {
-        background: rgba(100, 116, 139, 0.6);
-        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 0;
+      }
+
+      .messages::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.2);
       }
 
       .row {
@@ -155,93 +127,114 @@ export function getChatPanelTemplate(): string {
 
       .role-label {
         font-size: 10px;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
-        color: #64748b;
+        color: rgba(255, 255, 255, 0.3);
+        margin: 0 4px;
       }
 
       .bubble {
-        max-width: 84%;
+        max-width: 85%;
         margin: 0;
-        padding: 9px 11px;
-        border-radius: 12px;
+        padding: 10px 14px;
+        border-radius: 0;
         font-size: 13px;
-        line-height: 1.45;
+        line-height: 1.5;
         white-space: pre-wrap;
       }
 
       .bubble-user {
-        background: linear-gradient(145deg, #14b8a6 0%, #22d3ee 100%);
-        color: #082f49;
-        box-shadow: inset 0 0 0 1px rgba(6, 78, 59, 0.2);
+        background: rgba(255, 255, 255, 0.12);
+        color: rgba(255, 255, 255, 0.95);
       }
 
       .bubble-assistant {
-        background: rgba(30, 41, 59, 0.88);
-        color: #e2e8f0;
-        box-shadow: inset 0 0 0 1px rgba(100, 116, 139, 0.24);
+        background: transparent;
+        color: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(255, 255, 255, 0.08);
       }
 
       .composer {
-        padding: 12px 12px 14px;
-        border-top: 1px solid rgba(71, 85, 105, 0.52);
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 8px;
-        background: linear-gradient(180deg, rgba(15, 23, 42, 0.2) 0%, rgba(15, 23, 42, 0.72) 100%);
+        padding: 12px 14px;
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        background: transparent;
       }
 
-      .composer[aria-busy="true"] {
-        opacity: 0.8;
+      .composer-inner {
+        display: flex;
+        align-items: center;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0;
+        padding: 4px 6px;
+        transition: border-color 150ms ease, background 150ms ease;
+      }
+
+      .composer-inner:focus-within {
+        border-color: rgba(255, 255, 255, 0.3);
+        background: rgba(0, 0, 0, 0.4);
+      }
+
+      .composer[aria-busy="true"] .composer-inner {
+        opacity: 0.6;
+        pointer-events: none;
       }
 
       .input {
-        border: 1px solid rgba(100, 116, 139, 0.7);
-        background: rgba(15, 23, 42, 0.82);
-        color: #f1f5f9;
-        border-radius: 10px;
-        padding: 9px 10px;
+        flex: 1;
+        min-width: 0;
+        border: none;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.95);
+        padding: 8px 10px;
         font-size: 13px;
       }
 
       .input::placeholder {
-        color: #64748b;
+        color: rgba(255, 255, 255, 0.3);
       }
 
       .input:focus {
         outline: none;
-        border-color: #22d3ee;
-        box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
       }
 
       .send {
+        flex-shrink: 0;
         border: 0;
-        border-radius: 10px;
-        padding: 0 13px;
-        font-size: 12px;
-        font-weight: 650;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: #022c22;
+        border-radius: 0;
+        padding: 6px 10px;
+        margin-left: 4px;
+        font-size: 16px;
+        line-height: 1;
+        color: rgba(255, 255, 255, 0.5);
         cursor: pointer;
-        background: linear-gradient(145deg, #2dd4bf 0%, #67e8f9 100%);
+        background: transparent;
+        transition: color 150ms ease, transform 100ms ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .send:hover {
+        color: rgba(255, 255, 255, 0.95);
+      }
+      
+      .send:active {
+        transform: scale(0.95);
       }
 
       .send:disabled {
-        opacity: 0.5;
+        opacity: 0.4;
         cursor: not-allowed;
+        color: rgba(255, 255, 255, 0.3);
       }
+
 
       @media (max-width: 620px) {
         .shell {
           right: 12px;
           left: 12px;
           bottom: 12px;
-        }
-
-        .launcher {
-          width: 52px;
-          height: 52px;
         }
 
         .panel {
@@ -252,16 +245,12 @@ export function getChatPanelTemplate(): string {
     </style>
 
     <div class="shell">
-      <button id="speakeasy-launcher" class="launcher" type="button" aria-label="Toggle Speakeasy chat">
-        <span class="launcher-label">AI</span>
-      </button>
-
       <section id="speakeasy-panel" class="panel" hidden>
         <header class="top">
-          <div>
-            <h2 class="brand-title">Speakeasy</h2>
-            <p class="brand-subtitle">Gemini chat overlay</p>
-          </div>
+          <h2 class="brand-title">
+            <svg class="brand-logo" viewBox="0 0 28.01 28" xmlns="http://www.w3.org/2000/svg" width="2500" height="2499"><radialGradient id="a" cx="-576.08" cy="491.7" gradientTransform="matrix(28.2302 9.54441 76.4642 -226.16369 -21336.18 116711.38)" gradientUnits="userSpaceOnUse" r="1"><stop offset=".07" stop-color="#9168c0"/><stop offset=".34" stop-color="#5684d1"/><stop offset=".67" stop-color="#1ba1e3"/></radialGradient><path d="M14 28c0-1.94-.37-3.76-1.12-5.46-.72-1.7-1.72-3.19-2.98-4.45s-2.74-2.25-4.44-2.97C3.76 14.37 1.94 14 0 14c1.94 0 3.76-.36 5.46-1.09 1.7-.75 3.19-1.75 4.44-3.01 1.26-1.26 2.25-2.74 2.98-4.44C13.63 3.76 14 1.94 14 0c0 1.94.36 3.76 1.09 5.46.75 1.7 1.75 3.19 3.01 4.44 1.26 1.26 2.74 2.26 4.45 3.01 1.7.72 3.52 1.09 5.46 1.09-1.94 0-3.76.37-5.46 1.12-1.7.72-3.19 1.71-4.45 2.97s-2.26 2.74-3.01 4.45A13.86 13.86 0 0 0 14 28z" fill="url(#a)"/></svg>
+            Speakeasy
+          </h2>
           <div class="controls">
             <button id="speakeasy-settings" class="control-btn" type="button">Settings</button>
             <button id="speakeasy-new-chat" class="control-btn" type="button">New</button>
@@ -272,8 +261,10 @@ export function getChatPanelTemplate(): string {
         <ol id="speakeasy-messages" class="messages"></ol>
 
         <form id="speakeasy-form" class="composer" autocomplete="off">
-          <input id="speakeasy-input" class="input" type="text" placeholder="Ask anything..." required />
-          <button class="send" type="submit">Send</button>
+          <div class="composer-inner">
+            <input id="speakeasy-input" class="input" type="text" placeholder="Ask anything..." required />
+            <button class="send" type="submit" aria-label="Send">↑</button>
+          </div>
         </form>
       </section>
     </div>

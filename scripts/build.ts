@@ -10,6 +10,15 @@ const staticFileCopies: ReadonlyArray<[string, string]> = [
   ['src/options/options.html', 'options.html'],
 ];
 
+const iconDir = 'src/icons';
+const iconFiles = [
+  'gemini-icon-logo.svg',
+  'icon-16.png',
+  'icon-32.png',
+  'icon-48.png',
+  'icon-128.png',
+];
+
 async function cleanDist(): Promise<void> {
   await rm(distDir, { recursive: true, force: true });
   await mkdir(distDir, { recursive: true });
@@ -46,11 +55,16 @@ async function buildTailwind(): Promise<void> {
 }
 
 async function copyStaticFiles(): Promise<void> {
-  await Promise.all(
-    staticFileCopies.map(([sourcePath, outputName]) =>
+  const iconsDistDir = join(distDir, 'icons');
+  await mkdir(iconsDistDir, { recursive: true });
+  await Promise.all([
+    ...staticFileCopies.map(([sourcePath, outputName]) =>
       cp(join(rootDir, sourcePath), join(distDir, outputName)),
     ),
-  );
+    ...iconFiles.map((file) =>
+      cp(join(rootDir, iconDir, file), join(iconsDistDir, file)),
+    ),
+  ]);
 }
 
 export async function buildExtension(options?: { clean?: boolean }): Promise<void> {

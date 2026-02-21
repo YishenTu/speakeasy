@@ -4,7 +4,19 @@
   "version": "0.1.0",
   "description": "Speakeasy is a Gemini chatbot overlay for Chrome pages.",
   "action": {
-    "default_title": "Toggle Speakeasy"
+    "default_title": "Toggle Speakeasy",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
   },
   "background": {
     "service_worker": "background.js",
@@ -12,14 +24,23 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["chatpanel.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "chatpanel.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "options_page": "options.html",
-  "permissions": ["storage"],
-  "host_permissions": ["https://generativelanguage.googleapis.com/*"],
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*"
+  ],
   "commands": {
     "_execute_action": {
       "suggested_key": {

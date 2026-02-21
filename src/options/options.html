@@ -1,184 +1,169 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Speakeasy Settings</title>
-    <link rel="stylesheet" href="ui.css" />
-  </head>
-  <body class="min-h-screen bg-gradient-to-br from-slate-950 via-surface-900 to-slate-900 text-slate-100">
-    <main class="mx-auto max-w-3xl px-6 py-10">
-      <h1 class="text-2xl font-semibold">Speakeasy Settings</h1>
-      <p class="mt-2 text-sm text-slate-300">
-        Configure Gemini access, model behavior, and native tool usage for the chat panel.
-      </p>
 
-      <section class="mt-6 rounded-xl border border-surface-700 bg-surface-800/70 p-5">
-        <h2 class="text-sm font-medium uppercase tracking-wide text-slate-400">Gemini Configuration</h2>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Speakeasy Settings</title>
+  <link rel="icon" type="image/svg+xml" href="icons/gemini-icon-logo.svg" />
+  <link rel="stylesheet" href="ui.css" />
+</head>
 
-        <form id="settings-form" class="mt-4 space-y-5">
-          <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">Gemini API key</span>
-            <input
-              id="api-key"
-              name="apiKey"
-              type="password"
-              autocomplete="off"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              placeholder="AI... or your Gemini API key"
-              required
-            />
-          </label>
+<body class="min-h-screen bg-[#101010] text-white/90 font-sans tracking-wide">
+  <main class="mx-auto max-w-3xl px-6 py-10">
+    <h1 class="text-xl font-medium tracking-wide">Speakeasy Settings</h1>
+    <p class="mt-2 text-xs text-white/40 uppercase tracking-widest">
+      Configure Gemini access, model behavior, and native tool usage.
+    </p>
 
-          <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">Model</span>
-            <input
-              id="model"
-              name="model"
-              type="text"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              placeholder="gemini-3-flash-preview"
-              required
-            />
-          </label>
+    <section class="mt-8 border border-white/10 bg-black/20 p-6 shadow-2xl backdrop-blur-md">
+      <h2 class="text-xs font-semibold uppercase tracking-widest text-white/50 border-b border-white/5 pb-3">Provider
+        Configuration</h2>
 
-          <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">System instruction (optional)</span>
-            <textarea
-              id="system-instruction"
-              name="systemInstruction"
-              rows="4"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              placeholder="You are a concise assistant..."
-            ></textarea>
-          </label>
+      <form id="settings-form" class="mt-5 space-y-6">
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Gemini API key</span>
+          <input id="api-key" name="apiKey" type="password" autocomplete="off"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            placeholder="AI... or your Gemini API key" required />
+        </label>
 
-          <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">Max tool round trips</span>
-            <input
-              id="max-tool-round-trips"
-              name="maxToolRoundTrips"
-              type="number"
-              min="1"
-              max="20"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              required
-            />
-          </label>
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Model</span>
+          <input id="model" name="model" type="text"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            placeholder="gemini-3-flash-preview" required />
+        </label>
 
-          <fieldset class="space-y-2">
-            <legend class="text-sm font-medium text-slate-200">Tools</legend>
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">System instruction <span
+              class="text-white/30 lowercase">(optional)</span></span>
+          <textarea id="system-instruction" name="systemInstruction" rows="4"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors resize-y"
+            placeholder="You are a concise assistant..."></textarea>
+        </label>
 
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-google-search" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Max tool round trips</span>
+          <input id="max-tool-round-trips" name="maxToolRoundTrips" type="number" min="1" max="20"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            required />
+        </label>
+
+        <fieldset class="space-y-3 pt-3">
+          <legend
+            class="text-xs font-semibold uppercase tracking-widest text-white/50 border-b border-white/5 pb-3 w-full mb-4">
+            Tools & Execution</legend>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+              <input id="tool-google-search" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
               Google Search
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-google-maps" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+              <input id="tool-google-maps" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
               Google Maps
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-code-execution" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+              <input id="tool-code-execution" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
               Code Execution
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-url-context" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+              <input id="tool-url-context" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
               URL Context
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-file-search" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+              <input id="tool-file-search" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
               File Search
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-mcp-servers" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+              <input id="tool-mcp-servers" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
               MCP Servers
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-function-calling" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
-              Function Calling (local tools)
+            <label
+              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group col-span-1 sm:col-span-2">
+              <input id="tool-function-calling" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+              Function Calling <span class="text-white/40 text-xs ml-1">(local tools)</span>
             </label>
-            <label class="flex items-center gap-2 text-sm text-slate-200">
-              <input id="tool-computer-use" type="checkbox" class="h-4 w-4 rounded border-surface-600 bg-surface-900" />
-              Computer Use (not supported yet in this extension runtime)
-            </label>
-          </fieldset>
-
-          <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">File Search store names (comma-separated)</span>
-            <input
-              id="file-search-store-names"
-              name="fileSearchStoreNames"
-              type="text"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              placeholder="my-docs-store, support-kb-store"
-            />
-          </label>
-
-          <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">MCP server URLs (comma-separated)</span>
-            <input
-              id="mcp-server-urls"
-              name="mcpServerUrls"
-              type="text"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              placeholder="https://example.com/mcp"
-            />
-          </label>
-
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="block">
-              <span class="mb-1 block text-sm text-slate-200">Maps latitude (optional)</span>
-              <input
-                id="maps-latitude"
-                name="mapsLatitude"
-                type="number"
-                step="any"
-                class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-                placeholder="37.4220"
-              />
-            </label>
-
-            <label class="block">
-              <span class="mb-1 block text-sm text-slate-200">Maps longitude (optional)</span>
-              <input
-                id="maps-longitude"
-                name="mapsLongitude"
-                type="number"
-                step="any"
-                class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-                placeholder="-122.0841"
-              />
+            <label class="flex items-center gap-3 text-sm text-white/40 cursor-not-allowed col-span-1 sm:col-span-2">
+              <input disabled id="tool-computer-use" type="checkbox"
+                class="h-4 w-4 appearance-none border border-white/10 bg-black/20 focus:outline-none" />
+              Computer Use <span class="text-xs ml-1">(not supported yet in this extension runtime)</span>
             </label>
           </div>
+        </fieldset>
 
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">File Search store names <span
+              class="text-white/30 lowercase">(comma-separated)</span></span>
+          <input id="file-search-store-names" name="fileSearchStoreNames" type="text"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            placeholder="my-docs-store, support-kb-store" />
+        </label>
+
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">MCP server URLs <span
+              class="text-white/30 lowercase">(comma-separated)</span></span>
+          <input id="mcp-server-urls" name="mcpServerUrls" type="text"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            placeholder="https://example.com/mcp" />
+        </label>
+
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <label class="block">
-            <span class="mb-1 block text-sm text-slate-200">
-              Computer Use excluded predefined actions (comma-separated, optional)
-            </span>
-            <input
-              id="computer-use-excluded-actions"
-              name="computerUseExcludedActions"
-              type="text"
-              class="w-full rounded-md border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-500/40"
-              placeholder="scroll_down, drag_and_drop"
-            />
+            <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Maps latitude <span
+                class="text-white/30 lowercase">(optional)</span></span>
+            <input id="maps-latitude" name="mapsLatitude" type="number" step="any"
+              class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+              placeholder="37.4220" />
           </label>
 
-          <div class="flex items-center justify-between gap-4 border-t border-surface-700 pt-4">
-            <p class="text-sm text-slate-300">Version <span id="version" class="font-semibold"></span></p>
-            <button
-              type="submit"
-              class="rounded-md bg-accent-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-accent-400 focus:outline-none focus:ring-2 focus:ring-accent-400/70"
-            >
-              Save
-            </button>
-          </div>
+          <label class="block">
+            <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Maps longitude <span
+                class="text-white/30 lowercase">(optional)</span></span>
+            <input id="maps-longitude" name="mapsLongitude" type="number" step="any"
+              class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+              placeholder="-122.0841" />
+          </label>
+        </div>
 
-          <p id="save-status" class="text-sm text-slate-300" role="status" aria-live="polite"></p>
-        </form>
-      </section>
-    </main>
+        <label class="block">
+          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">
+            Computer Use excluded actions <span class="text-white/30 lowercase">(comma-separated, optional)</span>
+          </span>
+          <input id="computer-use-excluded-actions" name="computerUseExcludedActions" type="text"
+            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            placeholder="scroll_down, drag_and_drop" />
+        </label>
 
-    <script type="module" src="options.js"></script>
-  </body>
+        <div class="mt-8 flex items-center justify-between border-t border-white/10 pt-6">
+          <p class="text-xs uppercase tracking-widest text-white/40">Version <span id="version"
+              class="font-medium text-white/70 ml-1"></span></p>
+          <button type="submit"
+            class="bg-white/90 px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-black transition-colors hover:bg-white focus:outline-none">
+            Save Details
+          </button>
+        </div>
+
+        <p id="save-status" class="text-xs tracking-wider text-white/50" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+
+  <script type="module" src="options.js"></script>
+</body>
+
 </html>

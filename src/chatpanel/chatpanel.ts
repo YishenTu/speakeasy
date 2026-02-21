@@ -22,7 +22,6 @@ function mountChatPanel(): void {
   const shadowRoot = host.attachShadow({ mode: 'open' });
   shadowRoot.innerHTML = getChatPanelTemplate();
 
-  const launcherButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-launcher');
   const panel = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-panel');
   const closeButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-close');
   const settingsButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-settings');
@@ -34,10 +33,6 @@ function mountChatPanel(): void {
   let isPanelOpen = false;
   let isBusy = false;
   let hasLoadedHistory = false;
-
-  launcherButton.addEventListener('click', () => {
-    void togglePanel();
-  });
 
   closeButton.addEventListener('click', () => {
     closePanel();
@@ -153,7 +148,6 @@ function mountChatPanel(): void {
   async function openPanel(): Promise<void> {
     isPanelOpen = true;
     panel.hidden = false;
-    launcherButton.classList.add('is-open');
 
     if (!hasLoadedHistory) {
       await loadConversationHistory();
@@ -165,7 +159,6 @@ function mountChatPanel(): void {
   function closePanel(): void {
     isPanelOpen = false;
     panel.hidden = true;
-    launcherButton.classList.remove('is-open');
   }
 
   async function loadConversationHistory(): Promise<void> {
