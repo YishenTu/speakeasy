@@ -44,7 +44,7 @@ async function flushMicrotasks(iterations = 6): Promise<void> {
 }
 
 describe('chatpanel regenerate flow', () => {
-  let dom: InstalledDomEnvironment | null = null;
+  let dom: InstalledDomEnvironment;
   let storageState: Record<string, unknown>;
   let currentMessages: ChatMessage[];
   let listSessionsPayload: { chatId: string; title: string; updatedAt: string }[];
@@ -63,6 +63,7 @@ describe('chatpanel regenerate flow', () => {
   let forkRequest: Extract<RuntimeRequest, { type: 'chat/fork' }> | null;
   let switchBranchRequest: Extract<RuntimeRequest, { type: 'chat/switch-branch' }> | null;
   let uploadRequests: Extract<RuntimeRequest, { type: 'chat/upload-files' }>[];
+  let deleteRequests: Extract<RuntimeRequest, { type: 'chat/delete' }>[];
   let deferredUploadResponsesByFileName: Map<string, Deferred<UploadFilesRuntimeResponse>>;
   let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
   let loadMessageSnapshots: string[];
@@ -74,6 +75,10 @@ describe('chatpanel regenerate flow', () => {
       assistantMessage: ChatMessage;
     };
   }>;
+
+  function getTestWindow(): typeof dom.window {
+    return dom.window;
+  }
 
   beforeEach(() => {
     dom = installDomTestEnvironment();
@@ -99,6 +104,7 @@ describe('chatpanel regenerate flow', () => {
     forkRequest = null;
     switchBranchRequest = null;
     uploadRequests = [];
+    deleteRequests = [];
     deferredUploadResponsesByFileName = new Map();
     loadRequests = [];
     loadMessageSnapshots = [];
@@ -247,6 +253,24 @@ describe('chatpanel regenerate flow', () => {
               },
             });
           }
+          if (request.type === 'chat/delete') {
+            deleteRequests.push(request);
+            const deleted = listSessionsPayload.some(
+              (session) => session.chatId === request.chatId,
+            );
+            if (deleted) {
+              listSessionsPayload = listSessionsPayload.filter(
+                (session) => session.chatId !== request.chatId,
+              );
+            }
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                deleted,
+                chatId: null,
+              },
+            });
+          }
           if (request.type === 'app/open-options') {
             if (openOptionsErrorMessage) {
               return Promise.resolve({
@@ -271,8 +295,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   afterEach(() => {
-    dom?.restore();
-    dom = null;
+    dom.restore();
     (globalThis as { chrome?: unknown }).chrome = undefined;
   });
 
@@ -324,11 +347,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('shows a local error message when opening settings fails', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     openOptionsErrorMessage = 'Failed to open settings';
     await importFreshChatpanelModule();
     await flushMicrotasks();
@@ -349,11 +368,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('keeps the panel responsive when creating a new chat fails', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     newChatErrorMessage = 'new session broke';
     await importFreshChatpanelModule();
     await flushMicrotasks();
@@ -376,11 +391,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('removes optimistic rows when send fails and appends an assistant error', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
     sendErrorMessage = 'send failed';
@@ -408,11 +419,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('keeps uploaded image preview visible while streaming and after send reconciliation', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
     sendDeferred = createDeferred();
@@ -519,11 +526,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('starts uploading on attach and blocks submit until image upload finishes', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
     const pendingUpload = createDeferred<UploadFilesRuntimeResponse>();
@@ -658,11 +661,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('reloads after sending from a fork so branch switch metadata is visible', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [
       { id: 'user-1', role: 'user', content: 'Initial prompt' },
       {
@@ -745,12 +744,189 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList?.textContent).toContain('Forked second answer');
   });
 
-  it('stages accepted files from drop events', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
+  it('enables history actions after opening the history menu and loads selected session', async () => {
+    const testWindow = getTestWindow();
+    listSessionsPayload = [
+      { chatId: 'chat-other', title: 'Other chat', updatedAt: '2025-01-01T00:05:00.000Z' },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const historyToggleButton = shadowRoot.querySelector(
+      '#speakeasy-history-toggle',
+    ) as HTMLButtonElement | null;
+    expect(historyToggleButton).not.toBeNull();
+
+    historyToggleButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const sessionOpenButton = shadowRoot.querySelector(
+      '.history-item-main',
+    ) as HTMLButtonElement | null;
+    const sessionDeleteButton = shadowRoot.querySelector(
+      '.history-item-delete',
+    ) as HTMLButtonElement | null;
+    expect(sessionOpenButton).not.toBeNull();
+    expect(sessionDeleteButton).not.toBeNull();
+    expect(sessionOpenButton?.disabled).toBe(false);
+    expect(sessionDeleteButton?.disabled).toBe(false);
+
+    const previousLoadCount = loadRequests.length;
+    sessionOpenButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(20);
+
+    expect(loadRequests.length).toBeGreaterThan(previousLoadCount);
+    expect(loadRequests.at(-1)?.chatId).toBe('chat-other');
+  });
+
+  it('deletes the active session after confirmation and resets staged files and messages', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const historyControl = shadowRoot.querySelector(
+      '#speakeasy-history-control',
+    ) as HTMLElement | null;
+    const historyToggleButton = shadowRoot.querySelector(
+      '#speakeasy-history-toggle',
+    ) as HTMLButtonElement | null;
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(historyControl).not.toBeNull();
+    expect(historyToggleButton).not.toBeNull();
+    expect(fileInput).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (
+      !historyControl ||
+      !historyToggleButton ||
+      !fileInput ||
+      !filePreviewContainer ||
+      !messageList
+    ) {
+      throw new Error(
+        'Expected history controls, file input, file preview container, and message list elements.',
+      );
     }
 
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['staged-note'], 'staged-note.txt', { type: 'text/plain' })],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(20);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
+    expect(messageList.querySelectorAll('li[data-message-id]')).toHaveLength(2);
+
+    historyToggleButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const sessionDeleteButton = shadowRoot.querySelector(
+      '.history-item-delete',
+    ) as HTMLButtonElement | null;
+    const deleteConfirmOverlay = shadowRoot.querySelector(
+      '#speakeasy-delete-confirm-overlay',
+    ) as HTMLElement | null;
+    const deleteConfirmAcceptButton = shadowRoot.querySelector(
+      '#speakeasy-delete-confirm-accept',
+    ) as HTMLButtonElement | null;
+    expect(sessionDeleteButton).not.toBeNull();
+    expect(deleteConfirmOverlay).not.toBeNull();
+    expect(deleteConfirmAcceptButton).not.toBeNull();
+    if (!sessionDeleteButton || !deleteConfirmOverlay || !deleteConfirmAcceptButton) {
+      throw new Error('Expected delete controls and confirmation overlay elements.');
+    }
+
+    sessionDeleteButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(10);
+    expect(deleteConfirmOverlay.hidden).toBe(false);
+    expect(deleteRequests).toHaveLength(0);
+
+    deleteConfirmAcceptButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(30);
+
+    expect(deleteRequests).toHaveLength(1);
+    expect(deleteRequests[0]?.chatId).toBe('chat-seed');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
+    expect(messageList.querySelectorAll('li[data-message-id]')).toHaveLength(0);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(0);
+    expect(historyToggleButton.getAttribute('aria-expanded')).toBe('false');
+    expect(historyControl.classList.contains('open')).toBe(false);
+  });
+
+  it('clears drag interaction lock when the panel closes during an active drag', async () => {
+    const testWindow = getTestWindow();
+    const globals = globalThis as { Element?: typeof testWindow.Element };
+    const previousElementCtor = globals.Element;
+    globals.Element = testWindow.Element;
+
+    try {
+      await importFreshChatpanelModule();
+      await flushMicrotasks();
+
+      const onMessageListener = runtimeMessageListeners[0];
+      expect(typeof onMessageListener).toBe('function');
+      onMessageListener?.({ type: 'overlay/open' });
+      await flushMicrotasks(12);
+
+      const shadowRoot = getChatpanelShadowRoot();
+      const shell = shadowRoot.querySelector('#speakeasy-shell') as HTMLElement | null;
+      const dragHandle = shadowRoot.querySelector('#speakeasy-drag-handle') as HTMLElement | null;
+      expect(shell).not.toBeNull();
+      expect(dragHandle).not.toBeNull();
+      if (!shell || !dragHandle) {
+        throw new Error('Expected shell and drag handle.');
+      }
+
+      let capturedPointerId: number | null = null;
+      const shellWithPointerCapture = shell as HTMLElement & {
+        setPointerCapture: (pointerId: number) => void;
+        releasePointerCapture: (pointerId: number) => void;
+        hasPointerCapture: (pointerId: number) => boolean;
+      };
+      shellWithPointerCapture.setPointerCapture = (pointerId: number) => {
+        capturedPointerId = pointerId;
+      };
+      shellWithPointerCapture.releasePointerCapture = (pointerId: number) => {
+        if (capturedPointerId === pointerId) {
+          capturedPointerId = null;
+        }
+      };
+      shellWithPointerCapture.hasPointerCapture = (pointerId: number) =>
+        capturedPointerId === pointerId;
+
+      const pointerDownEvent = new testWindow.MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 24,
+      }) as MouseEvent & { pointerId: number };
+      Object.defineProperty(pointerDownEvent, 'pointerId', {
+        configurable: true,
+        value: 7,
+      });
+      dragHandle.dispatchEvent(pointerDownEvent);
+      expect(document.documentElement.style.userSelect).toBe('none');
+      expect(capturedPointerId).toBe(7);
+
+      onMessageListener?.({ type: 'overlay/close' });
+      expect(document.documentElement.style.userSelect).toBe('');
+      expect(capturedPointerId).toBeNull();
+    } finally {
+      if (previousElementCtor) {
+        globals.Element = previousElementCtor;
+      } else {
+        Reflect.deleteProperty(globals, 'Element');
+      }
+    }
+  });
+
+  it('stages accepted files from drop events', async () => {
+    const testWindow = getTestWindow();
     await importFreshChatpanelModule();
     await flushMicrotasks();
 
@@ -877,11 +1053,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('applies composer auto-resize on mount to avoid first-keystroke jump', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
       textareaPrototype,
@@ -915,11 +1087,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('grows input with content and caps height to one-third of panel height', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     let nextScrollHeight = 72;
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
@@ -975,11 +1143,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('keeps a multiline minimum height when scrollHeight is zero', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
       textareaPrototype,
@@ -1016,11 +1180,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('stabilizes input height after file staging so first typing does not jump again', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     let nextScrollHeight = 0;
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
