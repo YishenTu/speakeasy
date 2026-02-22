@@ -8,6 +8,7 @@ import type {
   ChatSendPayload,
   ChatSessionSummary,
   ChatStreamDeltaEvent,
+  ChatSwitchBranchPayload,
   FileDataAttachmentPayload,
   OpenOptionsPayload,
   RuntimeRequest,
@@ -26,7 +27,18 @@ import {
   generateSessionTitle,
   isInvalidPreviousInteractionIdError,
 } from './gemini';
-import { createSession, mapSessionToChatMessages, toAssistantChatMessage } from './sessions';
+import {
+  appendContentsToBranch,
+  createSession,
+  ensureBranchTree,
+  findLastModelInteractionId,
+  findNodeIdByInteractionId,
+  getActiveBranchContents,
+  getBranchContentsToNode,
+  mapSessionToChatMessages,
+  setActiveLeafNodeId,
+  toAssistantChatMessage,
+} from './sessions';
 import type { ChatSession, GeminiContent } from './types';
 import { assertNever, isRecord, toErrorMessage } from './utils';
 
@@ -36,6 +48,7 @@ type RuntimePayload =
   | ChatSendPayload
   | ChatRegenPayload
   | ChatForkPayload
+  | ChatSwitchBranchPayload
   | ChatDeletePayload
   | ChatListPayload
   | OpenOptionsPayload;
@@ -192,6 +205,10 @@ export function createRuntimeRequestHandler(
         return enqueueMutation(() =>
           handleForkChat(request.chatId, request.previousInteractionId, dependencies),
         );
+      case 'chat/switch-branch':
+        return enqueueMutation(() =>
+          handleSwitchBranch(request.chatId, request.interactionId, dependencies),
+        );
       case 'chat/delete':
         return enqueueMutation(() => handleDeleteChat(request.chatId, dependencies));
       case 'chat/list':
@@ -218,6 +235,7 @@ function isRuntimeRequest(value: unknown): value is RuntimeRequest {
     type === 'chat/send' ||
     type === 'chat/regen' ||
     type === 'chat/fork' ||
+    type === 'chat/switch-branch' ||
     type === 'chat/load' ||
     type === 'chat/new' ||
     type === 'chat/delete' ||
@@ -288,11 +306,14 @@ async function handleSendMessage(
 
   const persistedSession = chatId ? await dependencies.repository.getSession(chatId) : null;
   const baseSession = persistedSession ?? createSession();
+  ensureBranchTree(baseSession);
   const shouldGenerateTitle =
-    baseSession.contents.length === 0 &&
+    countUserPromptNodes(baseSession) === 0 &&
     !baseSession.title &&
     (normalizedText.length > 0 || normalizedAttachments.length > 0);
   const workingSession: ChatSession = structuredClone(baseSession);
+  ensureBranchTree(workingSession);
+  const continuationInteractionId = workingSession.lastInteractionId;
 
   const userParts = [
     ...(normalizedText ? [{ text: normalizedText }] : []),
@@ -304,25 +325,37 @@ async function handleSendMessage(
     })),
   ];
 
-  workingSession.contents.push({
+  const userContent: GeminiContent = {
     id: crypto.randomUUID(),
     role: 'user',
     parts: userParts,
-  });
+  };
+  const branchStartNodeId = workingSession.branchTree?.activeLeafNodeId;
+  if (!branchStartNodeId) {
+    throw new Error('Failed to resolve active branch state.');
+  }
+  const userNodeId = appendContentsToBranch(workingSession, branchStartNodeId, [userContent]);
+  if (!userNodeId) {
+    throw new Error('Failed to append user message to active branch.');
+  }
 
   const streamDeltaEmitter = createStreamDeltaEmitter(streamRequestId, sender);
   let assistantContent: GeminiContent;
   try {
-    assistantContent = await dependencies.completeAssistantTurn(
-      workingSession,
+    assistantContent = await completeAssistantTurnOnBranchNode({
+      session: workingSession,
+      targetNodeId: userNodeId,
+      previousInteractionId: continuationInteractionId,
       settings,
       thinkingLevel,
       streamDeltaEmitter,
-    );
+      dependencies,
+    });
   } catch (error: unknown) {
     if (isInvalidPreviousInteractionIdError(error)) {
       if (baseSession.lastInteractionId) {
-        const { lastInteractionId: _ignored, ...resetSession } = structuredClone(baseSession);
+        const resetSession: ChatSession = structuredClone(baseSession);
+        resetSession.lastInteractionId = undefined;
         const now = dependencies.now();
         try {
           await dependencies.repository.upsertSession(resetSession, now.getTime());
@@ -372,28 +405,60 @@ async function handleForkChat(
     throw new Error('Fork requires both a chat id and a target interaction id.');
   }
 
-  const sourceSession = await dependencies.repository.getSession(normalizedChatId);
-  if (!sourceSession) {
+  const session = await dependencies.repository.getSession(normalizedChatId);
+  if (!session) {
     throw new Error('Cannot fork a chat that does not exist.');
   }
-
-  const assistantIndex = findAssistantIndexByInteractionId(sourceSession, normalizedInteractionId);
-  if (assistantIndex < 0) {
+  ensureBranchTree(session);
+  const targetAssistantNodeId = findNodeIdByInteractionId(session, normalizedInteractionId);
+  if (!targetAssistantNodeId) {
     throw new Error('Cannot fork: target assistant message was not found in this chat.');
+  }
+  if (!setActiveLeafNodeId(session, targetAssistantNodeId, false)) {
+    throw new Error('Cannot fork: failed to activate target branch point.');
   }
 
   const now = dependencies.now();
-  const branch = createForkedSession({
-    sourceSession,
-    prefixEndIndex: assistantIndex,
-    forkedFromInteractionId: normalizedInteractionId,
-    now,
-  });
-
-  await dependencies.repository.upsertSession(branch, now.getTime());
+  session.updatedAt = now.toISOString();
+  await dependencies.repository.upsertSession(session, now.getTime());
   await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
   return {
-    chatId: branch.id,
+    chatId: session.id,
+  };
+}
+
+async function handleSwitchBranch(
+  chatId: string,
+  interactionId: string,
+  dependencies: RuntimeDependencies,
+): Promise<ChatSwitchBranchPayload> {
+  const normalizedChatId = chatId.trim();
+  const normalizedInteractionId = interactionId.trim();
+  if (!normalizedChatId || !normalizedInteractionId) {
+    throw new Error('Branch switch requires both a chat id and an interaction id.');
+  }
+
+  const session = await dependencies.repository.getSession(normalizedChatId);
+  if (!session) {
+    throw new Error('Cannot switch branches in a chat that does not exist.');
+  }
+
+  ensureBranchTree(session);
+  const targetAssistantNodeId = findNodeIdByInteractionId(session, normalizedInteractionId);
+  if (!targetAssistantNodeId) {
+    throw new Error('Cannot switch branch: target assistant message was not found in this chat.');
+  }
+  if (!setActiveLeafNodeId(session, targetAssistantNodeId, true)) {
+    throw new Error('Cannot switch branch: failed to activate selected branch.');
+  }
+
+  const now = dependencies.now();
+  session.updatedAt = now.toISOString();
+  await dependencies.repository.upsertSession(session, now.getTime());
+  await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
+
+  return {
+    chatId: session.id,
   };
 }
 
@@ -419,27 +484,20 @@ async function handleRegenerate(
   if (!sourceSession) {
     throw new Error('Cannot regenerate in a chat that does not exist.');
   }
-
-  const targetAssistantIndex = findAssistantIndexByInteractionId(
-    sourceSession,
-    normalizedInteractionId,
-  );
-  if (targetAssistantIndex < 0) {
+  ensureBranchTree(sourceSession);
+  const targetAssistantNodeId = findNodeIdByInteractionId(sourceSession, normalizedInteractionId);
+  if (!targetAssistantNodeId) {
     throw new Error('Cannot regenerate: target assistant message was not found.');
   }
-
-  const promptUserIndex = findRegeneratePromptUserIndex(sourceSession, targetAssistantIndex);
-  if (promptUserIndex < 0) {
+  const promptUserNodeId = findRegeneratePromptUserNodeId(sourceSession, targetAssistantNodeId);
+  if (!promptUserNodeId) {
     throw new Error('Cannot regenerate: no originating user prompt was found.');
   }
 
-  const now = dependencies.now();
-  const branch = createForkedSession({
-    sourceSession,
-    prefixEndIndex: promptUserIndex,
-    forkedFromInteractionId: normalizedInteractionId,
-    now,
-  });
+  const workingSession: ChatSession = structuredClone(sourceSession);
+  ensureBranchTree(workingSession);
+  const promptPrefixContents = getBranchContentsToNode(workingSession, promptUserNodeId);
+  const promptContinuationInteractionId = findLastModelInteractionId(promptPrefixContents);
 
   const settings = await dependencies.readGeminiSettings();
   if (!settings.apiKey) {
@@ -450,12 +508,15 @@ async function handleRegenerate(
   const streamDeltaEmitter = createStreamDeltaEmitter(streamRequestId, sender);
   let assistantContent: GeminiContent;
   try {
-    assistantContent = await dependencies.completeAssistantTurn(
-      branch,
+    assistantContent = await completeAssistantTurnOnBranchNode({
+      session: workingSession,
+      targetNodeId: promptUserNodeId,
+      previousInteractionId: promptContinuationInteractionId,
       settings,
       thinkingLevel,
       streamDeltaEmitter,
-    );
+      dependencies,
+    });
   } catch (error: unknown) {
     if (isInvalidPreviousInteractionIdError(error)) {
       throw new Error(EXPIRED_INTERACTION_MESSAGE);
@@ -463,98 +524,100 @@ async function handleRegenerate(
     throw error;
   }
 
-  branch.updatedAt = now.toISOString();
-  await dependencies.repository.upsertSession(branch, now.getTime());
+  const now = dependencies.now();
+  workingSession.updatedAt = now.toISOString();
+  await dependencies.repository.upsertSession(workingSession, now.getTime());
   await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
 
   return {
-    chatId: branch.id,
+    chatId: workingSession.id,
     assistantMessage: toAssistantChatMessage(assistantContent),
   };
 }
 
-function createForkedSession(input: {
-  sourceSession: ChatSession;
-  prefixEndIndex: number;
-  forkedFromInteractionId: string;
-  now: Date;
-}): ChatSession {
-  const branch = createSession();
-  const sourceRootChatId = input.sourceSession.rootChatId?.trim() || input.sourceSession.id;
-  branch.parentChatId = input.sourceSession.id;
-  branch.rootChatId = sourceRootChatId;
-  branch.forkedFromInteractionId = input.forkedFromInteractionId;
-  branch.forkedAt = input.now.toISOString();
-  branch.contents = input.sourceSession.contents
-    .slice(0, input.prefixEndIndex + 1)
-    .map((content) => cloneSessionContent(content));
-
-  const branchLastInteractionId = findLastModelInteractionId(branch.contents);
-  if (branchLastInteractionId) {
-    branch.lastInteractionId = branchLastInteractionId;
-  }
-
-  if (input.sourceSession.title?.trim()) {
-    branch.title = input.sourceSession.title.trim();
-  }
-
-  branch.createdAt = input.now.toISOString();
-  branch.updatedAt = input.now.toISOString();
-  return branch;
-}
-
-function cloneSessionContent(content: GeminiContent): GeminiContent {
-  return {
-    ...(content.id ? { id: content.id } : {}),
-    role: content.role,
-    parts: content.parts.map((part) => ({ ...part })),
-    ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
+async function completeAssistantTurnOnBranchNode(input: {
+  session: ChatSession;
+  targetNodeId: string;
+  previousInteractionId: string | undefined;
+  settings: GeminiSettings;
+  thinkingLevel: string | undefined;
+  streamDeltaEmitter: ((delta: GeminiStreamDelta) => void) | undefined;
+  dependencies: RuntimeDependencies;
+}): Promise<GeminiContent> {
+  const prefixContents = getBranchContentsToNode(input.session, input.targetNodeId);
+  const workingSession: ChatSession = {
+    id: input.session.id,
+    ...(input.session.title ? { title: input.session.title } : {}),
+    createdAt: input.session.createdAt,
+    updatedAt: input.session.updatedAt,
+    contents: prefixContents,
+    ...(input.previousInteractionId ? { lastInteractionId: input.previousInteractionId } : {}),
   };
-}
 
-function findLastModelInteractionId(contents: GeminiContent[]): string | undefined {
-  for (let index = contents.length - 1; index >= 0; index -= 1) {
-    const content = contents[index];
-    if (content?.role !== 'model') {
-      continue;
-    }
-
-    const interactionId = content.metadata?.interactionId;
-    const normalized = typeof interactionId === 'string' ? interactionId.trim() : '';
-    if (normalized) {
-      return normalized;
-    }
-  }
-
-  return undefined;
-}
-
-function findAssistantIndexByInteractionId(session: ChatSession, interactionId: string): number {
-  return session.contents.findIndex(
-    (content) => content.role === 'model' && content.metadata?.interactionId === interactionId,
+  const prefixLength = prefixContents.length;
+  const assistantContent = await input.dependencies.completeAssistantTurn(
+    workingSession,
+    input.settings,
+    input.thinkingLevel,
+    input.streamDeltaEmitter,
   );
+  const appendedContents = workingSession.contents.slice(prefixLength);
+  if (appendedContents.length === 0) {
+    throw new Error('Gemini did not append assistant output for branch continuation.');
+  }
+
+  appendContentsToBranch(input.session, input.targetNodeId, appendedContents);
+  if (workingSession.lastInteractionId) {
+    input.session.lastInteractionId = workingSession.lastInteractionId;
+  } else {
+    input.session.lastInteractionId = undefined;
+  }
+  input.session.contents = getActiveBranchContents(input.session);
+
+  return assistantContent;
 }
 
-function findRegeneratePromptUserIndex(session: ChatSession, assistantIndex: number): number {
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    const content = session.contents[index];
-    if (!content || content.role !== 'user') {
-      continue;
-    }
-
-    if (isUserPromptContent(content)) {
-      return index;
+function countUserPromptNodes(session: ChatSession): number {
+  const tree = ensureBranchTree(session);
+  let count = 0;
+  for (const node of Object.values(tree.nodes)) {
+    if (node.content?.role === 'user' && isUserPromptContent(node.content)) {
+      count += 1;
     }
   }
+  return count;
+}
 
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    const content = session.contents[index];
+function findRegeneratePromptUserNodeId(
+  session: ChatSession,
+  assistantNodeId: string,
+): string | undefined {
+  const tree = ensureBranchTree(session);
+  const startNode = tree.nodes[assistantNodeId];
+  if (!startNode || !startNode.parentNodeId) {
+    return undefined;
+  }
+
+  let firstUserAncestor: string | undefined;
+  let currentNodeId: string | undefined = startNode.parentNodeId;
+  const visited = new Set<string>();
+  while (currentNodeId && !visited.has(currentNodeId)) {
+    visited.add(currentNodeId);
+    const node: (typeof tree.nodes)[string] | undefined = tree.nodes[currentNodeId];
+    if (!node) {
+      break;
+    }
+    const content = node?.content;
     if (content?.role === 'user') {
-      return index;
+      firstUserAncestor ??= node.id;
+      if (isUserPromptContent(content)) {
+        return node.id;
+      }
     }
+    currentNodeId = node.parentNodeId;
   }
 
-  return -1;
+  return firstUserAncestor;
 }
 
 function isUserPromptContent(content: GeminiContent): boolean {
@@ -604,18 +667,11 @@ async function handleListChats(dependencies: RuntimeDependencies): Promise<ChatL
   const nowMs = dependencies.now().getTime();
   await pruneExpiredSessionsBestEffort(dependencies, nowMs);
   const sessions = await dependencies.repository.listSessions();
-  const summaries: ChatSessionSummary[] = sessions.map((session) => {
-    const normalizedRootChatId = session.rootChatId?.trim();
-    const includeRootChatId = !!normalizedRootChatId && normalizedRootChatId !== session.id;
-    return {
-      chatId: session.id,
-      title: summarizeSessionTitle(session),
-      updatedAt: session.updatedAt,
-      ...(session.parentChatId ? { parentChatId: session.parentChatId } : {}),
-      ...(includeRootChatId ? { rootChatId: normalizedRootChatId } : {}),
-      ...(session.forkedAt ? { forkedAt: session.forkedAt } : {}),
-    };
-  });
+  const summaries: ChatSessionSummary[] = sessions.map((session) => ({
+    chatId: session.id,
+    title: summarizeSessionTitle(session),
+    updatedAt: session.updatedAt,
+  }));
 
   return {
     sessions: summaries,

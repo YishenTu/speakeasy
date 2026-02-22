@@ -879,6 +879,53 @@ export function getChatPanelTemplate(): string {
         pointer-events: auto;
       }
 
+      .message-branch-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        border: 0;
+        padding: 0;
+        font-size: var(--sp-action-icon-size);
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+        line-height: 1;
+      }
+
+      .message-branch-indicator {
+        color: var(--sp-color-text-dim);
+        font-family: inherit;
+        user-select: none;
+      }
+
+      .message-branch-nav {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+        color: var(--sp-color-text-dim);
+        font-size: inherit;
+        font-family: inherit;
+        line-height: 1;
+        padding: 0;
+        margin: 0;
+        cursor: pointer;
+        transition: color var(--sp-transition-fast);
+      }
+
+      .message-branch-nav:not(:disabled):hover {
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .message-branch-nav:disabled {
+        color: var(--sp-color-text-dim);
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      .message-branch-nav:focus,
+      .message-branch-nav:focus-visible {
+        outline: none;
+      }
+
       .message-copy-btn.is-copied {
         color: rgba(255, 255, 255, 0.96);
       }

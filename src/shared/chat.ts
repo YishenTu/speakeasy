@@ -8,6 +8,7 @@ import type {
   ChatRegenPayload,
   ChatSendPayload,
   ChatSessionSummary,
+  ChatSwitchBranchPayload,
   FileDataAttachmentPayload,
   RuntimeRequest,
 } from './runtime';
@@ -151,6 +152,26 @@ export async function regenerateAssistantMessage(
 
   await writeActiveChatId(payload.chatId);
   return payload.assistantMessage;
+}
+
+export async function switchAssistantBranch(interactionId: string): Promise<string> {
+  const chatId = await readActiveChatId();
+  if (!chatId) {
+    throw new Error('No active chat selected. Open a chat before switching branches.');
+  }
+
+  const normalizedInteractionId = interactionId.trim();
+  if (!normalizedInteractionId) {
+    throw new Error('Cannot switch branches without an interaction id.');
+  }
+
+  const payload = await sendRuntimeRequest<ChatSwitchBranchPayload>({
+    type: 'chat/switch-branch',
+    chatId,
+    interactionId: normalizedInteractionId,
+  });
+  await writeActiveChatId(payload.chatId);
+  return payload.chatId;
 }
 
 export async function deleteChatById(chatId: string): Promise<boolean> {

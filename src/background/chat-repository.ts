@@ -1,9 +1,10 @@
 import { normalizeContent } from './gemini';
+import { ensureBranchTree } from './sessions';
 import type { ChatSession, GeminiContent } from './types';
 import { isRecord } from './utils';
 
 export const CHAT_DB_NAME = 'speakeasy-chat';
-export const CHAT_DB_VERSION = 1;
+export const CHAT_DB_VERSION = 2;
 export const CHAT_SESSION_STORE_NAME = 'sessions';
 export const CHAT_SESSION_BY_EXPIRES_AT_INDEX = 'byExpiresAtMs';
 export const CHAT_SESSION_BY_UPDATED_AT_INDEX = 'byUpdatedAtMs';
@@ -11,10 +12,6 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface PersistedChatSessionRecord {
   id: string;
-  parentChatId?: string;
-  rootChatId?: string;
-  forkedFromInteractionId?: string;
-  forkedAt?: string;
   title?: string;
   createdAt: string;
   updatedAt: string;
@@ -22,6 +19,20 @@ interface PersistedChatSessionRecord {
   expiresAtMs: number;
   contents: unknown[];
   lastInteractionId?: string;
+  branchTree?: PersistedChatBranchTreeRecord;
+}
+
+interface PersistedChatBranchTreeRecord {
+  rootNodeId: string;
+  activeLeafNodeId: string;
+  nodes: PersistedChatBranchNodeRecord[];
+}
+
+interface PersistedChatBranchNodeRecord {
+  id: string;
+  parentNodeId?: string;
+  childNodeIds: string[];
+  content?: unknown;
 }
 
 export interface ChatRepository {
@@ -279,11 +290,7 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
     throw new Error('Cannot persist chat session without an id.');
   }
 
-  const parentChatId = normalizeOptionalSessionId(session.parentChatId);
-  const rootChatId = normalizeOptionalSessionId(session.rootChatId) || id;
-  const forkedFromInteractionId = normalizeOptionalSessionId(session.forkedFromInteractionId);
-  const forkedAt =
-    typeof session.forkedAt === 'string' && session.forkedAt.trim() ? session.forkedAt : undefined;
+  ensureBranchTree(session);
   const title = session.title?.trim() || undefined;
 
   const createdAt =
@@ -307,13 +314,10 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
   const trimmedLastInteractionId =
     typeof session.lastInteractionId === 'string' ? session.lastInteractionId.trim() : '';
   const lastInteractionId = trimmedLastInteractionId || undefined;
+  const branchTree = session.branchTree ? toPersistedBranchTreeRecord(session) : undefined;
 
   return {
     id,
-    ...(parentChatId ? { parentChatId } : {}),
-    ...(rootChatId ? { rootChatId } : {}),
-    ...(forkedFromInteractionId ? { forkedFromInteractionId } : {}),
-    ...(forkedAt ? { forkedAt } : {}),
     ...(title ? { title } : {}),
     createdAt,
     updatedAt,
@@ -321,6 +325,7 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
     expiresAtMs,
     contents,
     ...(lastInteractionId ? { lastInteractionId } : {}),
+    ...(branchTree ? { branchTree } : {}),
   };
 }
 
@@ -358,32 +363,22 @@ function parsePersistedSessionRecord(rawValue: unknown): ChatSession | null {
   const trimmedLastInteractionId =
     typeof rawValue.lastInteractionId === 'string' ? rawValue.lastInteractionId.trim() : '';
   const lastInteractionId = trimmedLastInteractionId || undefined;
-  const parentChatId =
-    typeof rawValue.parentChatId === 'string' ? rawValue.parentChatId.trim() : '';
-  const rootChatId = typeof rawValue.rootChatId === 'string' ? rawValue.rootChatId.trim() : '';
-  const rawForkedFromInteractionId =
-    typeof rawValue.forkedFromInteractionId === 'string'
-      ? rawValue.forkedFromInteractionId.trim()
-      : '';
-  const legacyForkedFromContentId =
-    typeof rawValue.forkedFromContentId === 'string' ? rawValue.forkedFromContentId.trim() : '';
-  const forkedFromInteractionId = rawForkedFromInteractionId || legacyForkedFromContentId;
-  const forkedAt = typeof rawValue.forkedAt === 'string' ? rawValue.forkedAt.trim() : '';
   const trimmedTitle = typeof rawValue.title === 'string' ? rawValue.title.trim() : '';
   const title = trimmedTitle || undefined;
+  const parsedBranchTree = parsePersistedBranchTreeRecord(rawValue.branchTree);
 
-  return {
+  const session: ChatSession = {
     id,
-    ...(parentChatId ? { parentChatId } : {}),
-    ...(rootChatId ? { rootChatId } : {}),
-    ...(forkedFromInteractionId ? { forkedFromInteractionId } : {}),
-    ...(forkedAt ? { forkedAt } : {}),
     ...(title ? { title } : {}),
     createdAt,
     updatedAt,
     contents,
+    ...(parsedBranchTree ? { branchTree: parsedBranchTree } : {}),
     ...(lastInteractionId ? { lastInteractionId } : {}),
   };
+
+  ensureBranchTree(session);
+  return session;
 }
 
 function ensurePersistedContentId(content: GeminiContent): string {
@@ -398,11 +393,105 @@ function ensurePersistedContentId(content: GeminiContent): string {
   return generated;
 }
 
-function normalizeOptionalSessionId(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
+function toPersistedBranchTreeRecord(session: ChatSession): PersistedChatBranchTreeRecord {
+  const tree = ensureBranchTree(session);
+  const nodes: PersistedChatBranchNodeRecord[] = [];
+
+  for (const node of Object.values(tree.nodes)) {
+    const nodeId = node.id.trim();
+    if (!nodeId) {
+      continue;
+    }
+
+    const parentNodeId = node.parentNodeId?.trim();
+    const childNodeIds = node.childNodeIds
+      .map((childNodeId) => childNodeId.trim())
+      .filter((childNodeId) => childNodeId.length > 0);
+    const persistedNode: PersistedChatBranchNodeRecord = {
+      id: nodeId,
+      ...(parentNodeId ? { parentNodeId } : {}),
+      childNodeIds,
+    };
+    if (node.content) {
+      persistedNode.content = {
+        id: ensurePersistedContentId(node.content),
+        role: node.content.role === 'user' ? 'user' : 'model',
+        parts: node.content.parts.map((part) => ({ ...part })),
+        ...(node.content.metadata ? { metadata: structuredClone(node.content.metadata) } : {}),
+      };
+    }
+    nodes.push(persistedNode);
+  }
+
+  return {
+    rootNodeId: tree.rootNodeId,
+    activeLeafNodeId: tree.activeLeafNodeId,
+    nodes,
+  };
+}
+
+function parsePersistedBranchTreeRecord(rawValue: unknown): ChatSession['branchTree'] {
+  if (!isRecord(rawValue)) {
     return undefined;
   }
 
-  const normalized = value.trim();
-  return normalized || undefined;
+  const rootNodeId =
+    typeof rawValue.rootNodeId === 'string' && rawValue.rootNodeId.trim()
+      ? rawValue.rootNodeId.trim()
+      : '';
+  const activeLeafNodeId =
+    typeof rawValue.activeLeafNodeId === 'string' && rawValue.activeLeafNodeId.trim()
+      ? rawValue.activeLeafNodeId.trim()
+      : '';
+  if (!rootNodeId || !activeLeafNodeId) {
+    return undefined;
+  }
+
+  const rawNodes = Array.isArray(rawValue.nodes) ? rawValue.nodes : [];
+  const nodes: NonNullable<ChatSession['branchTree']>['nodes'] = {};
+  for (const rawNode of rawNodes) {
+    if (!isRecord(rawNode)) {
+      continue;
+    }
+
+    const nodeId = typeof rawNode.id === 'string' ? rawNode.id.trim() : '';
+    if (!nodeId) {
+      continue;
+    }
+
+    const parentNodeId =
+      typeof rawNode.parentNodeId === 'string' && rawNode.parentNodeId.trim()
+        ? rawNode.parentNodeId.trim()
+        : undefined;
+    const childNodeIds = Array.isArray(rawNode.childNodeIds)
+      ? rawNode.childNodeIds
+          .filter((childNodeId): childNodeId is string => typeof childNodeId === 'string')
+          .map((childNodeId) => childNodeId.trim())
+          .filter((childNodeId) => childNodeId.length > 0)
+      : [];
+    let content: GeminiContent | undefined;
+    if ('content' in rawNode) {
+      try {
+        content = normalizeContent(rawNode.content);
+      } catch (error: unknown) {
+        console.warn('Skipping malformed branch node content while parsing persisted session.', {
+          rawNode,
+          error,
+        });
+      }
+    }
+
+    nodes[nodeId] = {
+      id: nodeId,
+      ...(parentNodeId ? { parentNodeId } : {}),
+      childNodeIds,
+      ...(content ? { content } : {}),
+    };
+  }
+
+  return {
+    rootNodeId,
+    activeLeafNodeId,
+    nodes,
+  };
 }

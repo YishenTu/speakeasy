@@ -25,6 +25,9 @@ export interface ChatMessage {
   id: string;
   interactionId?: string;
   previousInteractionId?: string;
+  branchOptionInteractionIds?: string[];
+  branchOptionIndex?: number;
+  branchOptionCount?: number;
   role: MessageRole;
   content: string;
   thinkingSummary?: string;

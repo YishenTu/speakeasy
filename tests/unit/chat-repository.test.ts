@@ -159,26 +159,65 @@ describe('chat repository', () => {
     }
   });
 
-  it('round-trips branch lineage fields', async () => {
+  it('round-trips branch tree fields', async () => {
     const repository = createChatRepository();
     const session = createSession();
-    session.parentChatId = 'chat-parent';
-    session.rootChatId = 'chat-root';
-    session.forkedFromInteractionId = 'interaction-123';
-    session.forkedAt = '2025-01-01T01:02:03.000Z';
-    session.contents.push({
-      id: 'user-1',
-      role: 'user',
-      parts: [{ text: 'hello' }],
-    });
+    const rootNodeId = session.branchTree?.rootNodeId ?? '';
+    session.contents = [
+      {
+        id: 'user-1',
+        role: 'user',
+        parts: [{ text: 'hello' }],
+      },
+      {
+        id: 'model-1',
+        role: 'model',
+        parts: [{ text: 'world' }],
+        metadata: { interactionId: 'interaction-123' },
+      },
+    ];
+    session.branchTree = {
+      rootNodeId,
+      activeLeafNodeId: 'model-node-1',
+      nodes: {
+        [rootNodeId]: {
+          id: rootNodeId,
+          childNodeIds: ['user-node-1'],
+        },
+        'user-node-1': {
+          id: 'user-node-1',
+          parentNodeId: rootNodeId,
+          childNodeIds: ['model-node-1'],
+          content: {
+            id: 'user-1',
+            role: 'user',
+            parts: [{ text: 'hello' }],
+          },
+        },
+        'model-node-1': {
+          id: 'model-node-1',
+          parentNodeId: 'user-node-1',
+          childNodeIds: [],
+          content: {
+            id: 'model-1',
+            role: 'model',
+            parts: [{ text: 'world' }],
+            metadata: { interactionId: 'interaction-123' },
+          },
+        },
+      },
+    };
+    session.lastInteractionId = 'interaction-123';
 
     await repository.upsertSession(session, Date.UTC(2025, 0, 1));
     const stored = await repository.getSession(session.id);
     expect(stored).toBeDefined();
-    expect(stored?.parentChatId).toBe('chat-parent');
-    expect(stored?.rootChatId).toBe('chat-root');
-    expect(stored?.forkedFromInteractionId).toBe('interaction-123');
-    expect(stored?.forkedAt).toBe('2025-01-01T01:02:03.000Z');
+    expect(stored?.branchTree?.rootNodeId).toBe(rootNodeId);
+    expect(stored?.branchTree?.activeLeafNodeId).toBe('model-node-1');
+    expect(stored?.branchTree?.nodes['user-node-1']?.content?.role).toBe('user');
+    expect(stored?.branchTree?.nodes['model-node-1']?.content?.metadata?.interactionId).toBe(
+      'interaction-123',
+    );
   });
 
   it('round-trips persisted session titles', async () => {
@@ -294,13 +333,13 @@ describe('chat repository', () => {
     const repository = createChatRepository();
     const idbFactory = indexedDB as unknown as { open: typeof indexedDB.open };
     const originalOpen = idbFactory.open;
-    idbFactory.open = function () {
+    idbFactory.open = (() => {
       const request = {} as IDBOpenDBRequest;
       queueMicrotask(() => {
         request.onblocked?.(new Event('blocked'));
       });
       return request;
-    } as typeof indexedDB.open;
+    }) as typeof indexedDB.open;
 
     try {
       await expect(repository.listSessions()).rejects.toThrow(/open request was blocked/i);

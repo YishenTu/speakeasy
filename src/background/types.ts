@@ -22,15 +22,29 @@ export interface GeminiFunctionCall {
   args: Record<string, unknown>;
 }
 
+export interface ChatBranchNode {
+  id: string;
+  parentNodeId?: string;
+  childNodeIds: string[];
+  // Root node keeps content undefined. Message nodes keep a Gemini payload.
+  content?: GeminiContent;
+}
+
+export interface ChatBranchTree {
+  rootNodeId: string;
+  activeLeafNodeId: string;
+  nodes: Record<string, ChatBranchNode>;
+}
+
 export interface ChatSession {
   id: string;
-  parentChatId?: string;
-  rootChatId?: string;
-  forkedFromInteractionId?: string;
-  forkedAt?: string;
   title?: string;
   createdAt: string;
   updatedAt: string;
+  // Active-branch linear snapshot used by Gemini interaction execution.
   contents: GeminiContent[];
-  lastInteractionId?: string;
+  // Last assistant interaction id for the active branch.
+  lastInteractionId?: string | undefined;
+  // In-session conversation tree for fork/regen branch navigation.
+  branchTree?: ChatBranchTree;
 }

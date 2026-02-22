@@ -114,6 +114,284 @@ describe('sessions', () => {
     });
   });
 
+  it('maps assistant branch option metadata for sibling responses', () => {
+    const session = createSession();
+    const rootNodeId = session.branchTree?.rootNodeId ?? '';
+    session.branchTree = {
+      rootNodeId,
+      activeLeafNodeId: 'assistant-node-2',
+      nodes: {
+        [rootNodeId]: {
+          id: rootNodeId,
+          childNodeIds: ['user-node-1'],
+        },
+        'user-node-1': {
+          id: 'user-node-1',
+          parentNodeId: rootNodeId,
+          childNodeIds: ['assistant-node-1', 'assistant-node-2'],
+          content: {
+            id: 'u1',
+            role: 'user',
+            parts: [{ text: 'Question' }],
+          },
+        },
+        'assistant-node-1': {
+          id: 'assistant-node-1',
+          parentNodeId: 'user-node-1',
+          childNodeIds: [],
+          content: {
+            id: 'm1',
+            role: 'model',
+            parts: [{ text: 'Answer A' }],
+            metadata: { interactionId: 'interaction-a' },
+          },
+        },
+        'assistant-node-2': {
+          id: 'assistant-node-2',
+          parentNodeId: 'user-node-1',
+          childNodeIds: [],
+          content: {
+            id: 'm2',
+            role: 'model',
+            parts: [{ text: 'Answer B' }],
+            metadata: { interactionId: 'interaction-b' },
+          },
+        },
+      },
+    };
+    session.contents = [
+      { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
+      {
+        id: 'm2',
+        role: 'model',
+        parts: [{ text: 'Answer B' }],
+        metadata: { interactionId: 'interaction-b' },
+      },
+    ];
+    session.lastInteractionId = 'interaction-b';
+
+    const messages = mapSessionToChatMessages(session);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      interactionId: 'interaction-b',
+      branchOptionCount: 2,
+      branchOptionIndex: 2,
+      branchOptionInteractionIds: ['interaction-a', 'interaction-b'],
+    });
+  });
+
+  it('keeps assistant branch options visible when one branch has tool-call intermediary nodes', () => {
+    const session = createSession();
+    const rootNodeId = session.branchTree?.rootNodeId ?? '';
+    session.branchTree = {
+      rootNodeId,
+      activeLeafNodeId: 'assistant-branch-a-final',
+      nodes: {
+        [rootNodeId]: {
+          id: rootNodeId,
+          childNodeIds: ['user-prompt'],
+        },
+        'user-prompt': {
+          id: 'user-prompt',
+          parentNodeId: rootNodeId,
+          childNodeIds: ['assistant-branch-a-call', 'assistant-branch-b'],
+          content: {
+            id: 'u1',
+            role: 'user',
+            parts: [{ text: 'Compare two options' }],
+          },
+        },
+        'assistant-branch-a-call': {
+          id: 'assistant-branch-a-call',
+          parentNodeId: 'user-prompt',
+          childNodeIds: ['tool-user-branch-a'],
+          content: {
+            id: 'm-a-call',
+            role: 'model',
+            parts: [{ functionCall: { name: 'lookup', args: '{}' } }],
+            metadata: { interactionId: 'interaction-a-call' },
+          },
+        },
+        'tool-user-branch-a': {
+          id: 'tool-user-branch-a',
+          parentNodeId: 'assistant-branch-a-call',
+          childNodeIds: ['assistant-branch-a-final'],
+          content: {
+            id: 'u-a-tool',
+            role: 'user',
+            parts: [{ functionResponse: { name: 'lookup', response: { ok: true } } }],
+          },
+        },
+        'assistant-branch-a-final': {
+          id: 'assistant-branch-a-final',
+          parentNodeId: 'tool-user-branch-a',
+          childNodeIds: [],
+          content: {
+            id: 'm-a-final',
+            role: 'model',
+            parts: [{ text: 'Answer from tool-assisted path' }],
+            metadata: { interactionId: 'interaction-a-final' },
+          },
+        },
+        'assistant-branch-b': {
+          id: 'assistant-branch-b',
+          parentNodeId: 'user-prompt',
+          childNodeIds: [],
+          content: {
+            id: 'm-b',
+            role: 'model',
+            parts: [{ text: 'Answer from direct path' }],
+            metadata: { interactionId: 'interaction-b' },
+          },
+        },
+      },
+    };
+    session.contents = [
+      { id: 'u1', role: 'user', parts: [{ text: 'Compare two options' }] },
+      {
+        id: 'm-a-call',
+        role: 'model',
+        parts: [{ functionCall: { name: 'lookup', args: '{}' } }],
+        metadata: { interactionId: 'interaction-a-call' },
+      },
+      {
+        id: 'u-a-tool',
+        role: 'user',
+        parts: [{ functionResponse: { name: 'lookup', response: { ok: true } } }],
+      },
+      {
+        id: 'm-a-final',
+        role: 'model',
+        parts: [{ text: 'Answer from tool-assisted path' }],
+        metadata: { interactionId: 'interaction-a-final' },
+      },
+    ];
+    session.lastInteractionId = 'interaction-a-final';
+
+    const messages = mapSessionToChatMessages(session);
+    const finalAssistant = messages.at(-1);
+    expect(finalAssistant).toMatchObject({
+      role: 'assistant',
+      interactionId: 'interaction-a-final',
+      branchOptionCount: 2,
+      branchOptionIndex: 1,
+      branchOptionInteractionIds: ['interaction-a-final', 'interaction-b'],
+    });
+  });
+
+  it('surfaces branch options for forked prompt variants under the same prior assistant', () => {
+    const session = createSession();
+    const rootNodeId = session.branchTree?.rootNodeId ?? '';
+    session.branchTree = {
+      rootNodeId,
+      activeLeafNodeId: 'assistant-fork-branch',
+      nodes: {
+        [rootNodeId]: {
+          id: rootNodeId,
+          childNodeIds: ['user-root'],
+        },
+        'user-root': {
+          id: 'user-root',
+          parentNodeId: rootNodeId,
+          childNodeIds: ['assistant-root'],
+          content: {
+            id: 'u1',
+            role: 'user',
+            parts: [{ text: 'Initial prompt' }],
+          },
+        },
+        'assistant-root': {
+          id: 'assistant-root',
+          parentNodeId: 'user-root',
+          childNodeIds: ['user-original-followup', 'user-fork-followup'],
+          content: {
+            id: 'm1',
+            role: 'model',
+            parts: [{ text: 'Initial answer' }],
+            metadata: { interactionId: 'interaction-root' },
+          },
+        },
+        'user-original-followup': {
+          id: 'user-original-followup',
+          parentNodeId: 'assistant-root',
+          childNodeIds: ['assistant-original-branch'],
+          content: {
+            id: 'u2',
+            role: 'user',
+            parts: [{ text: 'Original follow-up prompt' }],
+          },
+        },
+        'assistant-original-branch': {
+          id: 'assistant-original-branch',
+          parentNodeId: 'user-original-followup',
+          childNodeIds: [],
+          content: {
+            id: 'm2',
+            role: 'model',
+            parts: [{ text: 'Original follow-up answer' }],
+            metadata: { interactionId: 'interaction-original-branch' },
+          },
+        },
+        'user-fork-followup': {
+          id: 'user-fork-followup',
+          parentNodeId: 'assistant-root',
+          childNodeIds: ['assistant-fork-branch'],
+          content: {
+            id: 'u2-fork',
+            role: 'user',
+            parts: [{ text: 'Edited follow-up prompt' }],
+          },
+        },
+        'assistant-fork-branch': {
+          id: 'assistant-fork-branch',
+          parentNodeId: 'user-fork-followup',
+          childNodeIds: [],
+          content: {
+            id: 'm2-fork',
+            role: 'model',
+            parts: [{ text: 'Edited follow-up answer' }],
+            metadata: { interactionId: 'interaction-fork-branch' },
+          },
+        },
+      },
+    };
+    session.contents = [
+      { id: 'u1', role: 'user', parts: [{ text: 'Initial prompt' }] },
+      {
+        id: 'm1',
+        role: 'model',
+        parts: [{ text: 'Initial answer' }],
+        metadata: { interactionId: 'interaction-root' },
+      },
+      { id: 'u2-fork', role: 'user', parts: [{ text: 'Edited follow-up prompt' }] },
+      {
+        id: 'm2-fork',
+        role: 'model',
+        parts: [{ text: 'Edited follow-up answer' }],
+        metadata: { interactionId: 'interaction-fork-branch' },
+      },
+    ];
+    session.lastInteractionId = 'interaction-fork-branch';
+
+    const messages = mapSessionToChatMessages(session);
+    const forkedPrompt = messages.find(
+      (message) => message.role === 'user' && message.content === 'Edited follow-up prompt',
+    );
+    const finalAssistant = messages.at(-1);
+    expect(forkedPrompt).toMatchObject({
+      role: 'user',
+      branchOptionCount: 2,
+      branchOptionIndex: 2,
+      branchOptionInteractionIds: ['interaction-original-branch', 'interaction-fork-branch'],
+    });
+    expect(finalAssistant).toMatchObject({
+      role: 'assistant',
+      interactionId: 'interaction-fork-branch',
+    });
+    expect(finalAssistant?.branchOptionCount).toBeUndefined();
+  });
+
   it('provides a fallback assistant message when content is not displayable', () => {
     const message = toAssistantChatMessage({
       role: 'model',

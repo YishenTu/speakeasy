@@ -31,6 +31,11 @@ export type RuntimeRequest =
       previousInteractionId: string;
     }
   | {
+      type: 'chat/switch-branch';
+      chatId: string;
+      interactionId: string;
+    }
+  | {
       type: 'chat/load';
       chatId?: string;
     }
@@ -71,6 +76,10 @@ export interface ChatRegenPayload {
 }
 
 export interface ChatForkPayload {
+  chatId: string;
+}
+
+export interface ChatSwitchBranchPayload {
   chatId: string;
 }
 

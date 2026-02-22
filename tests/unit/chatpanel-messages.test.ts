@@ -565,6 +565,87 @@ describe('chatpanel messages', () => {
     expect(regenButton?.getAttribute('aria-label')).toBe('Regenerate response');
   });
 
+  it('renders a single branch navigator with disabled edge controls and switches to adjacent branches', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const selected: Array<{ messageId: string; interactionId: string }> = [];
+
+    appendMessage(
+      {
+        id: 'assistant-branch-target',
+        role: 'assistant',
+        content: 'Branch answer',
+        interactionId: 'interaction-b',
+        branchOptionInteractionIds: ['interaction-a', 'interaction-b'],
+        branchOptionCount: 2,
+        branchOptionIndex: 2,
+      },
+      messageList,
+      {
+        onAssistantBranchSelect: (message, interactionId) => {
+          selected.push({
+            messageId: message.id,
+            interactionId,
+          });
+        },
+      },
+    );
+
+    const branchButtons = Array.from(
+      messageList.querySelectorAll('.message-branch-nav'),
+    ) as HTMLButtonElement[];
+    const branchIndicator = messageList.querySelector('.message-branch-indicator');
+    const branchSwitch = messageList.querySelector('.message-branch-switch');
+    expect(branchSwitch).not.toBeNull();
+    expect(branchSwitch?.textContent?.trim()).toBe('<2/2>');
+    expect(branchIndicator?.textContent).toBe('2/2');
+    expect(branchButtons).toHaveLength(2);
+    const previousButton = messageList.querySelector(
+      '.message-branch-prev',
+    ) as HTMLButtonElement | null;
+    const nextButton = messageList.querySelector(
+      '.message-branch-next',
+    ) as HTMLButtonElement | null;
+    expect(previousButton).not.toBeNull();
+    expect(previousButton?.disabled).toBe(false);
+    expect(nextButton).not.toBeNull();
+    expect(nextButton?.disabled).toBe(true);
+
+    previousButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    nextButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(selected).toEqual([
+      {
+        messageId: 'assistant-branch-target',
+        interactionId: 'interaction-a',
+      },
+    ]);
+  });
+
+  it('renders branch switch at the end of the assistant action bar', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-action-order',
+        role: 'assistant',
+        content: 'Branch answer',
+        interactionId: 'interaction-b',
+        branchOptionInteractionIds: ['interaction-a', 'interaction-b'],
+        branchOptionCount: 2,
+        branchOptionIndex: 2,
+        timestamp: '2026-02-22T18:20:00.000Z',
+      },
+      messageList,
+      {
+        onAssistantAction: () => {},
+        onAssistantBranchSelect: () => {},
+      },
+    );
+
+    const actionBar = messageList.querySelector('.message-actions-assistant');
+    expect(actionBar).not.toBeNull();
+    expect(actionBar?.lastElementChild?.classList.contains('message-branch-switch')).toBe(true);
+  });
+
   it('renders user action bar with copy and edit-and-retry buttons', async () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
     const actionCalls: Array<{
@@ -628,6 +709,74 @@ describe('chatpanel messages', () => {
         action: 'fork',
         messageId: 'user-action-target',
         previousInteractionId: 'interaction-1',
+      },
+    ]);
+  });
+
+  it('renders fork branch switch on user action bar and not assistant action bar', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const selected: Array<{ messageId: string; interactionId: string }> = [];
+
+    appendMessage(
+      {
+        id: 'user-branch-target',
+        role: 'user',
+        content: 'Edited prompt',
+        previousInteractionId: 'interaction-root',
+        branchOptionInteractionIds: ['interaction-original', 'interaction-fork'],
+        branchOptionCount: 2,
+        branchOptionIndex: 2,
+      },
+      messageList,
+      {
+        onUserAction: () => {},
+        onAssistantBranchSelect: (message, interactionId) => {
+          selected.push({
+            messageId: message.id,
+            interactionId,
+          });
+        },
+      },
+    );
+
+    appendMessage(
+      {
+        id: 'assistant-branch-target',
+        role: 'assistant',
+        content: 'Forked answer',
+        interactionId: 'interaction-fork',
+      },
+      messageList,
+      {
+        onAssistantAction: () => {},
+        onAssistantBranchSelect: () => {},
+      },
+    );
+
+    const userRowSwitch = messageList.querySelector(
+      'li[data-message-id="user-branch-target"] .message-branch-switch',
+    ) as HTMLDivElement | null;
+    const assistantRowSwitch = messageList.querySelector(
+      'li[data-message-id="assistant-branch-target"] .message-branch-switch',
+    );
+    const previousButton = messageList.querySelector(
+      'li[data-message-id="user-branch-target"] .message-branch-prev',
+    ) as HTMLButtonElement | null;
+    const nextButton = messageList.querySelector(
+      'li[data-message-id="user-branch-target"] .message-branch-next',
+    ) as HTMLButtonElement | null;
+
+    expect(userRowSwitch).not.toBeNull();
+    expect(userRowSwitch?.textContent?.trim()).toBe('<2/2>');
+    expect(assistantRowSwitch).toBeNull();
+    expect(previousButton?.disabled).toBe(false);
+    expect(nextButton?.disabled).toBe(true);
+
+    previousButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(selected).toEqual([
+      {
+        messageId: 'user-branch-target',
+        interactionId: 'interaction-original',
       },
     ]);
   });

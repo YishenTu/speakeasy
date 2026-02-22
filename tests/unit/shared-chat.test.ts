@@ -8,6 +8,7 @@ import {
   loadChatMessagesById,
   regenerateAssistantMessage,
   sendMessage,
+  switchAssistantBranch,
 } from '../../src/shared/chat';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
@@ -298,18 +299,18 @@ describe('shared chat client', () => {
     expect(runtimeRequests).toEqual([{ type: 'chat/list' }]);
   });
 
-  it('forks the active chat by interaction id and switches active chat', async () => {
+  it('forks within the active chat by interaction id', async () => {
     storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
     queueRuntimeResponses({
       ok: true,
       payload: {
-        chatId: 'chat-forked',
+        chatId: 'chat-active',
       },
     });
 
     const chatId = await forkChat('interaction-123');
 
-    expect(chatId).toBe('chat-forked');
+    expect(chatId).toBe('chat-active');
     expect(runtimeRequests).toEqual([
       {
         type: 'chat/fork',
@@ -317,7 +318,7 @@ describe('shared chat client', () => {
         previousInteractionId: 'interaction-123',
       },
     ]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-forked');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
   });
 
   it('rejects fork when no active chat exists', async () => {
@@ -325,12 +326,12 @@ describe('shared chat client', () => {
     expect(runtimeRequests).toEqual([]);
   });
 
-  it('regenerates assistant message in active chat and switches to branched chat', async () => {
+  it('regenerates assistant message in the active chat', async () => {
     storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
     queueRuntimeResponses({
       ok: true,
       payload: {
-        chatId: 'chat-regen',
+        chatId: 'chat-active',
         assistantMessage: {
           id: 'assistant-regen',
           role: 'assistant',
@@ -363,7 +364,41 @@ describe('shared chat client', () => {
         streamRequestId: 'regen-stream-1',
       },
     ]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-regen');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
+  });
+
+  it('switches assistant branch in the active chat', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        chatId: 'chat-active',
+      },
+    });
+
+    const chatId = await switchAssistantBranch('interaction-2');
+
+    expect(chatId).toBe('chat-active');
+    expect(runtimeRequests).toEqual([
+      {
+        type: 'chat/switch-branch',
+        chatId: 'chat-active',
+        interactionId: 'interaction-2',
+      },
+    ]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
+  });
+
+  it('rejects branch switching when no active chat exists', async () => {
+    await expect(switchAssistantBranch('interaction-2')).rejects.toThrow(/active chat/i);
+    expect(runtimeRequests).toEqual([]);
+  });
+
+  it('rejects branch switching when interaction id is blank', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
+
+    await expect(switchAssistantBranch('   ')).rejects.toThrow(/interaction id/i);
+    expect(runtimeRequests).toEqual([]);
   });
 
   it('rejects regenerate when no active chat exists', async () => {

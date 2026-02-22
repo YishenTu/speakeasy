@@ -40,6 +40,10 @@ describe('chatpanel regenerate flow', () => {
   let newChatErrorMessage: string | null;
   let sendErrorMessage: string | null;
   let regenRequest: Extract<RuntimeRequest, { type: 'chat/regen' }> | null;
+  let forkRequest: Extract<RuntimeRequest, { type: 'chat/fork' }> | null;
+  let switchBranchRequest: Extract<RuntimeRequest, { type: 'chat/switch-branch' }> | null;
+  let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
+  let loadMessageSnapshots: string[];
   let regenDeferred: Deferred<{
     ok: true;
     payload: {
@@ -67,6 +71,10 @@ describe('chatpanel regenerate flow', () => {
     newChatErrorMessage = null;
     sendErrorMessage = null;
     regenRequest = null;
+    forkRequest = null;
+    switchBranchRequest = null;
+    loadRequests = [];
+    loadMessageSnapshots = [];
     regenDeferred = createDeferred();
 
     (globalThis as { chrome?: unknown }).chrome = {
@@ -113,6 +121,8 @@ describe('chatpanel regenerate flow', () => {
       runtime: {
         sendMessage: (request: RuntimeRequest | { type: 'app/open-options' }) => {
           if (request.type === 'chat/load') {
+            loadRequests.push(request);
+            loadMessageSnapshots.push(currentMessages.map((message) => message.content).join('|'));
             return Promise.resolve({
               ok: true as const,
               payload: {
@@ -132,6 +142,24 @@ describe('chatpanel regenerate flow', () => {
           if (request.type === 'chat/regen') {
             regenRequest = request;
             return regenDeferred.promise;
+          }
+          if (request.type === 'chat/fork') {
+            forkRequest = request;
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                chatId: request.chatId,
+              },
+            });
+          }
+          if (request.type === 'chat/switch-branch') {
+            switchBranchRequest = request;
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                chatId: request.chatId,
+              },
+            });
           }
           if (request.type === 'chat/new') {
             if (newChatErrorMessage) {
@@ -277,7 +305,9 @@ describe('chatpanel regenerate flow', () => {
     await flushMicrotasks();
 
     const shadowRoot = getChatpanelShadowRoot();
-    const newChatButton = shadowRoot.querySelector('#speakeasy-new-chat') as HTMLButtonElement | null;
+    const newChatButton = shadowRoot.querySelector(
+      '#speakeasy-new-chat',
+    ) as HTMLButtonElement | null;
     const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
     const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
     expect(newChatButton).not.toBeNull();
@@ -321,6 +351,152 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList?.textContent).toContain('send failed');
     expect(messageList?.textContent).not.toContain('failure prompt');
     expect(messageList?.querySelectorAll('li[data-message-id]').length).toBe(1);
+  });
+
+  it('switches assistant branches from the branch selector and reloads messages', async () => {
+    currentMessages = [
+      { id: 'user-1', role: 'user', content: 'Tell me a joke.' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Original branch answer',
+        interactionId: 'interaction-b',
+        branchOptionInteractionIds: ['interaction-a', 'interaction-b'],
+        branchOptionCount: 2,
+        branchOptionIndex: 2,
+      },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(messageList).not.toBeNull();
+
+    currentMessages = [
+      { id: 'user-1', role: 'user', content: 'Tell me a joke.' },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: 'Switched branch answer',
+        interactionId: 'interaction-a',
+        branchOptionInteractionIds: ['interaction-a', 'interaction-b'],
+        branchOptionCount: 2,
+        branchOptionIndex: 1,
+      },
+    ];
+
+    const branchSwitch = shadowRoot.querySelector('.message-branch-switch');
+    const prevButton = shadowRoot.querySelector('.message-branch-prev') as HTMLButtonElement | null;
+    const nextButton = shadowRoot.querySelector('.message-branch-next') as HTMLButtonElement | null;
+    expect(branchSwitch?.textContent?.trim()).toBe('<2/2>');
+    expect(prevButton).not.toBeNull();
+    expect(prevButton?.disabled).toBe(false);
+    expect(nextButton).not.toBeNull();
+    expect(nextButton?.disabled).toBe(true);
+    prevButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    nextButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(50);
+
+    expect(switchBranchRequest).toMatchObject({
+      type: 'chat/switch-branch',
+      chatId: 'chat-seed',
+      interactionId: 'interaction-a',
+    });
+    expect(loadRequests.length).toBeGreaterThan(1);
+    expect(
+      loadMessageSnapshots.some((snapshot) => snapshot.includes('Switched branch answer')),
+    ).toBe(true);
+    expect(messageList?.textContent).toContain('Switched branch answer');
+  });
+
+  it('reloads after sending from a fork so branch switch metadata is visible', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    currentMessages = [
+      { id: 'user-1', role: 'user', content: 'Initial prompt' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Initial answer',
+        interactionId: 'interaction-root',
+      },
+      {
+        id: 'user-2',
+        role: 'user',
+        content: 'Second prompt',
+        previousInteractionId: 'interaction-root',
+      },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const forkButton = shadowRoot.querySelector('.message-fork-btn') as HTMLButtonElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(forkButton).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(form).not.toBeNull();
+    expect(messageList).not.toBeNull();
+
+    forkButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(20);
+
+    expect(forkRequest).toMatchObject({
+      type: 'chat/fork',
+      chatId: 'chat-seed',
+      previousInteractionId: 'interaction-root',
+    });
+
+    currentMessages = [
+      { id: 'user-1', role: 'user', content: 'Initial prompt' },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Initial answer',
+        interactionId: 'interaction-root',
+      },
+      {
+        id: 'user-2-fork',
+        role: 'user',
+        content: 'Second prompt (edited)',
+        previousInteractionId: 'interaction-root',
+        branchOptionInteractionIds: ['interaction-2', 'interaction-fork'],
+        branchOptionCount: 2,
+        branchOptionIndex: 2,
+      },
+      {
+        id: 'assistant-2-fork',
+        role: 'assistant',
+        content: 'Forked second answer',
+        interactionId: 'interaction-fork',
+      },
+    ];
+
+    if (!form || !input) {
+      throw new Error('Expected chatpanel form controls.');
+    }
+    input.value = 'Second prompt (edited)';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(40);
+
+    const userRowBranchSwitch = shadowRoot.querySelector(
+      'li[data-message-id="user-2-fork"] .message-branch-switch',
+    );
+    const assistantRowBranchSwitch = shadowRoot.querySelector(
+      'li[data-message-id="assistant-2-fork"] .message-branch-switch',
+    );
+    expect(userRowBranchSwitch).not.toBeNull();
+    expect(userRowBranchSwitch?.textContent?.trim()).toBe('<2/2>');
+    expect(assistantRowBranchSwitch).toBeNull();
+    expect(messageList?.textContent).toContain('Forked second answer');
   });
 });
 

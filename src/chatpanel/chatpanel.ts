@@ -9,6 +9,7 @@ import {
   loadChatMessagesById,
   regenerateAssistantMessage,
   sendMessage,
+  switchAssistantBranch,
 } from '../shared/chat';
 import type { ChatSessionSummary } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
@@ -163,6 +164,9 @@ function mountChatPanel(): void {
   const messageRenderOptions: MessageRenderOptions = {
     onAssistantAction: (action, message) => {
       void handleMessageAction(action, message);
+    },
+    onAssistantBranchSelect: (message, interactionId) => {
+      void handleAssistantBranchSelect(message, interactionId);
     },
     onUserAction: (action, message) => {
       void handleMessageAction(action, message);
@@ -647,6 +651,40 @@ function mountChatPanel(): void {
     }
   }
 
+  async function handleAssistantBranchSelect(
+    _message: ChatMessage,
+    interactionId: string,
+  ): Promise<void> {
+    if (isBusy) {
+      return;
+    }
+
+    const normalizedInteractionId = interactionId.trim();
+    if (!normalizedInteractionId) {
+      return;
+    }
+
+    setBusyState(true);
+    try {
+      await switchAssistantBranch(normalizedInteractionId);
+      await reloadActiveChat();
+      setHistoryMenuOpen(false);
+      input.focus();
+    } catch (error: unknown) {
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: toErrorMessage(error),
+        },
+        messageList,
+        messageRenderOptions,
+      );
+    } finally {
+      setBusyState(false);
+    }
+  }
+
   function startInteractionLock(): void {
     if (!hasUserSelectOverride) {
       previousUserSelect = document.documentElement.style.userSelect;
@@ -906,14 +944,7 @@ function mountChatPanel(): void {
         messageList,
         messageRenderOptions,
       );
-      if (assistantMessage.role === 'assistant') {
-        const interactionId = assistantMessage.interactionId?.trim();
-        if (interactionId) {
-          lastAssistantInteractionId = interactionId;
-        }
-      }
-      activeChatId = (await getActiveChatId()) ?? null;
-      await refreshHistoryDropdown();
+      await reloadActiveChat();
     } catch (error: unknown) {
       if (streamRequestId) {
         activeStreamDrafts.delete(streamRequestId);

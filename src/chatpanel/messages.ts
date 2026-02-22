@@ -3,6 +3,7 @@ import { renderMarkdownToSafeHtml } from './markdown';
 
 export interface MessageRenderOptions {
   onAssistantAction?: (action: 'regen', message: ChatMessage) => void;
+  onAssistantBranchSelect?: (message: ChatMessage, interactionId: string) => void;
   onUserAction?: (action: 'fork', message: ChatMessage) => void;
 }
 
@@ -255,9 +256,17 @@ function createAssistantActionBar(
   }
 
   const hasRegenerateAction = !!message.interactionId?.trim() && !!options.onAssistantAction;
+  const branchOptions = message.branchOptionInteractionIds ?? [];
+  const hasBranchSwitchAction = branchOptions.length > 1 && !!options.onAssistantBranchSelect;
   const copyText = buildCopyableAssistantResponse(message);
   const hasCopyableText = copyText.length > 0;
-  if (!stats && !hasCopyableText && !hasRegenerateAction && !message.timestamp) {
+  if (
+    !stats &&
+    !hasCopyableText &&
+    !hasRegenerateAction &&
+    !hasBranchSwitchAction &&
+    !message.timestamp
+  ) {
     return null;
   }
 
@@ -290,7 +299,88 @@ function createAssistantActionBar(
     actionBar.append(time);
   }
 
+  if (hasBranchSwitchAction) {
+    actionBar.append(createBranchSwitchControl(message, options));
+  }
+
   return actionBar.childElementCount > 0 ? actionBar : null;
+}
+
+function createBranchSwitchControl(
+  message: ChatMessage,
+  options: MessageRenderOptions,
+): HTMLDivElement {
+  const control = document.createElement('div');
+  control.className = 'message-branch-switch';
+  const interactionIds = (message.branchOptionInteractionIds ?? []).map((id) => id.trim());
+  const validInteractionIds = interactionIds.filter((id) => id.length > 0);
+  const total = validInteractionIds.length;
+  if (total === 0) {
+    return control;
+  }
+
+  const rawSelectedIndex = (message.branchOptionIndex ?? 1) - 1;
+  const selectedIndex = Math.max(0, Math.min(total - 1, rawSelectedIndex));
+  const selectedPosition = selectedIndex + 1;
+  const previousInteractionId =
+    selectedIndex > 0 ? (validInteractionIds[selectedIndex - 1] ?? null) : null;
+  const nextInteractionId =
+    selectedIndex < total - 1 ? (validInteractionIds[selectedIndex + 1] ?? null) : null;
+
+  control.append(
+    createBranchNavigationButton(
+      'message-branch-prev',
+      '<',
+      selectedIndex > 0
+        ? `Switch to branch ${selectedPosition - 1} of ${total}`
+        : 'Previous branch unavailable',
+      message,
+      previousInteractionId,
+      options,
+    ),
+  );
+
+  const indicator = document.createElement('span');
+  indicator.className = 'message-branch-indicator';
+  indicator.textContent = `${selectedPosition}/${total}`;
+  control.append(indicator);
+
+  control.append(
+    createBranchNavigationButton(
+      'message-branch-next',
+      '>',
+      selectedIndex < total - 1
+        ? `Switch to branch ${selectedPosition + 1} of ${total}`
+        : 'Next branch unavailable',
+      message,
+      nextInteractionId,
+      options,
+    ),
+  );
+
+  return control;
+}
+
+function createBranchNavigationButton(
+  className: string,
+  label: string,
+  ariaLabel: string,
+  message: ChatMessage,
+  interactionId: string | null,
+  options: MessageRenderOptions,
+): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `message-branch-nav ${className}`;
+  button.textContent = label;
+  button.setAttribute('aria-label', ariaLabel);
+  button.disabled = !interactionId;
+  if (interactionId) {
+    button.addEventListener('click', () => {
+      options.onAssistantBranchSelect?.(message, interactionId);
+    });
+  }
+  return button;
 }
 
 function createUserActionBar(
@@ -304,7 +394,9 @@ function createUserActionBar(
   const copyText = buildCopyableUserQuery(message);
   const hasCopyableText = copyText.length > 0;
   const hasForkAction = !!message.previousInteractionId?.trim() && !!options.onUserAction;
-  if (!hasCopyableText && !hasForkAction) {
+  const branchOptions = message.branchOptionInteractionIds ?? [];
+  const hasBranchSwitchAction = branchOptions.length > 1 && !!options.onAssistantBranchSelect;
+  if (!hasCopyableText && !hasForkAction && !hasBranchSwitchAction) {
     return null;
   }
 
@@ -324,6 +416,10 @@ function createUserActionBar(
         () => options.onUserAction?.('fork', message),
       ),
     );
+  }
+
+  if (hasBranchSwitchAction) {
+    actionBar.append(createBranchSwitchControl(message, options));
   }
 
   return actionBar.childElementCount > 0 ? actionBar : null;
