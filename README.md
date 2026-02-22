@@ -1,29 +1,40 @@
 # Speakeasy
 
-Speakeasy is a Manifest V3 Chrome extension chatbot powered by the Gemini API.
-It runs as an in-page overlay on regular websites (`http/https`).
+Speakeasy is a Manifest V3 Chrome extension that injects a Gemini-powered chat overlay into
+regular web pages (`http://*/*`, `https://*/*`).
+
+## Current status
+
+- Overlay chat panel is shipped and toggleable via toolbar action or `_execute_action` command.
+- Background service worker uses Gemini Interactions API (`@google/genai`) with multi-turn
+  continuity (`previous_interaction_id`), streaming deltas, and persisted sessions.
+- Conversation history is branch-aware: regenerate, fork, and branch switching are supported.
+- File upload flow is wired end-to-end (Gemini Files API upload, attachment metadata, image preview
+  persistence).
+- Options page manages API key, model, system instruction, tool toggles, and tool-specific config.
+- Deterministic test suites cover unit + contract behavior; live Gemini checks are isolated to
+  canary workflow only.
 
 ## Tech stack
 
-- Bun (package manager + bundler)
+- Bun (package manager + runtime + build scripts)
 - TypeScript (strict mode)
 - `@google/genai` (official Gemini SDK)
-- Tailwind CSS
+- Tailwind CSS (options page stylesheet output)
 - Biome (lint + formatting)
+- dependency-cruiser (import boundaries + circular dependency enforcement)
 
 ## Project structure
 
-- `src/background/background.ts`: Gemini backend service (multi-turn sessions, tool loop, storage)
-- `src/chatpanel/chatpanel.ts`: in-page chat panel UI (content script)
-- `src/shared/chat.ts`: chatpanel-to-background chat bridge
-- `src/shared/runtime.ts`: runtime message contracts
-- `src/shared/settings.ts`: Gemini settings schema and normalization
-- `src/options/options.html`: options page UI for Gemini settings
-- `src/options/options.ts`: options page logic and validation
-- `src/manifest.json`: extension manifest source
-- `scripts/build.ts`: produces loadable extension output in `dist/`
-- `scripts/test-gemini.ts`: live Gemini API format verifier using `.env`
-- `.dependency-cruiser.cjs`: import-boundary and circular-dependency rules
+- `src/background/`: service worker runtime, Gemini orchestration, session persistence, uploads.
+- `src/chatpanel/`: content-script overlay UI, message rendering, stream updates, history/actions.
+- `src/options/`: options page UI, form state, validation.
+- `src/shared/`: runtime contracts, settings normalization, chat bridge utilities.
+- `scripts/build.ts`: builds TypeScript + Tailwind, copies static assets, sanitizes JS bundles.
+- `scripts/dev.ts`: watch mode wrapper around build pipeline.
+- `scripts/test-gemini.ts`: live Gemini canary format checker.
+- `tests/unit/`: deterministic unit tests.
+- `tests/contract/`: deterministic request-shape/contract tests.
 
 ## Setup
 
@@ -31,7 +42,12 @@ It runs as an in-page overlay on regular websites (`http/https`).
 bun install
 ```
 
-Add a `.env` file in project root:
+`GEMINI_API_KEY` is required for:
+
+- Running the extension against Gemini (set in Speakeasy options UI).
+- Running the live canary script locally (`bun run test:gemini` / `bun run test:gemini:canary`).
+
+Optional local `.env` for canary script:
 
 ```bash
 GEMINI_API_KEY=your-real-gemini-key
@@ -39,40 +55,35 @@ GEMINI_API_KEY=your-real-gemini-key
 
 ## Commands
 
-```bash
-bun run dev
-bun run deps:check
-bun run lint
-bun run typecheck
-bun run build
-bun run test:unit
-bun run test:contract
-bun run verify
-bun run test:gemini:canary
-```
-
-`bun run dev` watches source files and rebuilds `dist/` automatically.
-`bun run deps:check` enforces module boundaries and blocks circular imports.
-`bun run build` outputs a complete unpacked extension in `dist/`.
-`bun run test:unit` runs deterministic unit tests from `tests/unit`.
-`bun run test:contract` runs deterministic request-shape contract tests from `tests/contract`.
-`bun run verify` is the canonical local/CI gate:
-`deps:check -> lint -> typecheck -> build -> test:unit -> test:contract`.
-`bun run test:gemini:canary` runs the live Gemini API canary using `gemini-3-flash-preview`.
+| Command | Purpose |
+| --- | --- |
+| `bun run dev` | Watch + rebuild extension artifacts into `dist/`. |
+| `bun run build` | One-shot production build to `dist/`. |
+| `bun run deps:check` | Enforce dependency boundaries and no circular imports. |
+| `bun run lint` | Run Biome checks. |
+| `bun run lint:fix` | Run Biome checks with auto-fixes. |
+| `bun run format` | Apply Biome formatting. |
+| `bun run format:check` | Check formatting without writing changes. |
+| `bun run typecheck` | TypeScript `--noEmit` checks. |
+| `bun run test:unit` | Run deterministic unit tests. |
+| `bun run test:contract` | Run deterministic contract tests. |
+| `bun run verify` | Local/CI quality gate (`deps:check -> lint -> typecheck -> build -> test:unit -> test:contract`). |
+| `bun run test:gemini:canary` | Live Gemini canary format test. |
+| `bun run test:gemini` | Alias of `test:gemini:canary`. |
 
 ## CI policy
 
-- Pull requests are merge-blocked by the required `quality-gate` check.
-- `quality-gate` runs `bun run verify` and never performs live Gemini API calls.
-- Live Gemini validation is isolated to the `gemini-canary` workflow on `main` only.
-- `gemini-canary` runs daily (UTC) and supports manual `workflow_dispatch`.
-- `gemini-canary` is informational and is not a required PR status check.
+- `.github/workflows/ci.yml` runs `quality-gate` (`bun run verify`) on pull requests and pushes to
+  `main`.
+- `.github/workflows/gemini-canary.yml` runs live Gemini validation daily (UTC) and on
+  `workflow_dispatch`, gated to `main`.
+- Canary includes transient-network retry logic and is not part of deterministic PR quality checks.
 
 ## Testing policy
 
-- Unit and contract tests must stay deterministic and offline.
-- External network/API calls are disallowed in PR CI and local deterministic suites.
-- The only allowed live Gemini check is `test:gemini:canary` in the canary workflow.
+- Unit + contract suites must remain deterministic and offline.
+- External network/API calls are disallowed in local deterministic suites and PR CI checks.
+- Live Gemini checks are isolated to canary workflow and explicit canary script runs.
 
 ## Dependency direction
 
@@ -82,40 +93,44 @@ bun run test:gemini:canary
 - `src/options` can depend on `src/shared`, never on `src/background` or `src/chatpanel`.
 - Circular dependencies are forbidden globally.
 
-## Chat backend behavior
+## Runtime behavior
 
-- Multi-turn history is persisted in browser-managed IndexedDB (`speakeasy-chat`), keyed by `chatId`.
-- Conversation continuity uses Gemini interaction chaining via `previous_interaction_id` and persisted `lastInteractionId`.
-- Model `content.parts` are preserved as-is between turns (including tool outputs and attachments).
-- Gemini calls are made through the official `@google/genai` SDK (`interactions.create`).
-- Runtime supports both native Gemini tools and function calling, with compatibility checks.
-- Sessions are retained with a 30-day TTL and pruned automatically.
+- Sessions are persisted in browser-managed IndexedDB and tracked by `chatId`.
+- Session branch tree supports assistant regeneration and user forking from earlier turns.
+- Sessions use a 30-day TTL and are pruned automatically.
+- Assistant metadata includes interaction id, source model, response stats, and attachment preview
+  mapping.
+- Streaming updates emit text deltas and thinking deltas to the chatpanel during response
+  generation.
 
 ## Overlay behavior
 
-- Toolbar click (or command shortcut) toggles the in-page Speakeasy overlay.
-- Overlay can open settings, start a new chat, switch chats from a history dropdown, and delete a specific session from that dropdown.
-- Overlay currently injects on `http://*/*` and `https://*/*` pages.
+- In-page panel supports new chat, history list, per-session delete, and settings entrypoint.
+- Per-message actions include copy, regenerate response, fork/edit retry, and branch navigation.
+- Input toolbar supports model selection, thinking-level selection, and file attachment staging.
+- Overlay is injected on `http://*/*` and `https://*/*` pages.
 
-## Tooling notes
+## Tool behavior and constraints
 
-- Native tools exposed in settings: Google Search, Code Execution, URL Context, Google Maps, File Search, MCP Servers.
-- Function calling (local tool execution loop) is supported in a separate mode.
-- Function calling and native tools are blocked together in `interactions.create`.
-- File Search requires one or more configured `fileSearchStores/...` names.
-- Computer Use is listed but intentionally blocked in this runtime (requires separate action/screenshot loop).
+- Native Interactions tools supported: Google Search, Code Execution, URL Context, File Search, MCP
+  Servers.
+- Local function-calling mode is supported with built-in tools:
+  `get_current_time`, `get_extension_info`, `generate_uuid`.
+- Function calling cannot be combined with native tools in a single request.
+- File Search requires configured store names; MCP servers require configured server URLs.
+- Google Maps and Computer Use are visible in settings but blocked in this runtime.
 
 ## Load in Chrome
 
 1. Open `chrome://extensions`.
 2. Enable **Developer mode**.
-3. Click **Load unpacked** and select the `dist/` folder.
+3. Click **Load unpacked** and select `dist/`.
 
 ## Keyboard shortcut
 
-The extension uses `_execute_action` with suggested keys:
+Suggested `_execute_action` keys from manifest:
 
 - Windows/Linux: `Ctrl+Shift+Space`
 - macOS: `Command+Shift+Space`
 
-If Chrome blocks the default shortcut, set it manually at `chrome://extensions/shortcuts`.
+If Chrome blocks the default shortcut, set it at `chrome://extensions/shortcuts`.
