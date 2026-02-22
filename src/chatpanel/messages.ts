@@ -1,6 +1,7 @@
 import type { ChatMessage } from '../shared/chat';
 import { toErrorMessage as toSharedErrorMessage } from '../shared/error-message';
 import { renderMarkdownToSafeHtml } from './markdown';
+import { getFilePreviewTypeLabel, isImageMimeType, isPdfMimeType } from './media-helpers';
 
 export interface MessageRenderOptions {
   onAssistantAction?: (action: 'regen', message: ChatMessage) => void;
@@ -252,7 +253,7 @@ function createGenericAttachmentPreviewNode(
 
   const fileTypeLabel = document.createElement('span');
   fileTypeLabel.className = 'file-preview-filetype';
-  fileTypeLabel.textContent = getAttachmentPreviewTypeLabel(attachment);
+  fileTypeLabel.textContent = getFilePreviewTypeLabel(attachment);
   generic.append(fileTypeLabel);
   return generic;
 }
@@ -690,29 +691,6 @@ function formatTokenCount(value: number | undefined): string {
 
 function formatTokensPerSecond(value: number | undefined): string {
   return typeof value === 'number' ? `${value.toFixed(2)} tok/s` : 'n/a';
-}
-
-function isImageMimeType(mimeType: string): boolean {
-  return mimeType.split(';', 1)[0]?.trim().toLowerCase().startsWith('image/') ?? false;
-}
-
-function isPdfMimeType(mimeType: string): boolean {
-  return mimeType.split(';', 1)[0]?.trim().toLowerCase() === 'application/pdf';
-}
-
-function getAttachmentPreviewTypeLabel(
-  attachment: NonNullable<ChatMessage['attachments']>[number],
-): string {
-  if (isPdfMimeType(attachment.mimeType)) {
-    return 'PDF';
-  }
-
-  const extension = attachment.name.split('.').pop()?.trim().toUpperCase() ?? '';
-  if (/^[A-Z0-9]{1,5}$/.test(extension)) {
-    return extension;
-  }
-
-  return 'FILE';
 }
 
 function scrollMessageListToBottom(messageList: HTMLOListElement): void {

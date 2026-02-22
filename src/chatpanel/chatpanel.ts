@@ -1,26 +1,24 @@
 import {
-  ATTACHMENT_PREVIEW_MAX_BYTES,
-  ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
-  estimateBase64DecodedByteLength,
-} from '../shared/attachment-preview';
-import {
   type ChatMessage,
   createNewChat,
-  deleteChatById,
   forkChat,
-  getActiveChatId,
-  listChatSessions,
   loadChatMessages,
-  loadChatMessagesById,
   regenerateAssistantMessage,
   sendMessage,
   switchAssistantBranch,
 } from '../shared/chat';
-import type { ChatSessionSummary, FileDataAttachmentPayload } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
+import {
+  createAttachmentManager,
+  extractFilesFromDataTransfer,
+  hasFileDataTransfer,
+} from './attachment-manager';
+import { canSubmitMessage, createConversationFlowController } from './conversation-flow';
 import { createDeleteSessionConfirmation } from './delete-confirmation';
 import { queryRequiredElement } from './dom';
+import { createHistoryDropdownController } from './history-dropdown';
 import { createInputToolbar } from './input-toolbar';
+import { isImageMimeType } from './media-helpers';
 import {
   type MessageRenderOptions,
   appendMessage,
@@ -29,83 +27,13 @@ import {
   replaceMessageById,
   toErrorMessage,
 } from './messages';
-import { buildOptimisticUserMessage, findLatestAssistantInteractionId } from './optimistic-message';
+import { findLatestAssistantInteractionId } from './optimistic-message';
+import { createPanelLayoutController } from './panel-layout';
 import { requestOpenSettings } from './runtime';
 import { getChatPanelTemplate } from './template';
-import { uploadFilesToGemini } from './uploads';
 
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
-const PANEL_MARGIN_PX = 12;
-const DEFAULT_RIGHT_GAP_PX = 50;
-const MIN_PANEL_WIDTH_PX = 320;
-const MIN_PANEL_HEIGHT_PX = 260;
-const DEFAULT_PANEL_WIDTH_PX = 430;
-const DEFAULT_PANEL_HEIGHT_RATIO = 0.8;
-const MAX_STAGED_FILES = 5;
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const INPUT_MAX_PANEL_HEIGHT_RATIO = 1 / 3;
-const ACCEPTED_MIME_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-  'text/plain',
-]);
-
-type PanelLayout = {
-  width: number;
-  height: number;
-  left: number;
-  top: number;
-};
-
-type DragInteraction = {
-  kind: 'drag';
-  pointerId: number;
-  startX: number;
-  startY: number;
-  startLeft: number;
-  startTop: number;
-};
-
-type ResizeInteraction = {
-  kind: 'resize';
-  pointerId: number;
-  startX: number;
-  startY: number;
-  startLeft: number;
-  startTop: number;
-  startWidth: number;
-  startHeight: number;
-  direction: ResizeDirection;
-};
-
-type InteractionState = DragInteraction | ResizeInteraction;
-
-type ResizeDirection = {
-  top: boolean;
-  right: boolean;
-  bottom: boolean;
-  left: boolean;
-};
-
-type StagedFile = {
-  id: string;
-  file: File;
-  name: string;
-  mimeType: string;
-  previewUrl?: string;
-  uploadState: 'uploading' | 'uploaded' | 'failed';
-  uploadedAttachment?: FileDataAttachmentPayload;
-  uploadError?: string;
-};
-
-type ActiveStreamDraft = {
-  assistantMessageId: string;
-  text: string;
-  thinkingSummary: string;
-};
 
 if (window.top === window) {
   mountChatPanel();
@@ -149,8 +77,6 @@ function mountChatPanel(): void {
     throw new Error('Missing resize zones in chat panel template.');
   }
 
-  let panelLayout = createDefaultLayout();
-
   const parseCssPixels = (value: string, fallbackValue: number): number => {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : fallbackValue;
@@ -172,7 +98,7 @@ function mountChatPanel(): void {
 
   const resizeComposerInput = (): void => {
     const minInputHeight = getComposerInputMinimumHeight();
-    const panelHeight = shell.clientHeight || panelLayout.height;
+    const panelHeight = shell.clientHeight || layoutController.getLayout().height;
     const maxInputHeight = Math.max(
       minInputHeight,
       Math.floor(panelHeight * INPUT_MAX_PANEL_HEIGHT_RATIO),
@@ -183,41 +109,114 @@ function mountChatPanel(): void {
     const nextHeight = Math.max(input.scrollHeight, minInputHeight);
     input.style.height = `${Math.min(nextHeight, maxInputHeight)}px`;
   };
-  const syncPanelLayout = (): void => {
-    applyPanelLayout(shell, panelLayout);
-    resizeComposerInput();
-  };
+
+  const layoutController = createPanelLayoutController({
+    shell,
+    dragHandle,
+    resizeHandles,
+    onLayoutApplied: resizeComposerInput,
+  });
+  layoutController.clampAndSync();
 
   input.addEventListener('input', resizeComposerInput);
 
   let isPanelOpen = false;
   let isBusy = false;
   let hasLoadedHistory = false;
-  let interactionState: InteractionState | null = null;
-  let previousUserSelect = '';
-  let hasUserSelectOverride = false;
-  let stagedFiles: StagedFile[] = [];
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
   let lastAssistantInteractionId: string | undefined;
-  let historySessions: ChatSessionSummary[] = [];
-  let isHistoryMenuOpen = false;
-  const activeStreamDrafts = new Map<string, ActiveStreamDraft>();
   const localAttachmentPreviewUrls = new Map<string, string>();
+  let conversationFlow: ReturnType<typeof createConversationFlowController> | null = null;
   const messageRenderOptions: MessageRenderOptions = {
     onAssistantAction: (action, message) => {
-      void handleMessageAction(action, message);
+      if (!conversationFlow) {
+        return;
+      }
+      void conversationFlow.handleMessageAction(action, message);
     },
-    onAssistantBranchSelect: (message, interactionId) => {
-      void handleAssistantBranchSelect(message, interactionId);
+    onAssistantBranchSelect: (_message, interactionId) => {
+      if (!conversationFlow) {
+        return;
+      }
+      void conversationFlow.switchAssistantBranch(interactionId);
     },
     onUserAction: (action, message) => {
-      void handleMessageAction(action, message);
+      if (!conversationFlow) {
+        return;
+      }
+      void conversationFlow.handleMessageAction(action, message);
     },
   };
 
-  syncPanelLayout();
-  historyToggleButton.setAttribute('aria-expanded', 'false');
+  const attachmentManager = createAttachmentManager({
+    filePreviews,
+    localAttachmentPreviewUrls,
+    onResizeComposer: resizeComposerInput,
+    onError: appendLocalError,
+  });
+
+  const historyDropdown = createHistoryDropdownController({
+    historyControl,
+    historyToggleButton,
+    historyMenu,
+    deleteSessionConfirmation,
+    isBusy: () => isBusy,
+    setBusy: (busy) => setBusyState(busy),
+    getActiveChatId: () => activeChatId,
+    setActiveChatId: (id) => {
+      activeChatId = id;
+    },
+    clearStagedFiles: () => attachmentManager.clearStage(true),
+    renderMessages,
+    appendLocalError,
+    focusInput: () => input.focus(),
+  });
+
+  conversationFlow = createConversationFlowController({
+    runtime: {
+      sendMessage,
+      regenerateAssistantMessage,
+      forkChat,
+      switchAssistantBranch,
+    },
+    attachmentManager,
+    toolbar,
+    composer: {
+      getText: () => input.value,
+      setText: (text) => {
+        input.value = text;
+      },
+      resize: resizeComposerInput,
+      focus: () => input.focus(),
+    },
+    history: {
+      reloadActive: () => historyDropdown.reloadActive(),
+      setOpen: (open) => historyDropdown.setOpen(open),
+    },
+    render: {
+      appendMessage: (message) => {
+        appendMessage(message, messageList, messageRenderOptions);
+      },
+      replaceMessageById: (messageId, message) => {
+        replaceMessageById(messageId, message, messageList, messageRenderOptions);
+      },
+      removeMessageById: (messageId) => {
+        removeMessageById(messageId, messageList);
+      },
+    },
+    busyState: {
+      isBusy: () => isBusy,
+      setBusy: (busy) => setBusyState(busy),
+    },
+    interactions: {
+      getLastAssistantInteractionId: () => lastAssistantInteractionId,
+    },
+    previews: {
+      rememberLocalAttachmentPreviews,
+    },
+    appendLocalError,
+  });
 
   input.addEventListener('paste', (event) => {
     if (isBusy) {
@@ -230,7 +229,7 @@ function mountChatPanel(): void {
     }
 
     event.preventDefault();
-    stageSelectedFiles(files);
+    attachmentManager.stageFromFiles(files);
   });
 
   toolbar.attachButton.addEventListener('click', () => {
@@ -245,14 +244,14 @@ function mountChatPanel(): void {
       fileInput.value = '';
       return;
     }
-    stageSelectedFiles(Array.from(fileInput.files ?? []));
+    attachmentManager.stageFromFiles(Array.from(fileInput.files ?? []));
     fileInput.value = '';
   });
 
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      if (!isBusy && canSubmitMessage(input.value.trim(), stagedFiles.length)) {
+      if (!isBusy && canSubmitMessage(input.value.trim(), attachmentManager.getStaged().length)) {
         form.requestSubmit();
       }
     }
@@ -305,230 +304,9 @@ function mountChatPanel(): void {
       return;
     }
 
-    stageSelectedFiles(extractFilesFromDataTransfer(event.dataTransfer));
+    attachmentManager.stageFromFiles(extractFilesFromDataTransfer(event.dataTransfer));
     input.focus();
   });
-
-  function stageSelectedFiles(files: File[]): void {
-    if (files.length === 0) {
-      return;
-    }
-
-    const nextFiles: StagedFile[] = [];
-    const availableSlots = MAX_STAGED_FILES - stagedFiles.length;
-    if (availableSlots <= 0) {
-      appendLocalError(`You can attach up to ${MAX_STAGED_FILES} files per message.`);
-      return;
-    }
-
-    for (const file of files.slice(0, availableSlots)) {
-      if (!isAcceptedMimeType(file.type)) {
-        appendLocalError(`Unsupported file type for "${file.name}".`);
-        continue;
-      }
-
-      if (file.size > MAX_FILE_SIZE_BYTES) {
-        appendLocalError(
-          `"${file.name}" exceeds the ${formatByteSize(MAX_FILE_SIZE_BYTES)} file size limit.`,
-        );
-        continue;
-      }
-
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
-      nextFiles.push({
-        id: crypto.randomUUID(),
-        file,
-        name: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        uploadState: 'uploading',
-        ...(previewUrl ? { previewUrl } : {}),
-      });
-    }
-
-    stagedFiles = [...stagedFiles, ...nextFiles];
-    if (files.length > availableSlots) {
-      appendLocalError(`Only ${availableSlots} additional file(s) were staged.`);
-    }
-    renderStagedFiles();
-    for (const staged of nextFiles) {
-      void uploadStagedFile(staged.id);
-    }
-  }
-
-  function renderStagedFiles(): void {
-    const fragment = document.createDocumentFragment();
-
-    for (const staged of stagedFiles) {
-      const previewItem = document.createElement('div');
-      previewItem.className = 'file-preview-item';
-      previewItem.dataset.fileId = staged.id;
-      const tile = document.createElement('div');
-      tile.className = 'file-preview-tile';
-      tile.setAttribute('aria-label', `${staged.name} (${staged.mimeType})`);
-      tile.setAttribute('title', `${staged.name} (${staged.mimeType})`);
-      if (staged.uploadState === 'uploading') {
-        tile.classList.add('is-uploading');
-      } else if (staged.uploadState === 'failed') {
-        tile.classList.add('is-failed');
-      }
-
-      if (isImageMimeType(staged.mimeType) && staged.previewUrl) {
-        const image = document.createElement('img');
-        image.className = 'file-preview-image';
-        image.src = staged.previewUrl;
-        image.alt = staged.name;
-        image.loading = 'lazy';
-        tile.append(image);
-      } else {
-        const generic = document.createElement('div');
-        generic.className = 'file-preview-generic';
-        if (isPdfMimeType(staged.mimeType)) {
-          generic.classList.add('is-pdf');
-        }
-
-        const fileTypeLabel = document.createElement('span');
-        fileTypeLabel.className = 'file-preview-filetype';
-        fileTypeLabel.textContent = getFilePreviewTypeLabel(staged);
-
-        generic.append(fileTypeLabel);
-        tile.append(generic);
-      }
-
-      const removeButton = document.createElement('button');
-      removeButton.className = 'file-preview-remove';
-      removeButton.type = 'button';
-      removeButton.textContent = '×';
-      removeButton.setAttribute('aria-label', `Remove ${staged.name}`);
-      removeButton.addEventListener('click', () => {
-        removeStagedFile(staged.id);
-      });
-      tile.append(removeButton);
-
-      if (staged.uploadState === 'uploading') {
-        const overlay = document.createElement('div');
-        overlay.className = 'file-preview-upload-overlay';
-
-        const spinner = document.createElement('span');
-        spinner.className = 'file-preview-spinner';
-        spinner.setAttribute('aria-hidden', 'true');
-
-        overlay.append(spinner);
-        tile.append(overlay);
-      } else if (staged.uploadState === 'failed') {
-        const failedBadge = document.createElement('span');
-        failedBadge.className = 'file-preview-failed';
-        failedBadge.textContent = '!';
-        failedBadge.setAttribute('aria-label', 'Upload failed');
-        tile.append(failedBadge);
-      }
-
-      const nameLabel = document.createElement('span');
-      nameLabel.className = 'file-preview-name';
-      nameLabel.textContent = staged.name;
-      nameLabel.setAttribute('title', staged.name);
-
-      previewItem.append(tile, nameLabel);
-      fragment.append(previewItem);
-    }
-
-    filePreviews.replaceChildren(fragment);
-    resizeComposerInput();
-  }
-
-  async function uploadStagedFile(fileId: string): Promise<void> {
-    const staged = stagedFiles.find((candidate) => candidate.id === fileId);
-    if (!staged || staged.uploadState !== 'uploading') {
-      return;
-    }
-
-    try {
-      const uploaded = await uploadFilesToGemini([staged.file]);
-      const uploadedWithPreviews = await withAttachmentPreviewDataUrls(uploaded, [staged]);
-      const uploadedAttachment = uploadedWithPreviews[0];
-      if (!uploadedAttachment) {
-        throw new Error(`Failed to upload "${staged.name}".`);
-      }
-
-      if (!stagedFiles.some((candidate) => candidate.id === fileId)) {
-        return;
-      }
-
-      stagedFiles = stagedFiles.map((candidate) => {
-        if (candidate.id !== fileId) {
-          return candidate;
-        }
-        const { uploadError, ...rest } = candidate;
-        void uploadError;
-        return {
-          ...rest,
-          uploadState: 'uploaded' as const,
-          uploadedAttachment,
-        };
-      });
-      renderStagedFiles();
-    } catch (error: unknown) {
-      const current = stagedFiles.find((candidate) => candidate.id === fileId);
-      if (!current) {
-        return;
-      }
-
-      const errorMessage = toErrorMessage(error);
-      stagedFiles = stagedFiles.map((candidate) => {
-        if (candidate.id !== fileId) {
-          return candidate;
-        }
-        const { uploadedAttachment, ...rest } = candidate;
-        void uploadedAttachment;
-        return {
-          ...rest,
-          uploadState: 'failed' as const,
-          uploadError: errorMessage,
-        };
-      });
-      renderStagedFiles();
-      appendLocalError(`Failed to upload "${current.name}": ${errorMessage}`);
-    }
-  }
-
-  function removeStagedFile(fileId: string): void {
-    const target = stagedFiles.find((staged) => staged.id === fileId);
-    if (!target) {
-      return;
-    }
-
-    if (target.previewUrl) {
-      URL.revokeObjectURL(target.previewUrl);
-    }
-    stagedFiles = stagedFiles.filter((staged) => staged.id !== fileId);
-    renderStagedFiles();
-  }
-
-  function clearStagedFiles(revokePreviews: boolean): void {
-    if (revokePreviews) {
-      for (const staged of stagedFiles) {
-        const previewUrl = staged.previewUrl;
-        if (!previewUrl) {
-          continue;
-        }
-        if (isRetainedLocalAttachmentPreview(previewUrl)) {
-          continue;
-        }
-        URL.revokeObjectURL(previewUrl);
-      }
-    }
-    stagedFiles = [];
-    renderStagedFiles();
-  }
-
-  function isRetainedLocalAttachmentPreview(previewUrl: string): boolean {
-    for (const retainedPreviewUrl of localAttachmentPreviewUrls.values()) {
-      if (retainedPreviewUrl === previewUrl) {
-        return true;
-      }
-    }
-
-    return false;
-  }
 
   function appendLocalError(message: string): void {
     appendMessage(
@@ -542,432 +320,12 @@ function mountChatPanel(): void {
     );
   }
 
-  function applyStreamDelta(requestId: string, textDelta?: string, thinkingDelta?: string): void {
-    const draft = activeStreamDrafts.get(requestId);
-    if (!draft) {
-      return;
-    }
-
-    if (textDelta) {
-      draft.text += textDelta;
-    }
-    if (thinkingDelta) {
-      draft.thinkingSummary += thinkingDelta;
-    }
-
-    replaceMessageById(
-      draft.assistantMessageId,
-      {
-        id: draft.assistantMessageId,
-        role: 'assistant',
-        content: draft.text,
-        ...(draft.thinkingSummary ? { thinkingSummary: draft.thinkingSummary } : {}),
-      },
-      messageList,
-      messageRenderOptions,
-    );
-  }
-
-  function formatHistoryTimestamp(updatedAt: string): string {
-    const timestamp = Date.parse(updatedAt);
-    if (Number.isNaN(timestamp)) {
-      return updatedAt.replace('T', ' ').slice(0, 16);
-    }
-
-    return new Date(timestamp).toLocaleString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
-
-  function formatHistoryMeta(session: ChatSessionSummary): string {
-    return formatHistoryTimestamp(session.updatedAt);
-  }
-
-  function setHistoryMenuOpen(nextOpen: boolean): void {
-    isHistoryMenuOpen = nextOpen;
-    historyControl.classList.toggle('open', nextOpen);
-    historyToggleButton.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
-  }
-
-  function renderHistoryMenu(): void {
-    const fragment = document.createDocumentFragment();
-
-    if (historySessions.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'history-empty';
-      empty.textContent = 'No previous chats.';
-      empty.setAttribute('role', 'presentation');
-      fragment.append(empty);
-      historyMenu.replaceChildren(fragment);
-      return;
-    }
-
-    for (const session of historySessions) {
-      const item = document.createElement('div');
-      item.className = 'history-item';
-      item.setAttribute('role', 'none');
-
-      const openButton = document.createElement('button');
-      openButton.className = 'history-item-main';
-      openButton.type = 'button';
-      openButton.setAttribute('role', 'menuitem');
-      openButton.disabled = isBusy;
-      if (session.chatId === activeChatId) {
-        openButton.classList.add('history-item-active');
-      }
-
-      const title = document.createElement('span');
-      title.className = 'history-item-title';
-      title.textContent = session.title;
-
-      const meta = document.createElement('span');
-      meta.className = 'history-item-meta';
-      meta.textContent = formatHistoryMeta(session);
-
-      openButton.append(title, meta);
-      openButton.addEventListener('click', async () => {
-        if (isBusy || session.chatId === activeChatId) {
-          return;
-        }
-
-        setBusyState(true);
-        try {
-          await loadChatFromHistory(session.chatId);
-          setHistoryMenuOpen(false);
-          input.focus();
-        } catch (error: unknown) {
-          appendMessage(
-            {
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              content: toErrorMessage(error),
-            },
-            messageList,
-            messageRenderOptions,
-          );
-        } finally {
-          setBusyState(false);
-        }
-      });
-
-      const deleteButton = document.createElement('button');
-      deleteButton.className = 'history-item-delete';
-      deleteButton.type = 'button';
-      deleteButton.setAttribute('aria-label', `Delete ${session.title}`);
-      deleteButton.setAttribute('role', 'menuitem');
-      deleteButton.textContent = '×';
-      deleteButton.disabled = isBusy;
-      deleteButton.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (isBusy) {
-          return;
-        }
-
-        if (!(await deleteSessionConfirmation.confirm(session.title))) {
-          return;
-        }
-
-        setBusyState(true);
-        try {
-          const deleted = await deleteChatById(session.chatId);
-          if (deleted && activeChatId === session.chatId) {
-            activeChatId = (await getActiveChatId()) ?? null;
-            clearStagedFiles(true);
-            renderMessages([]);
-          }
-          await refreshHistoryDropdown();
-          if (historySessions.length === 0) {
-            setHistoryMenuOpen(false);
-          }
-          input.focus();
-        } catch (error: unknown) {
-          appendMessage(
-            {
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              content: toErrorMessage(error),
-            },
-            messageList,
-            messageRenderOptions,
-          );
-        } finally {
-          setBusyState(false);
-        }
-      });
-
-      item.append(openButton, deleteButton);
-      fragment.append(item);
-    }
-
-    historyMenu.replaceChildren(fragment);
-  }
-
-  async function refreshHistoryDropdown(): Promise<void> {
-    historySessions = await listChatSessions();
-    renderHistoryMenu();
-  }
-
-  async function loadChatFromHistory(chatId: string): Promise<void> {
-    const payload = await loadChatMessagesById(chatId);
-    activeChatId = payload.chatId;
-    renderMessages(payload.messages);
-    await refreshHistoryDropdown();
-  }
-
-  async function reloadActiveChat(): Promise<void> {
-    const payload = await loadChatMessages();
-    activeChatId = payload.chatId;
-    renderMessages(payload.messages);
-    await refreshHistoryDropdown();
-  }
-
   function renderMessages(messages: ChatMessage[]): void {
     const messagesWithPreviews = applyLocalAttachmentPreviews(messages);
     renderAll(messagesWithPreviews, messageList, messageRenderOptions);
     lastAssistantInteractionId = findLatestAssistantInteractionId(messagesWithPreviews);
     pruneLocalAttachmentPreviews(messagesWithPreviews);
   }
-
-  async function handleMessageAction(
-    action: 'regen' | 'fork',
-    message: ChatMessage,
-  ): Promise<void> {
-    if (isBusy) {
-      return;
-    }
-
-    const previousInteractionId = message.previousInteractionId?.trim();
-    const interactionId = message.interactionId?.trim();
-    let regenPlaceholderMessageId: string | undefined;
-    let regenStreamRequestId: string | undefined;
-
-    setBusyState(true);
-    try {
-      if (action === 'fork') {
-        if (message.role !== 'user' || !previousInteractionId) {
-          return;
-        }
-        await forkChat(previousInteractionId);
-        clearStagedFiles(true);
-        input.value = message.content;
-        resizeComposerInput();
-      } else {
-        if (message.role !== 'assistant' || !interactionId) {
-          return;
-        }
-        const selectedModel = toolbar.selectedModel();
-        const selectedThinking = toolbar.selectedThinkingLevel();
-        regenPlaceholderMessageId = message.id;
-        replaceMessageById(
-          regenPlaceholderMessageId,
-          {
-            id: regenPlaceholderMessageId,
-            role: 'assistant',
-            content: '',
-          },
-          messageList,
-          messageRenderOptions,
-        );
-
-        regenStreamRequestId = crypto.randomUUID();
-        activeStreamDrafts.set(regenStreamRequestId, {
-          assistantMessageId: regenPlaceholderMessageId,
-          text: '',
-          thinkingSummary: '',
-        });
-
-        const assistantMessage = await regenerateAssistantMessage(
-          interactionId,
-          selectedModel,
-          selectedThinking,
-          regenStreamRequestId,
-        );
-        activeStreamDrafts.delete(regenStreamRequestId);
-        regenStreamRequestId = undefined;
-        replaceMessageById(
-          regenPlaceholderMessageId,
-          assistantMessage,
-          messageList,
-          messageRenderOptions,
-        );
-        regenPlaceholderMessageId = undefined;
-      }
-
-      await reloadActiveChat();
-      setHistoryMenuOpen(false);
-      input.focus();
-    } catch (error: unknown) {
-      if (regenStreamRequestId) {
-        activeStreamDrafts.delete(regenStreamRequestId);
-      }
-      if (regenPlaceholderMessageId) {
-        replaceMessageById(regenPlaceholderMessageId, message, messageList, messageRenderOptions);
-      }
-      appendMessage(
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: toErrorMessage(error),
-        },
-        messageList,
-        messageRenderOptions,
-      );
-    } finally {
-      setBusyState(false);
-    }
-  }
-
-  async function handleAssistantBranchSelect(
-    _message: ChatMessage,
-    interactionId: string,
-  ): Promise<void> {
-    if (isBusy) {
-      return;
-    }
-
-    const normalizedInteractionId = interactionId.trim();
-    if (!normalizedInteractionId) {
-      return;
-    }
-
-    setBusyState(true);
-    try {
-      await switchAssistantBranch(normalizedInteractionId);
-      await reloadActiveChat();
-      setHistoryMenuOpen(false);
-      input.focus();
-    } catch (error: unknown) {
-      appendMessage(
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: toErrorMessage(error),
-        },
-        messageList,
-        messageRenderOptions,
-      );
-    } finally {
-      setBusyState(false);
-    }
-  }
-
-  function startInteractionLock(): void {
-    if (!hasUserSelectOverride) {
-      previousUserSelect = document.documentElement.style.userSelect;
-      hasUserSelectOverride = true;
-    }
-    document.documentElement.style.userSelect = 'none';
-  }
-
-  function endInteractionLock(pointerId: number): void {
-    if (shell.hasPointerCapture(pointerId)) {
-      shell.releasePointerCapture(pointerId);
-    }
-
-    if (hasUserSelectOverride) {
-      document.documentElement.style.userSelect = previousUserSelect;
-      hasUserSelectOverride = false;
-    }
-  }
-
-  window.addEventListener('resize', () => {
-    panelLayout = clampPanelLayout(panelLayout);
-    syncPanelLayout();
-  });
-
-  dragHandle.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    if (event.target instanceof Element && event.target.closest('button')) {
-      return;
-    }
-
-    event.preventDefault();
-    interactionState = {
-      kind: 'drag',
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      startLeft: panelLayout.left,
-      startTop: panelLayout.top,
-    };
-    shell.setPointerCapture(event.pointerId);
-    startInteractionLock();
-  });
-
-  for (const resizeHandle of resizeHandles) {
-    resizeHandle.addEventListener('pointerdown', (event) => {
-      if (event.button !== 0) {
-        return;
-      }
-
-      const resizeValue = resizeHandle.dataset.resize;
-      if (!resizeValue) {
-        return;
-      }
-
-      event.preventDefault();
-      interactionState = {
-        kind: 'resize',
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        startLeft: panelLayout.left,
-        startTop: panelLayout.top,
-        startWidth: panelLayout.width,
-        startHeight: panelLayout.height,
-        direction: parseResizeDirection(resizeValue),
-      };
-      shell.setPointerCapture(event.pointerId);
-      startInteractionLock();
-    });
-  }
-
-  shell.addEventListener('pointermove', (event) => {
-    if (!interactionState || event.pointerId !== interactionState.pointerId) {
-      return;
-    }
-
-    if (interactionState.kind === 'drag') {
-      panelLayout = clampPanelLayout({
-        ...panelLayout,
-        left: interactionState.startLeft + (event.clientX - interactionState.startX),
-        top: interactionState.startTop + (event.clientY - interactionState.startY),
-      });
-    } else {
-      panelLayout = calculateResizedLayout(
-        interactionState,
-        event.clientX - interactionState.startX,
-        event.clientY - interactionState.startY,
-      );
-    }
-
-    syncPanelLayout();
-  });
-
-  shell.addEventListener('pointerup', (event) => {
-    if (!interactionState || event.pointerId !== interactionState.pointerId) {
-      return;
-    }
-
-    endInteractionLock(interactionState.pointerId);
-    interactionState = null;
-  });
-
-  shell.addEventListener('pointercancel', (event) => {
-    if (!interactionState || event.pointerId !== interactionState.pointerId) {
-      return;
-    }
-
-    endInteractionLock(interactionState.pointerId);
-    interactionState = null;
-  });
 
   closeButton.addEventListener('click', () => {
     closePanel();
@@ -986,10 +344,10 @@ function mountChatPanel(): void {
     try {
       const chatId = await createNewChat();
       activeChatId = chatId;
-      clearStagedFiles(true);
+      attachmentManager.clearStage(true);
       renderMessages([]);
-      await refreshHistoryDropdown();
-      setHistoryMenuOpen(false);
+      await historyDropdown.refresh();
+      historyDropdown.setOpen(false);
       input.focus();
     } catch (error: unknown) {
       appendMessage(
@@ -1004,162 +362,15 @@ function mountChatPanel(): void {
     } finally {
       setBusyState(false);
     }
-  });
-
-  historyToggleButton.addEventListener('click', async () => {
-    if (isBusy) {
-      return;
-    }
-
-    if (isHistoryMenuOpen) {
-      setHistoryMenuOpen(false);
-      return;
-    }
-
-    setBusyState(true);
-    try {
-      await refreshHistoryDropdown();
-      setHistoryMenuOpen(true);
-    } catch (error: unknown) {
-      appendMessage(
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: toErrorMessage(error),
-        },
-        messageList,
-        messageRenderOptions,
-      );
-    } finally {
-      setBusyState(false);
-    }
-  });
-
-  document.addEventListener('pointerdown', (event) => {
-    if (!isHistoryMenuOpen) {
-      return;
-    }
-
-    if (event.composedPath().includes(historyControl)) {
-      return;
-    }
-
-    setHistoryMenuOpen(false);
   });
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-
-    if (isBusy) {
+    if (!conversationFlow) {
       return;
     }
 
-    const userText = input.value.trim();
-    if (!canSubmitMessage(userText, stagedFiles.length)) {
-      return;
-    }
-
-    const stagedSnapshot = [...stagedFiles];
-    const uploadingStagedFiles = stagedSnapshot.filter(
-      (staged) => staged.uploadState === 'uploading',
-    );
-    if (uploadingStagedFiles.length > 0) {
-      appendLocalError('Please wait for file uploads to finish before sending.');
-      return;
-    }
-
-    const failedStagedFiles = stagedSnapshot.filter((staged) => staged.uploadState === 'failed');
-    if (failedStagedFiles.length > 0) {
-      appendLocalError('Remove failed uploads before sending.');
-      return;
-    }
-
-    const attachmentsForSend: FileDataAttachmentPayload[] = [];
-    for (const staged of stagedSnapshot) {
-      if (!staged.uploadedAttachment) {
-        appendLocalError(`"${staged.name}" is not ready to send yet.`);
-        return;
-      }
-      attachmentsForSend.push(staged.uploadedAttachment);
-    }
-
-    let optimisticUserMessageId: string | undefined;
-    let assistantPlaceholderId: string | undefined;
-    let streamRequestId: string | undefined;
-    setBusyState(true);
-
-    try {
-      const selectedModel = toolbar.selectedModel();
-      const selectedThinking = toolbar.selectedThinkingLevel();
-      streamRequestId = crypto.randomUUID();
-      const optimisticUserMessage = buildOptimisticUserMessage(
-        userText,
-        stagedSnapshot,
-        lastAssistantInteractionId,
-        attachmentsForSend,
-      );
-      rememberLocalAttachmentPreviews(optimisticUserMessage);
-      optimisticUserMessageId = optimisticUserMessage.id;
-      assistantPlaceholderId = crypto.randomUUID();
-      appendMessage(optimisticUserMessage, messageList, messageRenderOptions);
-      appendMessage(
-        {
-          id: assistantPlaceholderId,
-          role: 'assistant',
-          content: '',
-        },
-        messageList,
-        messageRenderOptions,
-      );
-
-      input.value = '';
-      clearStagedFiles(true);
-      resizeComposerInput();
-
-      activeStreamDrafts.set(streamRequestId, {
-        assistantMessageId: assistantPlaceholderId,
-        text: '',
-        thinkingSummary: '',
-      });
-
-      const assistantMessage = await sendMessage(
-        userText,
-        selectedModel,
-        selectedThinking,
-        attachmentsForSend,
-        streamRequestId,
-      );
-      activeStreamDrafts.delete(streamRequestId);
-      replaceMessageById(
-        assistantPlaceholderId,
-        assistantMessage,
-        messageList,
-        messageRenderOptions,
-      );
-      await reloadActiveChat();
-    } catch (error: unknown) {
-      if (streamRequestId) {
-        activeStreamDrafts.delete(streamRequestId);
-      }
-      if (assistantPlaceholderId) {
-        removeMessageById(assistantPlaceholderId, messageList);
-      }
-      if (optimisticUserMessageId) {
-        removeMessageById(optimisticUserMessageId, messageList);
-      }
-      appendMessage(
-        {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: toErrorMessage(error),
-        },
-        messageList,
-        messageRenderOptions,
-      );
-    } finally {
-      setBusyState(false);
-      input.focus();
-    }
+    await conversationFlow.send();
   });
 
   chrome.runtime.onMessage.addListener((request: unknown) => {
@@ -1170,8 +381,8 @@ function mountChatPanel(): void {
     switch (request.type) {
       case 'chat/stream-delta': {
         const rid = typeof request.requestId === 'string' ? request.requestId.trim() : '';
-        if (rid) {
-          applyStreamDelta(
+        if (rid && conversationFlow) {
+          conversationFlow.applyStreamDelta(
             rid,
             typeof request.textDelta === 'string' ? request.textDelta : undefined,
             typeof request.thinkingDelta === 'string' ? request.thinkingDelta : undefined,
@@ -1193,8 +404,8 @@ function mountChatPanel(): void {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && isPanelOpen) {
-      if (isHistoryMenuOpen) {
-        setHistoryMenuOpen(false);
+      if (historyDropdown.isOpen()) {
+        historyDropdown.setOpen(false);
         return;
       }
       closePanel();
@@ -1214,9 +425,8 @@ function mountChatPanel(): void {
 
   async function openPanel(): Promise<void> {
     isPanelOpen = true;
-    panelLayout = clampPanelLayout(panelLayout);
     shell.hidden = false;
-    syncPanelLayout();
+    layoutController.clampAndSync();
 
     if (!hasLoadedHistory) {
       await loadConversationHistory();
@@ -1226,14 +436,9 @@ function mountChatPanel(): void {
   }
 
   function closePanel(): void {
-    if (interactionState) {
-      endInteractionLock(interactionState.pointerId);
-      interactionState = null;
-    }
-
     dragEnterDepth = 0;
     form.classList.remove('drop-active');
-    setHistoryMenuOpen(false);
+    historyDropdown.setOpen(false);
     isPanelOpen = false;
     shell.hidden = true;
   }
@@ -1243,7 +448,7 @@ function mountChatPanel(): void {
       const history = await loadChatMessages();
       activeChatId = history.chatId;
       renderMessages(history.messages);
-      await refreshHistoryDropdown();
+      await historyDropdown.refresh();
       hasLoadedHistory = true;
     } catch (error: unknown) {
       renderMessages([
@@ -1255,8 +460,6 @@ function mountChatPanel(): void {
       ]);
       hasLoadedHistory = false;
       activeChatId = null;
-      historySessions = [];
-      renderHistoryMenu();
     }
   }
 
@@ -1266,7 +469,6 @@ function mountChatPanel(): void {
     toolbar.attachButton.disabled = nextBusy;
     newChatButton.disabled = nextBusy;
     historyToggleButton.disabled = nextBusy;
-    renderHistoryMenu();
     form.toggleAttribute('aria-busy', nextBusy);
   }
 
@@ -1349,280 +551,6 @@ function mountChatPanel(): void {
       localAttachmentPreviewUrls.delete(fileUri);
     }
   }
-}
-
-function createDefaultLayout(): PanelLayout {
-  const bounds = getViewportBounds();
-  const width = clampNumber(DEFAULT_PANEL_WIDTH_PX, bounds.minWidth, bounds.maxWidth);
-  const height = clampNumber(
-    Math.round(window.innerHeight * DEFAULT_PANEL_HEIGHT_RATIO),
-    bounds.minHeight,
-    bounds.maxHeight,
-  );
-
-  return clampPanelLayout({
-    width,
-    height,
-    left: window.innerWidth - width - DEFAULT_RIGHT_GAP_PX,
-    top: Math.round((window.innerHeight - height) / 2),
-  });
-}
-
-function parseResizeDirection(value: string): ResizeDirection {
-  const parts = value.split('-');
-  return {
-    top: parts.includes('top'),
-    right: parts.includes('right'),
-    bottom: parts.includes('bottom'),
-    left: parts.includes('left'),
-  };
-}
-
-function calculateResizedLayout(
-  interaction: ResizeInteraction,
-  deltaX: number,
-  deltaY: number,
-): PanelLayout {
-  const bounds = getViewportBounds();
-  const minX = PANEL_MARGIN_PX;
-  const maxX = window.innerWidth - PANEL_MARGIN_PX;
-  const minY = PANEL_MARGIN_PX;
-  const maxY = window.innerHeight - PANEL_MARGIN_PX;
-  const startRight = interaction.startLeft + interaction.startWidth;
-  const startBottom = interaction.startTop + interaction.startHeight;
-
-  let left = interaction.startLeft;
-  let width = interaction.startWidth;
-  let top = interaction.startTop;
-  let height = interaction.startHeight;
-
-  if (interaction.direction.left) {
-    const minLeft = Math.max(minX, startRight - bounds.maxWidth);
-    const maxLeft = Math.min(startRight - bounds.minWidth, maxX - bounds.minWidth);
-    left = clampNumber(interaction.startLeft + deltaX, minLeft, maxLeft);
-    width = startRight - left;
-  } else if (interaction.direction.right) {
-    const minRight = Math.max(interaction.startLeft + bounds.minWidth, minX + bounds.minWidth);
-    const maxRight = Math.min(interaction.startLeft + bounds.maxWidth, maxX);
-    const right = clampNumber(startRight + deltaX, minRight, maxRight);
-    width = right - interaction.startLeft;
-  }
-
-  if (interaction.direction.top) {
-    const minTop = Math.max(minY, startBottom - bounds.maxHeight);
-    const maxTop = Math.min(startBottom - bounds.minHeight, maxY - bounds.minHeight);
-    top = clampNumber(interaction.startTop + deltaY, minTop, maxTop);
-    height = startBottom - top;
-  } else if (interaction.direction.bottom) {
-    const minBottom = Math.max(interaction.startTop + bounds.minHeight, minY + bounds.minHeight);
-    const maxBottom = Math.min(interaction.startTop + bounds.maxHeight, maxY);
-    const bottom = clampNumber(startBottom + deltaY, minBottom, maxBottom);
-    height = bottom - interaction.startTop;
-  }
-
-  return clampPanelLayout({
-    left,
-    top,
-    width,
-    height,
-  });
-}
-
-function clampPanelLayout(nextLayout: PanelLayout): PanelLayout {
-  const bounds = getViewportBounds();
-  const width = clampNumber(nextLayout.width, bounds.minWidth, bounds.maxWidth);
-  const height = clampNumber(nextLayout.height, bounds.minHeight, bounds.maxHeight);
-  const maxLeft = window.innerWidth - width - PANEL_MARGIN_PX;
-  const maxTop = window.innerHeight - height - PANEL_MARGIN_PX;
-
-  return {
-    width,
-    height,
-    left: clampNumber(nextLayout.left, PANEL_MARGIN_PX, maxLeft),
-    top: clampNumber(nextLayout.top, PANEL_MARGIN_PX, maxTop),
-  };
-}
-
-function applyPanelLayout(shell: HTMLElement, layout: PanelLayout): void {
-  shell.style.width = `${layout.width}px`;
-  shell.style.height = `${layout.height}px`;
-  shell.style.left = `${layout.left}px`;
-  shell.style.top = `${layout.top}px`;
-}
-
-function getViewportBounds(): {
-  minWidth: number;
-  maxWidth: number;
-  minHeight: number;
-  maxHeight: number;
-} {
-  const maxWidth = Math.max(1, window.innerWidth - PANEL_MARGIN_PX * 2);
-  const maxHeight = Math.max(1, window.innerHeight - PANEL_MARGIN_PX * 2);
-
-  return {
-    minWidth: Math.min(MIN_PANEL_WIDTH_PX, maxWidth),
-    maxWidth,
-    minHeight: Math.min(MIN_PANEL_HEIGHT_PX, maxHeight),
-    maxHeight,
-  };
-}
-
-function clampNumber(value: number, minValue: number, maxValue: number): number {
-  return Math.min(Math.max(value, minValue), maxValue);
-}
-
-function canSubmitMessage(userText: string, stagedFileCount: number): boolean {
-  return userText.length > 0 || stagedFileCount > 0;
-}
-
-function isAcceptedMimeType(mimeType: string): boolean {
-  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
-  return ACCEPTED_MIME_TYPES.has(normalizedMimeType);
-}
-
-function isImageMimeType(mimeType: string): boolean {
-  return mimeType.split(';', 1)[0]?.trim().toLowerCase().startsWith('image/') ?? false;
-}
-
-function isPdfMimeType(mimeType: string): boolean {
-  return mimeType.split(';', 1)[0]?.trim().toLowerCase() === 'application/pdf';
-}
-
-function getFilePreviewTypeLabel(staged: Pick<StagedFile, 'name' | 'mimeType'>): string {
-  if (isPdfMimeType(staged.mimeType)) {
-    return 'PDF';
-  }
-
-  const extension = staged.name.split('.').pop()?.trim().toUpperCase() ?? '';
-  if (/^[A-Z0-9]{1,5}$/.test(extension)) {
-    return extension;
-  }
-
-  return 'FILE';
-}
-
-async function withAttachmentPreviewDataUrls(
-  uploadedAttachments: readonly FileDataAttachmentPayload[],
-  stagedFiles: readonly StagedFile[],
-): Promise<FileDataAttachmentPayload[]> {
-  if (uploadedAttachments.length === 0) {
-    return [];
-  }
-
-  return Promise.all(
-    uploadedAttachments.map(async (attachment, index) => {
-      if (!isImageMimeType(attachment.mimeType)) {
-        return attachment;
-      }
-
-      const stagedFile = stagedFiles[index];
-      if (!stagedFile) {
-        return attachment;
-      }
-
-      const previewDataUrl = await toImageDataUrl(stagedFile.file, attachment.mimeType);
-      if (!previewDataUrl) {
-        return attachment;
-      }
-
-      return {
-        ...attachment,
-        previewDataUrl,
-      };
-    }),
-  );
-}
-
-async function toImageDataUrl(file: File, mimeType: string): Promise<string | undefined> {
-  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
-  if (!normalizedMimeType.startsWith('image/')) {
-    return undefined;
-  }
-  if (file.size > ATTACHMENT_PREVIEW_MAX_BYTES) {
-    return undefined;
-  }
-
-  const base64Bytes = encodeArrayBufferToBase64(await file.arrayBuffer());
-  if (estimateBase64DecodedByteLength(base64Bytes) > ATTACHMENT_PREVIEW_MAX_BYTES) {
-    return undefined;
-  }
-
-  const dataUrl = `data:${normalizedMimeType};base64,${base64Bytes}`;
-  if (dataUrl.length > ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH) {
-    return undefined;
-  }
-
-  return dataUrl;
-}
-
-function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const end = Math.min(bytes.length, offset + chunkSize);
-    for (let index = offset; index < end; index += 1) {
-      binary += String.fromCharCode(bytes[index] ?? 0);
-    }
-  }
-
-  return btoa(binary);
-}
-
-function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {
-  if (!dataTransfer) {
-    return false;
-  }
-
-  if (Array.from(dataTransfer.types).includes('Files')) {
-    return true;
-  }
-
-  if (dataTransfer.items) {
-    for (const item of Array.from(dataTransfer.items)) {
-      if (item.kind === 'file') {
-        return true;
-      }
-    }
-  }
-
-  return dataTransfer.files.length > 0;
-}
-
-function extractFilesFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
-  if (!dataTransfer) {
-    return [];
-  }
-
-  const filesFromItems: File[] = [];
-  if (dataTransfer.items) {
-    for (const item of Array.from(dataTransfer.items)) {
-      if (item.kind !== 'file') {
-        continue;
-      }
-
-      const file = item.getAsFile();
-      if (file) {
-        filesFromItems.push(file);
-      }
-    }
-  }
-  if (filesFromItems.length > 0) {
-    return filesFromItems;
-  }
-
-  return Array.from(dataTransfer.files);
-}
-
-function formatByteSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${Math.round((bytes / 1024) * 10) / 10} KB`;
-  }
-  return `${bytes} B`;
 }
 
 async function openSettings(
