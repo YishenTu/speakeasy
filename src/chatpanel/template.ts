@@ -436,6 +436,71 @@ export function getChatPanelTemplate(): string {
         white-space: pre;
       }
 
+      .message-text pre code.hljs {
+        color: rgba(235, 239, 255, 0.94);
+      }
+
+      .message-text pre code .hljs-comment,
+      .message-text pre code .hljs-quote {
+        color: rgba(255, 255, 255, 0.38);
+        font-style: italic;
+      }
+
+      .message-text pre code .hljs-keyword,
+      .message-text pre code .hljs-selector-tag,
+      .message-text pre code .hljs-subst {
+        color: #c792ea;
+      }
+
+      .message-text pre code .hljs-built_in,
+      .message-text pre code .hljs-type,
+      .message-text pre code .hljs-params,
+      .message-text pre code .hljs-meta .hljs-keyword {
+        color: #82aaff;
+      }
+
+      .message-text pre code .hljs-string,
+      .message-text pre code .hljs-regexp,
+      .message-text pre code .hljs-symbol,
+      .message-text pre code .hljs-bullet,
+      .message-text pre code .hljs-template-tag,
+      .message-text pre code .hljs-template-variable {
+        color: #c3e88d;
+      }
+
+      .message-text pre code .hljs-number,
+      .message-text pre code .hljs-literal {
+        color: #f78c6c;
+      }
+
+      .message-text pre code .hljs-title,
+      .message-text pre code .hljs-function .hljs-title {
+        color: #dcdcaa;
+      }
+
+      .message-text pre code .hljs-variable,
+      .message-text pre code .hljs-attr {
+        color: #f07178;
+      }
+
+      .message-text pre code .hljs-attribute,
+      .message-text pre code .hljs-name,
+      .message-text pre code .hljs-link {
+        color: #ffcb6b;
+      }
+
+      .message-text pre code .hljs-meta,
+      .message-text pre code .hljs-operator,
+      .message-text pre code .hljs-tag,
+      .message-text pre code .hljs-selector-attr,
+      .message-text pre code .hljs-selector-pseudo {
+        color: #89ddff;
+      }
+
+      .message-text pre code .hljs-deletion {
+        color: #ff5370;
+      }
+
       .message-text table {
         width: 100%;
         table-layout: fixed;

@@ -1,6 +1,7 @@
 import DOMPurify, { type Config } from 'dompurify';
 import renderMathInElement from 'katex/contrib/auto-render';
 import { Marked, type Tokens } from 'marked';
+import { highlightCode } from './highlight';
 
 const markdownParser = new Marked({
   gfm: true,
@@ -13,9 +14,10 @@ markdownParser.use({
       return escapeHtml(text);
     },
     code({ text, lang }: Tokens.Code): string {
-      const escaped = escapeHtml(text);
+      const { highlighted, value } = highlightCode(text, lang);
+      const codeClass = highlighted ? ' class="hljs"' : '';
       const langLabel = lang ? `<span class="code-lang">${escapeHtml(lang)}</span>` : '';
-      return `<pre>${langLabel}<code>${escaped}</code></pre>\n`;
+      return `<pre>${langLabel}<code${codeClass}>${value}</code></pre>\n`;
     },
   },
 });
