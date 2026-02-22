@@ -84,7 +84,7 @@ export function createHistoryDropdownController(
 
       const meta = document.createElement('span');
       meta.className = 'history-item-meta';
-      meta.textContent = formatHistoryMeta(session);
+      meta.textContent = formatHistoryTimestamp(session.updatedAt);
 
       openButton.append(title, meta);
       openButton.addEventListener('click', async () => {
@@ -205,9 +205,7 @@ export function createHistoryDropdownController(
   return {
     setOpen,
     isOpen: () => isMenuOpen,
-    syncMenuState: () => {
-      renderMenu();
-    },
+    syncMenuState: renderMenu,
     refresh,
     loadSession,
     reloadActive,
@@ -231,8 +229,4 @@ export function formatHistoryTimestamp(updatedAt: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
-}
-
-function formatHistoryMeta(session: ChatSessionSummary): string {
-  return formatHistoryTimestamp(session.updatedAt);
 }

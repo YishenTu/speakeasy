@@ -28,7 +28,7 @@ describe('createAttachmentManager', () => {
   test('creates image previews for normalized image MIME types', () => {
     const filePreviews = document.createElement('div');
     const localAttachmentPreviewUrls = new Map<string, string>();
-    const resizeCalls: number[] = [];
+    let resizeCount = 0;
     const errorMessages: string[] = [];
 
     const createObjectUrlSpy = spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview');
@@ -38,7 +38,7 @@ describe('createAttachmentManager', () => {
       filePreviews,
       localAttachmentPreviewUrls,
       onResizeComposer: () => {
-        resizeCalls.push(1);
+        resizeCount += 1;
       },
       onError: (message) => {
         errorMessages.push(message);
@@ -62,7 +62,7 @@ describe('createAttachmentManager', () => {
     expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
     expect(filePreviews.querySelector('img')?.getAttribute('src')).toBe('blob:preview');
     expect(errorMessages).toEqual([]);
-    expect(resizeCalls.length).toBeGreaterThan(0);
+    expect(resizeCount).toBeGreaterThan(0);
 
     createObjectUrlSpy.mockRestore();
     revokeObjectUrlSpy.mockRestore();

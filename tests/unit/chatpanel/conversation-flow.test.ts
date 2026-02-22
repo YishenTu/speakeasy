@@ -31,8 +31,6 @@ type HarnessOptions = {
   switchImpl?: (interactionId: string) => Promise<string>;
 };
 
-type Harness = ReturnType<typeof createHarness>;
-
 function createDeferred<T>(): Deferred<T> {
   let resolve: ((value: T) => void) | undefined;
   let reject: ((reason?: unknown) => void) | undefined;
@@ -218,7 +216,6 @@ function createHarness(options: HarnessOptions = {}) {
 function createStagedFile(
   id: string,
   uploadState: 'uploading' | 'uploaded' | 'failed',
-  uploadedAttachment?: FileDataAttachmentPayload,
 ): StagedFile {
   return {
     id,
@@ -226,7 +223,6 @@ function createStagedFile(
     name: `${id}.txt`,
     mimeType: 'text/plain',
     uploadState,
-    ...(uploadedAttachment ? { uploadedAttachment } : {}),
   };
 }
 

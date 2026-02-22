@@ -44,7 +44,7 @@ async function flushMicrotasks(iterations = 6): Promise<void> {
 }
 
 describe('chatpanel regenerate flow', () => {
-  let dom: InstalledDomEnvironment | null = null;
+  let dom: InstalledDomEnvironment;
   let storageState: Record<string, unknown>;
   let currentMessages: ChatMessage[];
   let listSessionsPayload: { chatId: string; title: string; updatedAt: string }[];
@@ -74,6 +74,10 @@ describe('chatpanel regenerate flow', () => {
       assistantMessage: ChatMessage;
     };
   }>;
+
+  function getTestWindow(): typeof dom.window {
+    return dom.window;
+  }
 
   beforeEach(() => {
     dom = installDomTestEnvironment();
@@ -271,8 +275,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   afterEach(() => {
-    dom?.restore();
-    dom = null;
+    dom.restore();
     (globalThis as { chrome?: unknown }).chrome = undefined;
   });
 
@@ -324,11 +327,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('shows a local error message when opening settings fails', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     openOptionsErrorMessage = 'Failed to open settings';
     await importFreshChatpanelModule();
     await flushMicrotasks();
@@ -349,11 +348,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('keeps the panel responsive when creating a new chat fails', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     newChatErrorMessage = 'new session broke';
     await importFreshChatpanelModule();
     await flushMicrotasks();
@@ -376,11 +371,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('removes optimistic rows when send fails and appends an assistant error', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
     sendErrorMessage = 'send failed';
@@ -408,11 +399,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('keeps uploaded image preview visible while streaming and after send reconciliation', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
     sendDeferred = createDeferred();
@@ -519,11 +506,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('starts uploading on attach and blocks submit until image upload finishes', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
     const pendingUpload = createDeferred<UploadFilesRuntimeResponse>();
@@ -658,11 +641,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('reloads after sending from a fork so branch switch metadata is visible', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     currentMessages = [
       { id: 'user-1', role: 'user', content: 'Initial prompt' },
       {
@@ -746,11 +725,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('enables history actions after opening the history menu and loads selected session', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     listSessionsPayload = [
       { chatId: 'chat-other', title: 'Other chat', updatedAt: '2025-01-01T00:05:00.000Z' },
     ];
@@ -763,11 +738,8 @@ describe('chatpanel regenerate flow', () => {
       '#speakeasy-history-toggle',
     ) as HTMLButtonElement | null;
     expect(historyToggleButton).not.toBeNull();
-    if (!historyToggleButton) {
-      throw new Error('Expected history toggle button.');
-    }
 
-    historyToggleButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    historyToggleButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
     await flushMicrotasks(12);
 
     const sessionOpenButton = shadowRoot.querySelector(
@@ -790,11 +762,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('clears drag interaction lock when the panel closes during an active drag', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     const globals = globalThis as { Element?: typeof testWindow.Element };
     const previousElementCtor = globals.Element;
     globals.Element = testWindow.Element;
@@ -861,11 +829,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('stages accepted files from drop events', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     await importFreshChatpanelModule();
     await flushMicrotasks();
 
@@ -992,11 +956,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('applies composer auto-resize on mount to avoid first-keystroke jump', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
       textareaPrototype,
@@ -1030,11 +990,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('grows input with content and caps height to one-third of panel height', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     let nextScrollHeight = 72;
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
@@ -1090,11 +1046,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('keeps a multiline minimum height when scrollHeight is zero', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
       textareaPrototype,
@@ -1131,11 +1083,7 @@ describe('chatpanel regenerate flow', () => {
   });
 
   it('stabilizes input height after file staging so first typing does not jump again', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+    const testWindow = getTestWindow();
     let nextScrollHeight = 0;
     const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
     const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(

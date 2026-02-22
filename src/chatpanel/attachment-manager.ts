@@ -198,8 +198,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
         if (candidate.id !== fileId) {
           return candidate;
         }
-        const { uploadError, ...rest } = candidate;
-        void uploadError;
+        const { uploadError: _, ...rest } = candidate;
         return {
           ...rest,
           uploadState: 'uploaded' as const,
@@ -218,8 +217,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
         if (candidate.id !== fileId) {
           return candidate;
         }
-        const { uploadedAttachment, ...rest } = candidate;
-        void uploadedAttachment;
+        const { uploadedAttachment: _, ...rest } = candidate;
         return {
           ...rest,
           uploadState: 'failed' as const,
@@ -244,27 +242,13 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
     renderStagedFiles();
   }
 
-  function isRetainedLocalAttachmentPreview(previewUrl: string): boolean {
-    for (const retainedPreviewUrl of deps.localAttachmentPreviewUrls.values()) {
-      if (retainedPreviewUrl === previewUrl) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   function clearStage(revokePreviews: boolean): void {
     if (revokePreviews) {
+      const retainedUrls = new Set(deps.localAttachmentPreviewUrls.values());
       for (const staged of stagedFiles) {
-        const previewUrl = staged.previewUrl;
-        if (!previewUrl) {
-          continue;
+        if (staged.previewUrl && !retainedUrls.has(staged.previewUrl)) {
+          URL.revokeObjectURL(staged.previewUrl);
         }
-        if (isRetainedLocalAttachmentPreview(previewUrl)) {
-          continue;
-        }
-        URL.revokeObjectURL(previewUrl);
       }
     }
     stagedFiles = [];
@@ -293,13 +277,9 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
   }
 
   function getUploadedAttachments(): FileDataAttachmentPayload[] {
-    const attachments: FileDataAttachmentPayload[] = [];
-    for (const staged of stagedFiles) {
-      if (staged.uploadedAttachment) {
-        attachments.push(staged.uploadedAttachment);
-      }
-    }
-    return attachments;
+    return stagedFiles.flatMap((staged) =>
+      staged.uploadedAttachment ? [staged.uploadedAttachment] : [],
+    );
   }
 
   return {

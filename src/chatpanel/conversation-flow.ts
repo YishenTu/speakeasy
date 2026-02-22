@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../shared/chat';
 import type { FileDataAttachmentPayload } from '../shared/runtime';
-import type { AttachmentManager, StagedFile } from './attachment-manager';
+import type { AttachmentManager } from './attachment-manager';
 import { toErrorMessage } from './messages';
 import { buildOptimisticUserMessage } from './optimistic-message';
 
@@ -108,12 +108,15 @@ export function createConversationFlowController(
       draft.thinkingSummary += thinkingDelta;
     }
 
-    deps.render.replaceMessageById(draft.assistantMessageId, {
+    const streamMessage: ChatMessage = {
       id: draft.assistantMessageId,
       role: 'assistant',
       content: draft.text,
-      ...(draft.thinkingSummary ? { thinkingSummary: draft.thinkingSummary } : {}),
-    });
+    };
+    if (draft.thinkingSummary) {
+      streamMessage.thinkingSummary = draft.thinkingSummary;
+    }
+    deps.render.replaceMessageById(draft.assistantMessageId, streamMessage);
   }
 
   async function send(): Promise<void> {
@@ -314,5 +317,3 @@ export function createConversationFlowController(
 export function canSubmitMessage(userText: string, stagedFileCount: number): boolean {
   return userText.length > 0 || stagedFileCount > 0;
 }
-
-export type { StagedFile };
