@@ -39,6 +39,62 @@ describe('chatpanel markdown', () => {
     expect(container.textContent).toContain('<b>bold</b>');
   });
 
+  it('highlights fenced code for known languages while preserving language label', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      ['```ts', 'const value = 42;', 'console.log(value);', '```'].join('\n'),
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    const code = container.querySelector('pre code');
+    expect(code?.classList.contains('hljs')).toBe(true);
+    expect(container.querySelector('.code-lang')?.textContent).toBe('ts');
+    expect(code?.querySelector('[class^="hljs-"]')).not.toBeNull();
+  });
+
+  it('keeps plain escaped code for fences without language', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      ['```', 'const template = `<div>`;', '```'].join('\n'),
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    const code = container.querySelector('pre code');
+    expect(code?.classList.contains('hljs')).toBe(false);
+    expect(code?.querySelector('[class^="hljs-"]')).toBeNull();
+    expect(code?.textContent).toBe('const template = `<div>`;');
+  });
+
+  it('keeps plain escaped code for unknown language fences while keeping label', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      ['```nolang', 'select * from users;', '```'].join('\n'),
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    const code = container.querySelector('pre code');
+    expect(code?.classList.contains('hljs')).toBe(false);
+    expect(code?.querySelector('[class^="hljs-"]')).toBeNull();
+    expect(container.querySelector('.code-lang')?.textContent).toBe('nolang');
+  });
+
+  it('escapes highlighted code content to prevent xss vectors', () => {
+    const rendered = renderMarkdownToSafeHtml(
+      ['```js', 'const payload = `<img src=x onerror=alert(1)>`;', '```'].join('\n'),
+      document,
+    );
+    const container = document.createElement('div');
+    container.innerHTML = rendered;
+
+    const code = container.querySelector('pre code');
+    expect(code?.classList.contains('hljs')).toBe(true);
+    expect(code?.querySelector('img')).toBeNull();
+    expect(code?.textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+
   it('renders inline and block tex expressions into mathml', () => {
     const rendered = renderMarkdownToSafeHtml('Inline: $x^2 + y^2$.\n\n$$\\frac{1}{2}$$', document);
     const container = document.createElement('div');
