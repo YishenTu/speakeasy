@@ -46,10 +46,7 @@ export async function handleSendMessage(
   const persistedSession = chatId ? await dependencies.repository.getSession(chatId) : null;
   const baseSession = persistedSession ?? createSession();
   ensureBranchTree(baseSession);
-  const shouldGenerateTitle =
-    countUserPromptNodes(baseSession) === 0 &&
-    !baseSession.title &&
-    (normalizedText.length > 0 || normalizedAttachments.length > 0);
+  const shouldGenerateTitle = countUserPromptNodes(baseSession) === 0 && !baseSession.title;
   const workingSession: ChatSession = structuredClone(baseSession);
   ensureBranchTree(workingSession);
   const continuationInteractionId = workingSession.lastInteractionId;

@@ -1,6 +1,6 @@
 import type { GeminiSettings } from '../../shared/settings';
+import { getGeminiClient } from '../gemini-client';
 import { isRecord } from '../utils';
-import { getGeminiClient } from './client';
 import { readStringField } from './common';
 import type {
   GeminiInteraction,

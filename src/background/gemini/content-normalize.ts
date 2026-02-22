@@ -8,6 +8,7 @@ import type { AssistantResponseStats } from '../../shared/messages';
 import type { GeminiContent, GeminiPart } from '../types';
 import { isRecord } from '../utils';
 import {
+  readNonNegativeIntegerField,
   readPartRecord,
   readStringField,
   summarizeInteractionOutput,
@@ -321,19 +322,6 @@ function readBooleanField(record: Record<string, unknown>, ...keys: string[]): b
     const value = record[key];
     if (typeof value === 'boolean') {
       return value;
-    }
-  }
-  return undefined;
-}
-
-function readNonNegativeIntegerField(
-  record: Record<string, unknown>,
-  ...keys: string[]
-): number | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      return Math.round(value);
     }
   }
   return undefined;

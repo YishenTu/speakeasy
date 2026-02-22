@@ -1,4 +1,5 @@
 import { isRecord } from '../utils';
+import { readNonNegativeIntegerField } from './common';
 import type { GeminiInteraction, GeminiInteractionUsage } from './contracts';
 
 export function normalizeGeminiInteractionResponse(response: unknown): GeminiInteraction {
@@ -90,17 +91,4 @@ export function normalizeInteractionUsage(value: unknown): GeminiInteractionUsag
   }
 
   return usage;
-}
-
-function readNonNegativeIntegerField(
-  record: Record<string, unknown>,
-  ...keys: string[]
-): number | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      return Math.round(value);
-    }
-  }
-  return undefined;
 }

@@ -1,7 +1,7 @@
 import type { FileDataAttachmentPayload } from '../shared/runtime';
 import type { GeminiSettings } from '../shared/settings';
+import { getGeminiClient } from './gemini-client';
 import { composeGeminiInteractionRequest } from './gemini-request';
-import { getGeminiClient } from './gemini/client';
 import { normalizeContent } from './gemini/content-normalize';
 import {
   extractAttachments,

@@ -1,8 +1,8 @@
 import type { RuntimeDependencies } from './contracts';
 
-export const BOOTSTRAP_READY_WAIT_MS = 50;
+const BOOTSTRAP_READY_WAIT_MS = 50;
 
-export function sleep(durationMs: number): Promise<void> {
+function sleep(durationMs: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, durationMs);
   });

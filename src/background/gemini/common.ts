@@ -111,6 +111,19 @@ export function inferAttachmentNameFromMimeType(mimeType: string): string {
   return 'attachment';
 }
 
+export function readNonNegativeIntegerField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return Math.round(value);
+    }
+  }
+  return undefined;
+}
+
 export function inferMediaTypeFromMimeType(
   mimeType: string,
 ): 'image' | 'audio' | 'video' | 'document' {
