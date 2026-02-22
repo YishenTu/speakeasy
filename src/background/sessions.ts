@@ -148,17 +148,7 @@ export function findNodeIdByInteractionId(
 
 export function getActiveBranchContents(session: ChatSession): GeminiContent[] {
   const tree = ensureBranchTree(session);
-  const nodeIds = getPathNodeIdsToLeaf(tree, tree.activeLeafNodeId);
-  const contents: GeminiContent[] = [];
-
-  for (const nodeId of nodeIds) {
-    const content = tree.nodes[nodeId]?.content;
-    if (content) {
-      contents.push(cloneGeminiContent(content));
-    }
-  }
-
-  return contents;
+  return getBranchContentsToNode(session, tree.activeLeafNodeId);
 }
 
 export function getBranchContentsToNode(session: ChatSession, nodeId: string): GeminiContent[] {
@@ -195,12 +185,7 @@ export function findLastModelInteractionId(contents: readonly GeminiContent[]): 
 export function rebuildActiveBranchSnapshot(session: ChatSession): void {
   const contents = getActiveBranchContents(session);
   session.contents = contents;
-  const lastInteractionId = findLastModelInteractionId(contents);
-  if (lastInteractionId) {
-    session.lastInteractionId = lastInteractionId;
-  } else {
-    session.lastInteractionId = undefined;
-  }
+  session.lastInteractionId = findLastModelInteractionId(contents);
 }
 
 export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
@@ -238,12 +223,12 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
     const sourceModel = role === 'assistant' ? content.metadata?.sourceModel?.trim() : '';
     const timestamp = parseTimestamp(content.metadata?.createdAt);
 
-    const branchContext =
-      role === 'assistant' && interactionId
-        ? resolveAssistantBranchContext(tree, node.id, interactionId)
-        : role === 'user'
-          ? resolveUserForkBranchContext(tree, node.id)
-          : undefined;
+    let branchContext: AssistantBranchContext | undefined;
+    if (role === 'assistant' && interactionId) {
+      branchContext = resolveAssistantBranchContext(tree, node.id, interactionId);
+    } else if (role === 'user') {
+      branchContext = resolveUserForkBranchContext(tree, node.id);
+    }
     const branchOptionInteractionIds = branchContext?.interactionIds ?? [];
     const branchOptionCount = branchContext?.count ?? 0;
     const branchOptionIndex = branchContext?.selectedIndex ?? 0;
@@ -259,8 +244,7 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(sourceModel ? { sourceModel } : {}),
       ...(timestamp ? { timestamp } : {}),
-      ...(branchOptionCount > 1 ? { branchOptionInteractionIds } : {}),
-      ...(branchOptionCount > 1 ? { branchOptionCount } : {}),
+      ...(branchOptionCount > 1 ? { branchOptionInteractionIds, branchOptionCount } : {}),
       ...(branchOptionIndex > 0 ? { branchOptionIndex } : {}),
     });
   }
@@ -461,7 +445,7 @@ function findAnchorBranchChildNodeId(
 
   while (currentNodeId && !visited.has(currentNodeId)) {
     visited.add(currentNodeId);
-    const currentNode: (typeof tree.nodes)[string] | undefined = tree.nodes[currentNodeId];
+    const currentNode: ChatBranchNode | undefined = tree.nodes[currentNodeId];
     if (!currentNode || !currentNode.parentNodeId) {
       return undefined;
     }
@@ -565,7 +549,7 @@ function findRepresentativeInteractionIdForBranch(
   return representatives[representatives.length - 1];
 }
 
-function isUserPromptContent(content: GeminiContent): boolean {
+export function isUserPromptContent(content: GeminiContent): boolean {
   for (const part of content.parts) {
     if (typeof part.text === 'string' && part.text.trim()) {
       return true;

@@ -620,7 +620,7 @@ describe('chatpanel messages', () => {
     ]);
   });
 
-  it('renders branch switch at the end of the assistant action bar', () => {
+  it('renders timestamp at the end of the assistant action bar', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 
     appendMessage(
@@ -642,8 +642,12 @@ describe('chatpanel messages', () => {
     );
 
     const actionBar = messageList.querySelector('.message-actions-assistant');
+    const branchSwitch = messageList.querySelector('.message-branch-switch');
+    const timeEl = messageList.querySelector('.message-timestamp');
     expect(actionBar).not.toBeNull();
-    expect(actionBar?.lastElementChild?.classList.contains('message-branch-switch')).toBe(true);
+    expect(branchSwitch).not.toBeNull();
+    expect(timeEl).not.toBeNull();
+    expect(actionBar?.lastElementChild).toBe(timeEl);
   });
 
   it('renders user action bar with copy and edit-and-retry buttons', async () => {

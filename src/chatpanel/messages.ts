@@ -292,15 +292,15 @@ function createAssistantActionBar(
     actionBar.append(createStatsDisclosure(stats, messageList));
   }
 
+  if (hasBranchSwitchAction) {
+    actionBar.append(createBranchSwitchControl(message, options));
+  }
+
   if (message.timestamp) {
     const time = document.createElement('time');
     time.className = 'message-timestamp';
     time.textContent = formatMessageTime(message.timestamp);
     actionBar.append(time);
-  }
-
-  if (hasBranchSwitchAction) {
-    actionBar.append(createBranchSwitchControl(message, options));
   }
 
   return actionBar.childElementCount > 0 ? actionBar : null;

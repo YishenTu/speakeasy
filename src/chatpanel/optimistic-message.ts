@@ -51,6 +51,5 @@ export function findLatestAssistantInteractionId(
 }
 
 function normalizeInteractionId(value: string | undefined): string | undefined {
-  const normalized = value?.trim() || '';
-  return normalized || undefined;
+  return value?.trim() || undefined;
 }

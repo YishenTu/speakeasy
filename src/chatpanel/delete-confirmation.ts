@@ -1,9 +1,9 @@
 import { queryRequiredElement } from './dom';
 import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 
-type DeleteSessionConfirmation = {
+interface DeleteSessionConfirmation {
   confirm: (sessionTitle: string) => Promise<boolean>;
-};
+}
 
 export function createDeleteSessionConfirmation(shadowRoot: ShadowRoot): DeleteSessionConfirmation {
   const overlay = queryRequiredElement<HTMLElement>(

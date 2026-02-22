@@ -35,11 +35,12 @@ import {
   findNodeIdByInteractionId,
   getActiveBranchContents,
   getBranchContentsToNode,
+  isUserPromptContent,
   mapSessionToChatMessages,
   setActiveLeafNodeId,
   toAssistantChatMessage,
 } from './sessions';
-import type { ChatSession, GeminiContent } from './types';
+import type { ChatBranchNode, ChatSession, GeminiContent } from './types';
 import { assertNever, isRecord, toErrorMessage } from './utils';
 
 type RuntimePayload =
@@ -567,11 +568,7 @@ async function completeAssistantTurnOnBranchNode(input: {
   }
 
   appendContentsToBranch(input.session, input.targetNodeId, appendedContents);
-  if (workingSession.lastInteractionId) {
-    input.session.lastInteractionId = workingSession.lastInteractionId;
-  } else {
-    input.session.lastInteractionId = undefined;
-  }
+  input.session.lastInteractionId = workingSession.lastInteractionId;
   input.session.contents = getActiveBranchContents(input.session);
 
   return assistantContent;
@@ -603,11 +600,11 @@ function findRegeneratePromptUserNodeId(
   const visited = new Set<string>();
   while (currentNodeId && !visited.has(currentNodeId)) {
     visited.add(currentNodeId);
-    const node: (typeof tree.nodes)[string] | undefined = tree.nodes[currentNodeId];
+    const node: ChatBranchNode | undefined = tree.nodes[currentNodeId];
     if (!node) {
       break;
     }
-    const content = node?.content;
+    const content = node.content;
     if (content?.role === 'user') {
       firstUserAncestor ??= node.id;
       if (isUserPromptContent(content)) {
@@ -618,36 +615,6 @@ function findRegeneratePromptUserNodeId(
   }
 
   return firstUserAncestor;
-}
-
-function isUserPromptContent(content: GeminiContent): boolean {
-  for (const part of content.parts) {
-    if (typeof part.text === 'string' && part.text.trim()) {
-      return true;
-    }
-
-    const fileData = part.fileData;
-    if (
-      isRecord(fileData) &&
-      typeof fileData.fileUri === 'string' &&
-      fileData.fileUri.trim() &&
-      typeof fileData.mimeType === 'string' &&
-      fileData.mimeType.trim()
-    ) {
-      return true;
-    }
-
-    const inlineData = part.inlineData;
-    if (
-      isRecord(inlineData) &&
-      typeof inlineData.mimeType === 'string' &&
-      inlineData.mimeType.trim()
-    ) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 async function handleDeleteChat(
