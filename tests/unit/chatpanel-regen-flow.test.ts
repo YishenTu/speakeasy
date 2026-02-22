@@ -745,6 +745,121 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList?.textContent).toContain('Forked second answer');
   });
 
+  it('enables history actions after opening the history menu and loads selected session', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    listSessionsPayload = [
+      { chatId: 'chat-other', title: 'Other chat', updatedAt: '2025-01-01T00:05:00.000Z' },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const historyToggleButton = shadowRoot.querySelector(
+      '#speakeasy-history-toggle',
+    ) as HTMLButtonElement | null;
+    expect(historyToggleButton).not.toBeNull();
+    if (!historyToggleButton) {
+      throw new Error('Expected history toggle button.');
+    }
+
+    historyToggleButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const sessionOpenButton = shadowRoot.querySelector(
+      '.history-item-main',
+    ) as HTMLButtonElement | null;
+    const sessionDeleteButton = shadowRoot.querySelector(
+      '.history-item-delete',
+    ) as HTMLButtonElement | null;
+    expect(sessionOpenButton).not.toBeNull();
+    expect(sessionDeleteButton).not.toBeNull();
+    expect(sessionOpenButton?.disabled).toBe(false);
+    expect(sessionDeleteButton?.disabled).toBe(false);
+
+    const previousLoadCount = loadRequests.length;
+    sessionOpenButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(20);
+
+    expect(loadRequests.length).toBeGreaterThan(previousLoadCount);
+    expect(loadRequests.at(-1)?.chatId).toBe('chat-other');
+  });
+
+  it('clears drag interaction lock when the panel closes during an active drag', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    const globals = globalThis as { Element?: typeof testWindow.Element };
+    const previousElementCtor = globals.Element;
+    globals.Element = testWindow.Element;
+
+    try {
+      await importFreshChatpanelModule();
+      await flushMicrotasks();
+
+      const onMessageListener = runtimeMessageListeners[0];
+      expect(typeof onMessageListener).toBe('function');
+      onMessageListener?.({ type: 'overlay/open' });
+      await flushMicrotasks(12);
+
+      const shadowRoot = getChatpanelShadowRoot();
+      const shell = shadowRoot.querySelector('#speakeasy-shell') as HTMLElement | null;
+      const dragHandle = shadowRoot.querySelector('#speakeasy-drag-handle') as HTMLElement | null;
+      expect(shell).not.toBeNull();
+      expect(dragHandle).not.toBeNull();
+      if (!shell || !dragHandle) {
+        throw new Error('Expected shell and drag handle.');
+      }
+
+      let capturedPointerId: number | null = null;
+      const shellWithPointerCapture = shell as HTMLElement & {
+        setPointerCapture: (pointerId: number) => void;
+        releasePointerCapture: (pointerId: number) => void;
+        hasPointerCapture: (pointerId: number) => boolean;
+      };
+      shellWithPointerCapture.setPointerCapture = (pointerId: number) => {
+        capturedPointerId = pointerId;
+      };
+      shellWithPointerCapture.releasePointerCapture = (pointerId: number) => {
+        if (capturedPointerId === pointerId) {
+          capturedPointerId = null;
+        }
+      };
+      shellWithPointerCapture.hasPointerCapture = (pointerId: number) =>
+        capturedPointerId === pointerId;
+
+      const pointerDownEvent = new testWindow.MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 40,
+        clientY: 24,
+      }) as MouseEvent & { pointerId: number };
+      Object.defineProperty(pointerDownEvent, 'pointerId', {
+        configurable: true,
+        value: 7,
+      });
+      dragHandle.dispatchEvent(pointerDownEvent);
+      expect(document.documentElement.style.userSelect).toBe('none');
+      expect(capturedPointerId).toBe(7);
+
+      onMessageListener?.({ type: 'overlay/close' });
+      expect(document.documentElement.style.userSelect).toBe('');
+      expect(capturedPointerId).toBeNull();
+    } finally {
+      if (previousElementCtor) {
+        globals.Element = previousElementCtor;
+      } else {
+        Reflect.deleteProperty(globals, 'Element');
+      }
+    }
+  });
+
   it('stages accepted files from drop events', async () => {
     const testWindow = dom?.window;
     if (!testWindow) {

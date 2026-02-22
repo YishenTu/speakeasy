@@ -45,6 +45,7 @@ type ResizeDirection = {
 export interface PanelLayoutController {
   getLayout(): PanelLayout;
   clampAndSync(): void;
+  cancelInteraction(): void;
   dispose(): void;
 }
 
@@ -125,6 +126,15 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
     interactionState = null;
   };
 
+  const cancelInteraction = (): void => {
+    if (!interactionState) {
+      return;
+    }
+
+    endInteractionLock(interactionState.pointerId);
+    interactionState = null;
+  };
+
   function startInteractionLock(): void {
     if (!hasUserSelectOverride) {
       previousUserSelect = document.documentElement.style.userSelect;
@@ -194,11 +204,10 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
       syncLayout();
     },
 
+    cancelInteraction,
+
     dispose(): void {
-      if (interactionState) {
-        endInteractionLock(interactionState.pointerId);
-        interactionState = null;
-      }
+      cancelInteraction();
 
       window.removeEventListener('resize', onWindowResize);
       dragHandle.removeEventListener('pointerdown', onDragHandlePointerDown);

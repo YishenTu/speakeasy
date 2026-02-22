@@ -12,6 +12,7 @@ import { toErrorMessage } from './messages';
 export interface HistoryDropdownController {
   setOpen(open: boolean): void;
   isOpen(): boolean;
+  syncMenuState(): void;
   refresh(): Promise<void>;
   loadSession(chatId: string): Promise<void>;
   reloadActive(): Promise<void>;
@@ -204,6 +205,9 @@ export function createHistoryDropdownController(
   return {
     setOpen,
     isOpen: () => isMenuOpen,
+    syncMenuState: () => {
+      renderMenu();
+    },
     refresh,
     loadSession,
     reloadActive,

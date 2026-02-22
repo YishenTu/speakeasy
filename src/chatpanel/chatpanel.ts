@@ -436,6 +436,7 @@ function mountChatPanel(): void {
   }
 
   function closePanel(): void {
+    layoutController.cancelInteraction();
     dragEnterDepth = 0;
     form.classList.remove('drop-active');
     historyDropdown.setOpen(false);
@@ -470,6 +471,7 @@ function mountChatPanel(): void {
     newChatButton.disabled = nextBusy;
     historyToggleButton.disabled = nextBusy;
     form.toggleAttribute('aria-busy', nextBusy);
+    historyDropdown.syncMenuState();
   }
 
   function rememberLocalAttachmentPreviews(message: ChatMessage): void {
