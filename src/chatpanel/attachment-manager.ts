@@ -33,6 +33,7 @@ export interface AttachmentManagerDeps {
   localAttachmentPreviewUrls: Map<string, string>;
   onResizeComposer: () => void;
   onError: (message: string) => void;
+  uploadFiles?: (files: File[]) => Promise<FileDataAttachmentPayload[]>;
 }
 
 export interface AttachmentManager {
@@ -47,6 +48,7 @@ export interface AttachmentManager {
 
 export function createAttachmentManager(deps: AttachmentManagerDeps): AttachmentManager {
   let stagedFiles: StagedFile[] = [];
+  const uploadFiles = deps.uploadFiles ?? uploadFilesToGemini;
 
   function stageFromFiles(files: File[]): void {
     if (files.length === 0) {
@@ -73,7 +75,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
         continue;
       }
 
-      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      const previewUrl = isImageMimeType(file.type) ? URL.createObjectURL(file) : undefined;
       nextFiles.push({
         id: crypto.randomUUID(),
         file,
@@ -181,7 +183,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
     }
 
     try {
-      const uploaded = await uploadFilesToGemini([staged.file]);
+      const uploaded = await uploadFiles([staged.file]);
       const uploadedWithPreviews = await withAttachmentPreviewDataUrls(uploaded, [staged]);
       const uploadedAttachment = uploadedWithPreviews[0];
       if (!uploadedAttachment) {
