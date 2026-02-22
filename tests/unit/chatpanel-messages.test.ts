@@ -415,6 +415,53 @@ describe('chatpanel messages', () => {
     expect(stats?.textContent).toContain('stream delta');
   });
 
+  it('scrolls to the bottom when opening the stats disclosure', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    let simulatedScrollHeight = 160;
+    Object.defineProperty(messageList, 'scrollHeight', {
+      configurable: true,
+      get: () => simulatedScrollHeight,
+    });
+
+    appendMessage(
+      {
+        id: 'assistant-stats-scroll',
+        role: 'assistant',
+        content: 'Final response',
+        stats: {
+          requestDurationMs: 1300,
+          timeToFirstTokenMs: 240,
+          outputTokens: 120,
+          inputTokens: 42,
+          thoughtTokens: 55,
+          toolUseTokens: 8,
+          cachedTokens: 0,
+          totalTokens: 225,
+          outputTokensPerSecond: 88.888,
+          totalTokensPerSecond: 173.076,
+          hasStreamingToken: true,
+        },
+      },
+      messageList,
+    );
+
+    expect(messageList.scrollTop).toBe(160);
+
+    simulatedScrollHeight = 320;
+    const statsDisclosure = messageList.querySelector(
+      '.message-stats',
+    ) as HTMLDetailsElement | null;
+    expect(statsDisclosure).not.toBeNull();
+
+    if (!statsDisclosure) {
+      throw new Error('Expected stats disclosure to be rendered.');
+    }
+    statsDisclosure.open = true;
+    statsDisclosure.dispatchEvent(new Event('toggle', { bubbles: false }));
+
+    expect(messageList.scrollTop).toBe(320);
+  });
+
   it('copies the whole assistant response from the action row copy button', async () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 

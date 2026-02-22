@@ -4,16 +4,16 @@ import { renderMarkdownToSafeHtml } from './markdown';
 export function renderAll(messages: ChatMessage[], messageList: HTMLOListElement): void {
   const fragment = document.createDocumentFragment();
   for (const message of messages) {
-    fragment.append(createMessageNode(message));
+    fragment.append(createMessageNode(message, messageList));
   }
 
   messageList.replaceChildren(fragment);
-  messageList.scrollTop = messageList.scrollHeight;
+  scrollMessageListToBottom(messageList);
 }
 
 export function appendMessage(message: ChatMessage, messageList: HTMLOListElement): void {
-  messageList.append(createMessageNode(message));
-  messageList.scrollTop = messageList.scrollHeight;
+  messageList.append(createMessageNode(message, messageList));
+  scrollMessageListToBottom(messageList);
 }
 
 export function replaceMessageById(
@@ -26,8 +26,8 @@ export function replaceMessageById(
     return false;
   }
 
-  existing.replaceWith(createMessageNode(message));
-  messageList.scrollTop = messageList.scrollHeight;
+  existing.replaceWith(createMessageNode(message, messageList));
+  scrollMessageListToBottom(messageList);
   return true;
 }
 
@@ -49,7 +49,7 @@ export function toErrorMessage(error: unknown): string {
   return 'Request failed. Please try again.';
 }
 
-function createMessageNode(message: ChatMessage): HTMLLIElement {
+function createMessageNode(message: ChatMessage, messageList: HTMLOListElement): HTMLLIElement {
   const item = document.createElement('li');
   const bubble = document.createElement('div');
 
@@ -114,7 +114,7 @@ function createMessageNode(message: ChatMessage): HTMLLIElement {
     bubble.append(attachmentList);
   }
 
-  const assistantActions = createAssistantActionBar(message, stats);
+  const assistantActions = createAssistantActionBar(message, stats, messageList);
   if (assistantActions) {
     bubble.append(assistantActions);
   }
@@ -165,9 +165,17 @@ function createThinkingSummaryNode(thinkingSummary: string): HTMLDivElement {
   return container;
 }
 
-function createStatsDisclosure(stats: NonNullable<ChatMessage['stats']>): HTMLElement {
+function createStatsDisclosure(
+  stats: NonNullable<ChatMessage['stats']>,
+  messageList: HTMLOListElement,
+): HTMLElement {
   const disclosure = document.createElement('details');
   disclosure.className = 'message-stats';
+  disclosure.addEventListener('toggle', () => {
+    if (disclosure.open) {
+      scrollMessageListToBottom(messageList);
+    }
+  });
 
   const summary = document.createElement('summary');
   summary.className = 'message-stats-trigger';
@@ -215,6 +223,7 @@ function createStatsDisclosure(stats: NonNullable<ChatMessage['stats']>): HTMLEl
 function createAssistantActionBar(
   message: ChatMessage,
   stats: NonNullable<ChatMessage['stats']> | undefined,
+  messageList: HTMLOListElement,
 ): HTMLDivElement | null {
   if (message.role !== 'assistant') {
     return null;
@@ -234,7 +243,7 @@ function createAssistantActionBar(
   }
 
   if (stats) {
-    actionBar.append(createStatsDisclosure(stats));
+    actionBar.append(createStatsDisclosure(stats, messageList));
   }
 
   return actionBar.childElementCount > 0 ? actionBar : null;
@@ -367,6 +376,10 @@ function formatTokensPerSecond(value: number | undefined): string {
 
 function isImageMimeType(mimeType: string): boolean {
   return mimeType.toLowerCase().startsWith('image/');
+}
+
+function scrollMessageListToBottom(messageList: HTMLOListElement): void {
+  messageList.scrollTop = messageList.scrollHeight;
 }
 
 function bindCodeCopyButtons(container: ParentNode): void {

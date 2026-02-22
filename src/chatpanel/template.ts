@@ -399,11 +399,12 @@ export function getChatPanelTemplate(): string {
       .message-text pre {
         position: relative;
         margin: 0 0 8px;
-        overflow-x: auto;
+        overflow-x: hidden;
         border: 1px solid rgba(255, 255, 255, 0.2);
         border-radius: 0;
         background: rgba(255, 255, 255, 0.06);
         padding: 10px;
+        overflow-wrap: anywhere;
       }
 
       .message-text pre .code-lang {
@@ -433,7 +434,8 @@ export function getChatPanelTemplate(): string {
         border-radius: 0;
         padding: 0;
         display: block;
-        white-space: pre;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
       }
 
       .message-text pre code.hljs {
@@ -634,7 +636,7 @@ export function getChatPanelTemplate(): string {
         margin: 0;
         border: 0;
         padding: 0;
-        position: relative;
+        position: static;
       }
 
       .message-stats-trigger {
@@ -684,10 +686,12 @@ export function getChatPanelTemplate(): string {
         position: absolute;
         top: calc(100% + 6px);
         left: 0;
+        right: 0;
         z-index: 12;
         display: grid;
         gap: 4px;
-        width: min(360px, 100%);
+        width: auto;
+        box-sizing: border-box;
         border: 1px solid rgba(255, 255, 255, 0.12);
         background: rgba(255, 255, 255, 0.04);
         border-radius: 6px;
@@ -714,7 +718,9 @@ export function getChatPanelTemplate(): string {
 
       .message-actions {
         margin-top: 8px;
-        display: inline-flex;
+        position: relative;
+        display: flex;
+        width: 100%;
         align-items: center;
         gap: 8px;
         opacity: 0;
