@@ -400,4 +400,131 @@ describe('chat repository', () => {
       idbFactory.open = originalOpen;
     }
   });
+
+  it('throttles repeated open attempts after consecutive IndexedDB failures', async () => {
+    const repository = createChatRepository();
+    const idbFactory = indexedDB as unknown as { open: typeof indexedDB.open };
+    const originalOpen = idbFactory.open;
+    const originalNow = Date.now;
+    let openCallCount = 0;
+    let nowMs = Date.UTC(2025, 0, 1, 0, 0, 0);
+    Date.now = () => nowMs;
+    idbFactory.open = (() => {
+      openCallCount += 1;
+      throw new Error('persistent IndexedDB open failure');
+    }) as typeof indexedDB.open;
+
+    try {
+      await expect(repository.listSessions()).rejects.toThrow(/failed to open chat indexeddb/i);
+      await expect(repository.listSessions()).rejects.toThrow(/failed to open chat indexeddb/i);
+      await expect(repository.listSessions()).rejects.toThrow(/temporarily throttled/i);
+      expect(openCallCount).toBe(2);
+
+      nowMs += 500;
+      await expect(repository.listSessions()).rejects.toThrow(/failed to open chat indexeddb/i);
+      expect(openCallCount).toBe(3);
+    } finally {
+      Date.now = originalNow;
+      idbFactory.open = originalOpen;
+    }
+  });
+
+  it('rebuilds active branch snapshot before persistence to avoid tree/content divergence', async () => {
+    const repository = createChatRepository();
+    const session = createSession();
+    const rootNodeId = session.branchTree?.rootNodeId ?? '';
+    session.branchTree = {
+      rootNodeId,
+      activeLeafNodeId: 'model-node',
+      nodes: {
+        [rootNodeId]: {
+          id: rootNodeId,
+          childNodeIds: ['user-node'],
+        },
+        'user-node': {
+          id: 'user-node',
+          parentNodeId: rootNodeId,
+          childNodeIds: ['model-node'],
+          content: {
+            id: 'user-content',
+            role: 'user',
+            parts: [{ text: 'Question' }],
+          },
+        },
+        'model-node': {
+          id: 'model-node',
+          parentNodeId: 'user-node',
+          childNodeIds: [],
+          content: {
+            id: 'model-content',
+            role: 'model',
+            parts: [{ text: 'Answer' }],
+            metadata: { interactionId: 'interaction-1' },
+          },
+        },
+      },
+    };
+    session.contents = [{ id: 'stale-content', role: 'model', parts: [{ text: 'stale' }] }];
+    session.lastInteractionId = undefined;
+
+    await repository.upsertSession(session, Date.UTC(2025, 0, 1));
+    const stored = await repository.getSession(session.id);
+
+    expect(stored?.contents.map((content) => content.id)).toEqual([
+      'user-content',
+      'model-content',
+    ]);
+    expect(stored?.lastInteractionId).toBe('interaction-1');
+  });
+
+  it('parses legacy array-based persisted branch nodes and realigns active contents', async () => {
+    const nowIso = new Date(Date.UTC(2025, 0, 1)).toISOString();
+    await insertRawSessionRecord({
+      id: 'legacy-array-branch',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      updatedAtMs: Date.UTC(2025, 0, 1),
+      expiresAtMs: Date.UTC(2025, 0, 1) + SESSION_TTL_MS,
+      contents: [{ id: 'stale', role: 'model', parts: [{ text: 'stale' }] }],
+      branchTree: {
+        rootNodeId: 'root-node',
+        activeLeafNodeId: 'model-node',
+        nodes: [
+          { id: 'root-node', childNodeIds: ['user-node'] },
+          {
+            id: 'user-node',
+            parentNodeId: 'root-node',
+            childNodeIds: ['model-node'],
+            content: {
+              id: 'user-content',
+              role: 'user',
+              parts: [{ text: 'Question' }],
+            },
+          },
+          {
+            id: 'model-node',
+            parentNodeId: 'user-node',
+            childNodeIds: [],
+            content: {
+              id: 'model-content',
+              role: 'model',
+              parts: [{ text: 'Answer' }],
+              metadata: { interactionId: 'interaction-legacy' },
+            },
+          },
+        ],
+      },
+    });
+
+    const repository = createChatRepository();
+    const stored = await repository.getSession('legacy-array-branch');
+    expect(stored?.branchTree?.nodes['model-node']?.content?.metadata?.interactionId).toBe(
+      'interaction-legacy',
+    );
+    expect(stored?.contents.map((content) => content.id)).toEqual([
+      'user-content',
+      'model-content',
+    ]);
+    expect(stored?.lastInteractionId).toBe('interaction-legacy');
+  });
 });

@@ -314,7 +314,7 @@ describe('runtime chat storage handler', () => {
     });
   });
 
-  it('does not block requests when bootstrap initialization fails', async () => {
+  it('rejects chat requests when bootstrap initialization fails', async () => {
     const originalError = console.error;
     console.error = () => {};
 
@@ -333,10 +333,28 @@ describe('runtime chat storage handler', () => {
         generateSessionTitle: async () => '',
       });
 
-      await expect(handler({ type: 'chat/load' })).resolves.toEqual({ chatId: null, messages: [] });
+      await expect(handler({ type: 'chat/load' })).rejects.toThrow(/storage is unavailable/i);
+      await expect(handler({ type: 'chat/new' })).rejects.toThrow(/storage is unavailable/i);
     } finally {
       console.error = originalError;
     }
+  });
+
+  it('rejects chat requests while bootstrap is still in progress', async () => {
+    const bootstrapGate = new Promise<void>(() => {});
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: () => bootstrapGate,
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(handler({ type: 'chat/load' })).rejects.toThrow(/still initializing/i);
   });
 
   it('treats prune failures after startup as best-effort', async () => {
@@ -860,6 +878,50 @@ describe('runtime chat storage handler', () => {
     }
   });
 
+  it('logs a warning when generated title persistence fails', async () => {
+    repository.upsertFailurePredicate = (session) =>
+      session.title === 'Persisted title' ? new Error('upsert failed') : null;
+    const originalWarn = console.warn;
+    const warnCalls: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session) => {
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'assistant reply for title persistence error' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => 'Persisted title',
+      });
+
+      await handler({
+        type: 'chat/send',
+        text: 'generate title',
+        model: 'gemini-3-flash-preview',
+      });
+      await handler({ type: 'chat/list' });
+
+      expect(
+        warnCalls.some((call) =>
+          String(call[0]).includes('Failed to persist generated chat session title.'),
+        ),
+      ).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it('prefers persisted session title in chat list summaries', async () => {
     repository.sessions.set('chat-with-custom-title', {
       id: 'chat-with-custom-title',
@@ -1043,11 +1105,18 @@ describe('runtime chat storage handler', () => {
           mimeType: 'image/png',
           fileUri: 'https://example.invalid/files/image.png',
           fileName: 'gemini-file-1',
+          previewDataUrl: 'data:image/png;base64,aGVsbG8=',
         },
         {
           name: '',
           mimeType: 'image/png',
           fileUri: 'https://example.invalid/files/skip.png',
+        },
+        {
+          name: 'bad-preview',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/bad-preview.png',
+          previewDataUrl: 'data:text/plain;base64,aGVsbG8=',
         },
       ],
     });
@@ -1062,11 +1131,324 @@ describe('runtime chat storage handler', () => {
           fileData: {
             fileUri: 'https://example.invalid/files/image.png',
             mimeType: 'image/png',
+            displayName: 'img',
+          },
+        },
+        {
+          fileData: {
+            fileUri: 'https://example.invalid/files/bad-preview.png',
+            mimeType: 'image/png',
+            displayName: 'bad-preview',
+          },
+        },
+      ],
+      metadata: {
+        attachmentPreviewByFileUri: {
+          'https://example.invalid/files/image.png': 'data:image/png;base64,aGVsbG8=',
+        },
+      },
+    });
+    expect(typeof capturedSession?.contents.at(-1)?.id).toBe('string');
+  });
+
+  it('preserves uploaded attachment names across persistence instead of inferring from file URI ids', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'received' }],
+        };
+        session.contents.push(assistantContent);
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const sendPayload = await handler({
+      type: 'chat/send',
+      text: '',
+      model: 'gemini-3-flash-preview',
+      attachments: [
+        {
+          name: 'invoice.pdf',
+          mimeType: 'application/pdf',
+          fileUri: 'https://example.invalid/files/gemini-generated-id-123',
+          fileName: 'gemini-generated-id-123',
+        },
+      ],
+    });
+
+    const loadPayload = await handler({
+      type: 'chat/load',
+      chatId: sendPayload.chatId,
+    });
+
+    const userMessage = loadPayload.messages.find((message) => message.role === 'user');
+    expect(userMessage).toBeDefined();
+    expect(userMessage?.attachments).toEqual([
+      {
+        name: 'invoice.pdf',
+        mimeType: 'application/pdf',
+        fileUri: 'https://example.invalid/files/gemini-generated-id-123',
+      },
+    ]);
+  });
+
+  it('drops oversized preview metadata while still sending attachment fileData', async () => {
+    let capturedSession: ChatSession | null = null;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async (session) => {
+        capturedSession = cloneSession(session);
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'attachment accepted' }],
+        };
+        session.contents.push(assistantContent);
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await handler({
+      type: 'chat/send',
+      text: '',
+      model: 'gemini-3-flash-preview',
+      attachments: [
+        {
+          name: 'img',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/image.png',
+          previewDataUrl: `data:image/png;base64,${'A'.repeat(500_000)}`,
+        },
+      ],
+    });
+
+    expect(capturedSession?.contents.at(-1)).toMatchObject({
+      role: 'user',
+      parts: [
+        {
+          fileData: {
+            fileUri: 'https://example.invalid/files/image.png',
+            mimeType: 'image/png',
           },
         },
       ],
     });
-    expect(typeof capturedSession?.contents.at(-1)?.id).toBe('string');
+    expect(capturedSession?.contents.at(-1)?.metadata).toBeUndefined();
+  });
+
+  it('uploads files through background upload dependency', async () => {
+    const uploadedCalls: Array<{
+      apiKey: string;
+      timeout: number | undefined;
+      fileCount: number;
+      bytes: number[];
+    }> = [];
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      uploadFilesToGemini: async (files, apiKey, uploadTimeoutMs) => {
+        uploadedCalls.push({
+          apiKey,
+          timeout: uploadTimeoutMs,
+          fileCount: files.length,
+          bytes: files[0] ? Array.from(new Uint8Array(files[0].bytes)) : [],
+        });
+        return {
+          attachments: [
+            {
+              name: files[0]?.name ?? 'attachment',
+              mimeType: files[0]?.mimeType ?? 'application/octet-stream',
+              fileUri: 'https://example.invalid/files/uploaded',
+            },
+          ],
+          failures: [],
+        };
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const payload = await handler({
+      type: 'chat/upload-files',
+      uploadTimeoutMs: 77,
+      files: [
+        {
+          name: ' note.txt ',
+          mimeType: ' text/plain ',
+          bytesBase64: 'AQID',
+        },
+      ],
+    } as RuntimeRequest);
+
+    expect(payload).toEqual({
+      attachments: [
+        {
+          name: 'note.txt',
+          mimeType: 'text/plain',
+          fileUri: 'https://example.invalid/files/uploaded',
+        },
+      ],
+      failures: [],
+    });
+    expect(uploadedCalls).toEqual([
+      { apiKey: 'test-api-key', timeout: 77, fileCount: 1, bytes: [1, 2, 3] },
+    ]);
+  });
+
+  it('accepts legacy typed-array byte payloads for chat upload requests', async () => {
+    const uploadedCalls: Array<{ apiKey: string; timeout: number | undefined; fileCount: number }> =
+      [];
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      uploadFilesToGemini: async (files, apiKey, uploadTimeoutMs) => {
+        uploadedCalls.push({
+          apiKey,
+          timeout: uploadTimeoutMs,
+          fileCount: files.length,
+        });
+        return {
+          attachments: [
+            {
+              name: files[0]?.name ?? 'attachment',
+              mimeType: files[0]?.mimeType ?? 'application/octet-stream',
+              fileUri: 'https://example.invalid/files/uploaded',
+            },
+          ],
+          failures: [],
+        };
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const payload = await handler({
+      type: 'chat/upload-files',
+      uploadTimeoutMs: 77,
+      files: [
+        {
+          name: ' note.txt ',
+          mimeType: ' text/plain ',
+          bytes: new Uint8Array([1, 2, 3]) as unknown as ArrayBuffer,
+        },
+      ],
+    } as unknown as RuntimeRequest);
+
+    expect(payload).toEqual({
+      attachments: [
+        {
+          name: 'note.txt',
+          mimeType: 'text/plain',
+          fileUri: 'https://example.invalid/files/uploaded',
+        },
+      ],
+      failures: [],
+    });
+    expect(uploadedCalls).toEqual([{ apiKey: 'test-api-key', timeout: 77, fileCount: 1 }]);
+  });
+
+  it('reports malformed upload byte payloads instead of silently dropping them', async () => {
+    let uploadCalls = 0;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      uploadFilesToGemini: async () => {
+        uploadCalls += 1;
+        return {
+          attachments: [],
+          failures: [],
+        };
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const payload = await handler({
+      type: 'chat/upload-files',
+      files: [
+        {
+          name: 'note.txt',
+          mimeType: 'text/plain',
+          bytesBase64: '$$$not-base64$$$',
+        },
+      ],
+    } as RuntimeRequest);
+
+    expect(payload).toEqual({
+      attachments: [],
+      failures: [
+        {
+          index: 0,
+          fileName: 'note.txt',
+          message: 'Failed to upload "note.txt": file bytes were malformed.',
+        },
+      ],
+    });
+    expect(uploadCalls).toBe(0);
+  });
+
+  it('rejects file upload requests when Gemini API key is missing', async () => {
+    const missingKeySettings = createSettings();
+    missingKeySettings.apiKey = '';
+    let uploadCalls = 0;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => missingKeySettings,
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      uploadFilesToGemini: async () => {
+        uploadCalls += 1;
+        return {
+          attachments: [],
+          failures: [],
+        };
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/upload-files',
+        files: [
+          {
+            name: 'note.txt',
+            mimeType: 'text/plain',
+            bytesBase64: 'AQ==',
+          },
+        ],
+      } as RuntimeRequest),
+    ).rejects.toThrow(/api key is missing/i);
+    expect(uploadCalls).toBe(0);
   });
 
   it('forwards streaming deltas to the originating tab frame when stream request id is provided', async () => {
@@ -1213,6 +1595,75 @@ describe('runtime chat storage handler', () => {
       expect(sendMessageCalls).toBe(0);
     } finally {
       (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    }
+  });
+
+  it('logs stream forwarding failures without failing the chat send request', async () => {
+    repository.sessions.set('chat-stream-send-error', createSession('chat-stream-send-error'));
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    const originalWarn = console.warn;
+    const warnCalls: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
+    };
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        lastError: undefined,
+      },
+      tabs: {
+        sendMessage: () => {
+          throw new Error('tab disconnected');
+        },
+      },
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session, _settings, _thinkingLevel, onStreamDelta) => {
+          onStreamDelta?.({ textDelta: 'chunk' });
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'stream completed' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      const payload = await handler(
+        {
+          type: 'chat/send',
+          chatId: 'chat-stream-send-error',
+          text: 'stream please',
+          model: 'gemini-3-flash-preview',
+          streamRequestId: 'stream-send-error',
+        },
+        {
+          sender: {
+            tab: { id: 12 } as chrome.tabs.Tab,
+          },
+        },
+      );
+
+      expect(payload).toMatchObject({
+        assistantMessage: {
+          content: 'stream completed',
+        },
+      });
+      expect(
+        warnCalls.some((call) =>
+          String(call[0]).includes('Failed to forward stream delta to the chat panel tab.'),
+        ),
+      ).toBe(true);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+      console.warn = originalWarn;
     }
   });
 

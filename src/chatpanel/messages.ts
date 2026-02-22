@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../shared/chat';
+import { toErrorMessage as toSharedErrorMessage } from '../shared/error-message';
 import { renderMarkdownToSafeHtml } from './markdown';
 
 export interface MessageRenderOptions {
@@ -7,11 +8,16 @@ export interface MessageRenderOptions {
   onUserAction?: (action: 'fork', message: ChatMessage) => void;
 }
 
+const COPY_FEEDBACK_RESET_MS = 1200;
+const messageBlobPreviewUrls = new WeakMap<HTMLLIElement, Set<string>>();
+
 export function renderAll(
   messages: ChatMessage[],
   messageList: HTMLOListElement,
   options: MessageRenderOptions = {},
 ): void {
+  const retainedBlobPreviewUrls = collectBlobPreviewUrls(messages);
+  revokeAllBlobPreviewUrls(messageList, retainedBlobPreviewUrls);
   const fragment = document.createDocumentFragment();
   for (const message of messages) {
     fragment.append(createMessageNode(message, messageList, options));
@@ -41,6 +47,8 @@ export function replaceMessageById(
     return false;
   }
 
+  const retainedBlobPreviewUrls = collectBlobPreviewUrlsForMessage(message);
+  revokeMessageBlobPreviewUrls(existing, retainedBlobPreviewUrls);
   existing.replaceWith(createMessageNode(message, messageList, options));
   scrollMessageListToBottom(messageList);
   return true;
@@ -52,16 +60,13 @@ export function removeMessageById(messageId: string, messageList: HTMLOListEleme
     return false;
   }
 
+  revokeMessageBlobPreviewUrls(existing);
   existing.remove();
   return true;
 }
 
 export function toErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return 'Request failed. Please try again.';
+  return toSharedErrorMessage(error, { fallback: 'Request failed. Please try again.' });
 }
 
 function createMessageNode(
@@ -80,6 +85,15 @@ function createMessageNode(
   const stats = message.role === 'assistant' ? message.stats : undefined;
   const attachments = message.attachments ?? [];
   const hasRenderableContent = message.content.trim().length > 0;
+  const userAttachmentStrip =
+    message.role === 'user' && attachments.length > 0
+      ? createUserAttachmentStripNode(attachments, item)
+      : undefined;
+  const assistantAttachmentList =
+    message.role !== 'user' && attachments.length > 0
+      ? createAttachmentListNode(attachments, item)
+      : undefined;
+
   if (thinkingSummary) {
     const disclosure = document.createElement('details');
     disclosure.className = 'thinking-disclosure';
@@ -97,48 +111,31 @@ function createMessageNode(
 
   if (hasRenderableContent) {
     bubble.append(createMarkdownNode(message.content, 'message-text'));
-  } else if (message.role === 'assistant' && !thinkingSummary && attachments.length === 0) {
+  } else if (message.role === 'assistant' && !thinkingSummary && !assistantAttachmentList) {
     bubble.append(createThinkingPlaceholderNode());
   }
 
-  if (attachments.length > 0) {
-    const attachmentList = document.createElement('div');
-    attachmentList.className = 'attachment-list';
-
-    for (const attachment of attachments) {
-      if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
-        const previewUrl = attachment.previewUrl;
-        const image = document.createElement('img');
-        image.className = 'attachment-image';
-        image.src = previewUrl;
-        image.alt = attachment.name;
-        image.loading = 'lazy';
-        if (previewUrl.startsWith('blob:')) {
-          const releaseObjectUrl = () => {
-            URL.revokeObjectURL(previewUrl);
-          };
-          image.addEventListener('load', releaseObjectUrl, { once: true });
-          image.addEventListener('error', releaseObjectUrl, { once: true });
-        }
-        attachmentList.append(image);
-        continue;
-      }
-
-      const chip = document.createElement('span');
-      chip.className = 'attachment-placeholder';
-      chip.textContent = `${attachment.name} (${attachment.mimeType})`;
-      attachmentList.append(chip);
-    }
-
-    bubble.append(attachmentList);
+  if (assistantAttachmentList) {
+    bubble.append(assistantAttachmentList);
   }
+
+  const shouldRenderBubble =
+    message.role === 'assistant' ||
+    hasRenderableContent ||
+    !!thinkingSummary ||
+    !!assistantAttachmentList;
 
   const assistantActions = createAssistantActionBar(message, stats, messageList, options);
   const userActions = createUserActionBar(message, options);
   if (assistantActions || userActions) {
     item.classList.add('row-with-actions');
   }
-  item.append(bubble);
+  if (userAttachmentStrip) {
+    item.append(userAttachmentStrip);
+  }
+  if (shouldRenderBubble) {
+    item.append(bubble);
+  }
   if (assistantActions) {
     item.append(assistantActions);
   }
@@ -169,6 +166,95 @@ function createThinkingPlaceholderNode(): HTMLDivElement {
 
   placeholder.append(label, dots);
   return placeholder;
+}
+
+function createAttachmentListNode(
+  attachments: NonNullable<ChatMessage['attachments']>,
+  item: HTMLLIElement,
+): HTMLDivElement {
+  const attachmentList = document.createElement('div');
+  attachmentList.className = 'attachment-list';
+
+  for (const attachment of attachments) {
+    if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
+      const previewUrl = attachment.previewUrl;
+      const image = document.createElement('img');
+      image.className = 'attachment-image';
+      image.src = previewUrl;
+      image.alt = attachment.name;
+      image.loading = 'lazy';
+      if (previewUrl.startsWith('blob:')) {
+        trackBlobPreviewUrl(item, previewUrl);
+      }
+      attachmentList.append(image);
+      continue;
+    }
+
+    const chip = document.createElement('span');
+    chip.className = 'attachment-placeholder';
+    chip.textContent = `${attachment.name} (${attachment.mimeType})`;
+    attachmentList.append(chip);
+  }
+
+  return attachmentList;
+}
+
+function createUserAttachmentStripNode(
+  attachments: NonNullable<ChatMessage['attachments']>,
+  item: HTMLLIElement,
+): HTMLDivElement {
+  const strip = document.createElement('div');
+  strip.className = 'file-preview-strip message-attachment-strip';
+
+  for (const attachment of attachments) {
+    const previewItem = document.createElement('div');
+    previewItem.className = 'file-preview-item';
+    const tile = document.createElement('div');
+    tile.className = 'file-preview-tile';
+    tile.setAttribute('aria-label', `${attachment.name} (${attachment.mimeType})`);
+    tile.setAttribute('title', `${attachment.name} (${attachment.mimeType})`);
+
+    if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
+      const previewUrl = attachment.previewUrl;
+      const image = document.createElement('img');
+      image.className = 'file-preview-image';
+      image.src = previewUrl;
+      image.alt = attachment.name;
+      image.loading = 'lazy';
+      if (previewUrl.startsWith('blob:')) {
+        trackBlobPreviewUrl(item, previewUrl);
+      }
+      tile.append(image);
+    } else {
+      tile.append(createGenericAttachmentPreviewNode(attachment));
+    }
+
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'file-preview-name';
+    nameLabel.textContent = attachment.name;
+    nameLabel.setAttribute('title', attachment.name);
+
+    previewItem.append(tile, nameLabel);
+    strip.append(previewItem);
+  }
+
+  return strip;
+}
+
+function createGenericAttachmentPreviewNode(
+  attachment: NonNullable<ChatMessage['attachments']>[number],
+): HTMLDivElement {
+  const generic = document.createElement('div');
+  generic.className = 'file-preview-generic';
+  if (isPdfMimeType(attachment.mimeType)) {
+    generic.classList.add('is-pdf');
+  }
+
+  const fileTypeLabel = document.createElement('span');
+  fileTypeLabel.className = 'file-preview-filetype';
+  fileTypeLabel.textContent = getAttachmentPreviewTypeLabel(attachment);
+  generic.append(fileTypeLabel);
+  return generic;
 }
 
 function createMarkdownNode(markdown: string, className: string): HTMLDivElement {
@@ -483,16 +569,19 @@ function createCopyActionButton(copyText: string, copyLabel: string): HTMLButton
   button.addEventListener('click', () => {
     navigator.clipboard.writeText(copyText).then(
       () => {
-        button.setAttribute('title', 'Copied');
-        button.setAttribute('aria-label', 'Copied');
-        button.classList.add('is-copied');
-        setTimeout(() => {
-          button.setAttribute('title', copyLabel);
-          button.setAttribute('aria-label', copyLabel);
-          button.classList.remove('is-copied');
-        }, 1200);
+        applyCopyButtonFeedback(button, copyLabel, {
+          title: 'Copied',
+          ariaLabel: 'Copied',
+          activeClass: 'is-copied',
+        });
       },
-      () => {},
+      () => {
+        applyCopyButtonFeedback(button, copyLabel, {
+          title: 'Copy failed',
+          ariaLabel: 'Copy failed',
+          activeClass: 'is-copy-failed',
+        });
+      },
     );
   });
 
@@ -604,7 +693,26 @@ function formatTokensPerSecond(value: number | undefined): string {
 }
 
 function isImageMimeType(mimeType: string): boolean {
-  return mimeType.toLowerCase().startsWith('image/');
+  return mimeType.split(';', 1)[0]?.trim().toLowerCase().startsWith('image/') ?? false;
+}
+
+function isPdfMimeType(mimeType: string): boolean {
+  return mimeType.split(';', 1)[0]?.trim().toLowerCase() === 'application/pdf';
+}
+
+function getAttachmentPreviewTypeLabel(
+  attachment: NonNullable<ChatMessage['attachments']>[number],
+): string {
+  if (isPdfMimeType(attachment.mimeType)) {
+    return 'PDF';
+  }
+
+  const extension = attachment.name.split('.').pop()?.trim().toUpperCase() ?? '';
+  if (/^[A-Z0-9]{1,5}$/.test(extension)) {
+    return extension;
+  }
+
+  return 'FILE';
 }
 
 function scrollMessageListToBottom(messageList: HTMLOListElement): void {
@@ -623,12 +731,11 @@ function bindCodeCopyButtons(container: ParentNode): void {
       const original = label.textContent;
       navigator.clipboard.writeText(code.textContent ?? '').then(
         () => {
-          label.textContent = 'copied';
-          setTimeout(() => {
-            label.textContent = original;
-          }, 1200);
+          applyCodeCopyFeedback(label, original, 'copied');
         },
-        () => {},
+        () => {
+          applyCodeCopyFeedback(label, original, 'copy failed');
+        },
       );
     });
   }
@@ -669,5 +776,117 @@ function findMessageNodeById(
   messageList: HTMLOListElement,
   messageId: string,
 ): HTMLLIElement | null {
-  return messageList.querySelector<HTMLLIElement>(`li[data-message-id="${messageId}"]`);
+  const rows = messageList.querySelectorAll<HTMLLIElement>('li[data-message-id]');
+  for (const row of Array.from(rows)) {
+    if (row.dataset.messageId === messageId) {
+      return row;
+    }
+  }
+
+  return null;
+}
+
+function trackBlobPreviewUrl(messageNode: HTMLLIElement, previewUrl: string): () => void {
+  const trackedUrls = messageBlobPreviewUrls.get(messageNode) ?? new Set<string>();
+  trackedUrls.add(previewUrl);
+  messageBlobPreviewUrls.set(messageNode, trackedUrls);
+
+  return () => {
+    const currentUrls = messageBlobPreviewUrls.get(messageNode);
+    if (!currentUrls || !currentUrls.delete(previewUrl)) {
+      return;
+    }
+
+    URL.revokeObjectURL(previewUrl);
+    if (currentUrls.size === 0) {
+      messageBlobPreviewUrls.delete(messageNode);
+    }
+  };
+}
+
+function revokeMessageBlobPreviewUrls(
+  messageNode: HTMLLIElement,
+  retainedPreviewUrls: ReadonlySet<string> = new Set(),
+): void {
+  const trackedUrls = messageBlobPreviewUrls.get(messageNode);
+  if (!trackedUrls) {
+    return;
+  }
+
+  for (const previewUrl of trackedUrls) {
+    if (retainedPreviewUrls.has(previewUrl)) {
+      continue;
+    }
+
+    URL.revokeObjectURL(previewUrl);
+  }
+  trackedUrls.clear();
+  messageBlobPreviewUrls.delete(messageNode);
+}
+
+function revokeAllBlobPreviewUrls(
+  messageList: HTMLOListElement,
+  retainedPreviewUrls: ReadonlySet<string> = new Set(),
+): void {
+  for (const row of Array.from(
+    messageList.querySelectorAll<HTMLLIElement>('li[data-message-id]'),
+  )) {
+    revokeMessageBlobPreviewUrls(row, retainedPreviewUrls);
+  }
+}
+
+function collectBlobPreviewUrls(messages: readonly ChatMessage[]): Set<string> {
+  const retained = new Set<string>();
+  for (const message of messages) {
+    collectBlobPreviewUrlsForMessage(message, retained);
+  }
+  return retained;
+}
+
+function collectBlobPreviewUrlsForMessage(
+  message: ChatMessage,
+  retained: Set<string> = new Set(),
+): Set<string> {
+  for (const attachment of message.attachments ?? []) {
+    const previewUrl = attachment.previewUrl?.trim() ?? '';
+    if (!previewUrl.startsWith('blob:')) {
+      continue;
+    }
+
+    retained.add(previewUrl);
+  }
+
+  return retained;
+}
+
+function applyCopyButtonFeedback(
+  button: HTMLButtonElement,
+  defaultLabel: string,
+  feedback: {
+    title: string;
+    ariaLabel: string;
+    activeClass: 'is-copied' | 'is-copy-failed';
+  },
+): void {
+  const inactiveClass = feedback.activeClass === 'is-copied' ? 'is-copy-failed' : 'is-copied';
+  button.setAttribute('title', feedback.title);
+  button.setAttribute('aria-label', feedback.ariaLabel);
+  button.classList.remove(inactiveClass);
+  button.classList.add(feedback.activeClass);
+  setTimeout(() => {
+    button.setAttribute('title', defaultLabel);
+    button.setAttribute('aria-label', defaultLabel);
+    button.classList.remove(feedback.activeClass);
+  }, COPY_FEEDBACK_RESET_MS);
+}
+
+function applyCodeCopyFeedback(
+  label: Element,
+  originalText: string | null,
+  statusText: 'copied' | 'copy failed',
+): void {
+  label.textContent = statusText;
+  setTimeout(() => {
+    label.textContent = originalText;
+  }, COPY_FEEDBACK_RESET_MS);
 }

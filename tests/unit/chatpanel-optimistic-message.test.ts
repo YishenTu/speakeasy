@@ -74,6 +74,88 @@ describe('chatpanel optimistic message', () => {
     expect(message.attachments).toBeUndefined();
   });
 
+  it('binds optimistic image previews to uploaded attachment file URIs', () => {
+    const imageFile = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
+    const originalCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = () => 'blob://preview/uploaded';
+
+    try {
+      const message = buildOptimisticUserMessage(
+        'Draft prompt',
+        [
+          {
+            file: imageFile,
+            name: 'photo.png',
+            mimeType: 'image/png',
+          },
+        ],
+        undefined,
+        [
+          {
+            name: 'photo.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/photo',
+          },
+        ],
+      );
+
+      expect(message.attachments).toEqual([
+        {
+          name: 'photo.png',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/photo',
+          previewUrl: 'blob://preview/uploaded',
+        },
+      ]);
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+    }
+  });
+
+  it('prefers uploaded previewDataUrl over blob previews for uploaded images', () => {
+    const imageFile = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
+    const originalCreateObjectURL = URL.createObjectURL;
+    let createObjectURLCalls = 0;
+    URL.createObjectURL = () => {
+      createObjectURLCalls += 1;
+      return 'blob://preview/uploaded';
+    };
+
+    try {
+      const message = buildOptimisticUserMessage(
+        'Draft prompt',
+        [
+          {
+            file: imageFile,
+            name: 'photo.png',
+            mimeType: 'image/png',
+          },
+        ],
+        undefined,
+        [
+          {
+            name: 'photo.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/photo',
+            previewDataUrl: 'data:image/png;base64,aGVsbG8=',
+          },
+        ],
+      );
+
+      expect(message.attachments).toEqual([
+        {
+          name: 'photo.png',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/photo',
+          previewUrl: 'data:image/png;base64,aGVsbG8=',
+        },
+      ]);
+      expect(createObjectURLCalls).toBe(0);
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+    }
+  });
+
   it('finds the latest assistant interaction id in rendered messages', () => {
     const messages: ChatMessage[] = [
       {

@@ -1,6 +1,6 @@
 import { normalizeContent } from './gemini';
-import { ensureBranchTree } from './sessions';
-import type { ChatSession, GeminiContent } from './types';
+import { ensureBranchTree, rebuildActiveBranchSnapshot } from './sessions';
+import type { ChatBranchNode, ChatSession, GeminiContent } from './types';
 import { isRecord } from './utils';
 
 export const CHAT_DB_NAME = 'speakeasy-chat';
@@ -25,15 +25,10 @@ interface PersistedChatSessionRecord {
 interface PersistedChatBranchTreeRecord {
   rootNodeId: string;
   activeLeafNodeId: string;
-  nodes: PersistedChatBranchNodeRecord[];
+  nodes: PersistedChatBranchNodeRecord[] | Record<string, PersistedChatBranchNodeRecord>;
 }
 
-interface PersistedChatBranchNodeRecord {
-  id: string;
-  parentNodeId?: string;
-  childNodeIds: string[];
-  content?: unknown;
-}
+type PersistedChatBranchNodeRecord = Omit<ChatBranchNode, 'content'> & { content?: unknown };
 
 export interface ChatRepository {
   getSession(chatId: string): Promise<ChatSession | null>;
@@ -45,6 +40,10 @@ export interface ChatRepository {
 
 // Shared singleton connection for the background worker runtime.
 let databasePromise: Promise<IDBDatabase> | null = null;
+let consecutiveOpenFailureCount = 0;
+let nextOpenRetryAtMs = 0;
+const OPEN_RETRY_INITIAL_BACKOFF_MS = 500;
+const OPEN_RETRY_MAX_BACKOFF_MS = 30_000;
 
 export function createChatRepository(): ChatRepository {
   return {
@@ -58,6 +57,8 @@ export function createChatRepository(): ChatRepository {
 
 export async function closeChatDatabaseForTests(): Promise<void> {
   if (!databasePromise) {
+    consecutiveOpenFailureCount = 0;
+    nextOpenRetryAtMs = 0;
     return;
   }
 
@@ -66,6 +67,8 @@ export async function closeChatDatabaseForTests(): Promise<void> {
     database.close();
   }
   databasePromise = null;
+  consecutiveOpenFailureCount = 0;
+  nextOpenRetryAtMs = 0;
 }
 
 async function getSession(chatId: string): Promise<ChatSession | null> {
@@ -223,6 +226,11 @@ async function openChatDatabase(): Promise<IDBDatabase> {
     return databasePromise;
   }
 
+  const nowMs = Date.now();
+  if (nowMs < nextOpenRetryAtMs) {
+    throw new Error('IndexedDB open is temporarily throttled after repeated failures.');
+  }
+
   const openingPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const rejectOpen = (message: string, cause?: unknown): void => {
       reject(cause ? new Error(message, { cause }) : new Error(message));
@@ -264,6 +272,8 @@ async function openChatDatabase(): Promise<IDBDatabase> {
         database.close();
         databasePromise = null;
       };
+      consecutiveOpenFailureCount = 0;
+      nextOpenRetryAtMs = 0;
       resolve(database);
     };
     request.onerror = () => {
@@ -279,9 +289,22 @@ async function openChatDatabase(): Promise<IDBDatabase> {
     if (databasePromise === openingPromise) {
       databasePromise = null;
     }
+
+    consecutiveOpenFailureCount += 1;
+    const backoffMs = getOpenRetryBackoffMs(consecutiveOpenFailureCount);
+    nextOpenRetryAtMs = backoffMs > 0 ? Date.now() + backoffMs : 0;
   });
 
   return openingPromise;
+}
+
+function getOpenRetryBackoffMs(consecutiveFailureCount: number): number {
+  if (consecutiveFailureCount < 2) {
+    return 0;
+  }
+
+  const exponent = consecutiveFailureCount - 2;
+  return Math.min(OPEN_RETRY_INITIAL_BACKOFF_MS * 2 ** exponent, OPEN_RETRY_MAX_BACKOFF_MS);
 }
 
 function toPersistedSessionRecord(session: ChatSession, nowMs: number): PersistedChatSessionRecord {
@@ -290,7 +313,25 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
     throw new Error('Cannot persist chat session without an id.');
   }
 
+  const preservedLastInteractionId =
+    typeof session.lastInteractionId === 'string' ? session.lastInteractionId.trim() : '';
+
+  if (
+    session.branchTree &&
+    session.contents.length > 0 &&
+    !branchTreeHasContentNodes(session.branchTree)
+  ) {
+    Reflect.deleteProperty(session, 'branchTree');
+  }
+
   ensureBranchTree(session);
+  if (session.branchTree) {
+    ensureBranchTreeContentIds(session.branchTree);
+  }
+  rebuildActiveBranchSnapshot(session);
+  if (!session.lastInteractionId && preservedLastInteractionId) {
+    session.lastInteractionId = preservedLastInteractionId;
+  }
   const title = session.title?.trim() || undefined;
 
   const createdAt =
@@ -366,6 +407,10 @@ function parsePersistedSessionRecord(rawValue: unknown): ChatSession | null {
   const trimmedTitle = typeof rawValue.title === 'string' ? rawValue.title.trim() : '';
   const title = trimmedTitle || undefined;
   const parsedBranchTree = parsePersistedBranchTreeRecord(rawValue.branchTree);
+  const effectiveBranchTree =
+    parsedBranchTree && (contents.length === 0 || branchTreeHasContentNodes(parsedBranchTree))
+      ? parsedBranchTree
+      : undefined;
 
   const session: ChatSession = {
     id,
@@ -373,11 +418,18 @@ function parsePersistedSessionRecord(rawValue: unknown): ChatSession | null {
     createdAt,
     updatedAt,
     contents,
-    ...(parsedBranchTree ? { branchTree: parsedBranchTree } : {}),
+    ...(effectiveBranchTree ? { branchTree: effectiveBranchTree } : {}),
     ...(lastInteractionId ? { lastInteractionId } : {}),
   };
 
-  ensureBranchTree(session);
+  const tree = ensureBranchTree(session);
+  if (effectiveBranchTree) {
+    ensureBranchTreeContentIds(tree);
+    rebuildActiveBranchSnapshot(session);
+    if (!session.lastInteractionId && lastInteractionId) {
+      session.lastInteractionId = lastInteractionId;
+    }
+  }
   return session;
 }
 
@@ -395,7 +447,7 @@ function ensurePersistedContentId(content: GeminiContent): string {
 
 function toPersistedBranchTreeRecord(session: ChatSession): PersistedChatBranchTreeRecord {
   const tree = ensureBranchTree(session);
-  const nodes: PersistedChatBranchNodeRecord[] = [];
+  const nodes: Record<string, PersistedChatBranchNodeRecord> = {};
 
   for (const node of Object.values(tree.nodes)) {
     const nodeId = node.id.trim();
@@ -409,9 +461,11 @@ function toPersistedBranchTreeRecord(session: ChatSession): PersistedChatBranchT
       .filter((childNodeId) => childNodeId.length > 0);
     const persistedNode: PersistedChatBranchNodeRecord = {
       id: nodeId,
-      ...(parentNodeId ? { parentNodeId } : {}),
       childNodeIds,
     };
+    if (parentNodeId) {
+      persistedNode.parentNodeId = parentNodeId;
+    }
     if (node.content) {
       persistedNode.content = {
         id: ensurePersistedContentId(node.content),
@@ -420,7 +474,7 @@ function toPersistedBranchTreeRecord(session: ChatSession): PersistedChatBranchT
         ...(node.content.metadata ? { metadata: structuredClone(node.content.metadata) } : {}),
       };
     }
-    nodes.push(persistedNode);
+    nodes[nodeId] = persistedNode;
   }
 
   return {
@@ -447,7 +501,11 @@ function parsePersistedBranchTreeRecord(rawValue: unknown): ChatSession['branchT
     return undefined;
   }
 
-  const rawNodes = Array.isArray(rawValue.nodes) ? rawValue.nodes : [];
+  const rawNodes = Array.isArray(rawValue.nodes)
+    ? rawValue.nodes
+    : isRecord(rawValue.nodes)
+      ? Object.values(rawValue.nodes)
+      : [];
   const nodes: NonNullable<ChatSession['branchTree']>['nodes'] = {};
   for (const rawNode of rawNodes) {
     if (!isRecord(rawNode)) {
@@ -494,4 +552,16 @@ function parsePersistedBranchTreeRecord(rawValue: unknown): ChatSession['branchT
     activeLeafNodeId,
     nodes,
   };
+}
+
+function branchTreeHasContentNodes(tree: NonNullable<ChatSession['branchTree']>): boolean {
+  return Object.values(tree.nodes).some((node) => !!node.content);
+}
+
+function ensureBranchTreeContentIds(tree: NonNullable<ChatSession['branchTree']>): void {
+  for (const node of Object.values(tree.nodes)) {
+    if (node.content) {
+      ensurePersistedContentId(node.content);
+    }
+  }
 }

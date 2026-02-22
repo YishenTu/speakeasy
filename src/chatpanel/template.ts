@@ -930,6 +930,10 @@ export function getChatPanelTemplate(): string {
         color: rgba(255, 255, 255, 0.96);
       }
 
+      .message-copy-btn.is-copy-failed {
+        color: #ff8e8e;
+      }
+
       .attachment-list {
         display: flex;
         flex-direction: column;
@@ -937,7 +941,8 @@ export function getChatPanelTemplate(): string {
       }
 
       .message-text + .attachment-list,
-      .thinking-disclosure + .attachment-list {
+      .thinking-disclosure + .attachment-list,
+      .attachment-list + .message-text {
         margin-top: 8px;
       }
 
@@ -1037,44 +1042,157 @@ export function getChatPanelTemplate(): string {
         margin: 0;
       }
 
-      .file-chip {
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 999px;
-        padding: 4px 6px 4px 10px;
-        font-size: var(--sp-font-size-xs);
-        color: rgba(255, 255, 255, 0.9);
-        background: rgba(255, 255, 255, 0.06);
+      .file-preview-item {
+        width: 82px;
         display: inline-flex;
+        flex-direction: column;
         align-items: center;
-        gap: 8px;
-        max-width: 100%;
+        gap: 4px;
       }
 
-      .file-chip-label {
-        max-width: 180px;
+      .message-attachment-strip {
+        margin: 0 0 4px;
+        max-width: 85%;
+      }
+
+      .row-user > .message-attachment-strip {
+        align-self: flex-end;
+        justify-content: flex-end;
+      }
+
+      .file-preview-tile {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        border-radius: 10px;
         overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.08);
       }
 
-      .file-chip-remove {
-        border: none;
-        background: transparent;
-        color: rgba(255, 255, 255, 0.7);
-        padding: 0;
+      .file-preview-tile.is-failed {
+        border-color: rgba(255, 120, 120, 0.82);
+      }
+
+      .file-preview-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .file-preview-remove {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        border: 0;
         width: 16px;
         height: 16px;
-        border-radius: 50%;
-        line-height: 1;
-        cursor: pointer;
+        border-radius: 999px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        background: rgba(0, 0, 0, 0.6);
+        color: rgba(255, 255, 255, 0.9);
+        cursor: pointer;
+        line-height: 1;
+        z-index: 2;
       }
 
-      .file-chip-remove:hover {
-        color: rgba(255, 255, 255, 1);
+      .file-preview-remove:hover {
+        background: rgba(0, 0, 0, 0.78);
+      }
+
+      .file-preview-upload-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.45);
+      }
+
+      .file-preview-spinner {
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top-color: rgba(255, 255, 255, 0.95);
+        animation: file-preview-spin 0.8s linear infinite;
+      }
+
+      .file-preview-failed {
+        position: absolute;
+        left: 4px;
+        bottom: 4px;
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(185, 44, 44, 0.92);
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+      }
+
+      .file-preview-generic {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 6px 4px;
+        background: linear-gradient(160deg, rgba(44, 47, 58, 0.95), rgba(25, 27, 35, 0.95));
+      }
+
+      .file-preview-generic.is-pdf {
+        background: linear-gradient(160deg, rgba(94, 33, 33, 0.96), rgba(66, 24, 24, 0.96));
+        padding: 0;
+      }
+
+      .file-preview-filetype {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 30px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
         background: rgba(255, 255, 255, 0.12);
+        color: rgba(255, 255, 255, 0.96);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        line-height: 1;
+        padding: 3px 6px;
+      }
+
+      .file-preview-name {
+        width: 100%;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 10px;
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: center;
+      }
+
+      .file-preview-generic.is-pdf .file-preview-filetype {
+        border: none;
+        background: transparent;
+        padding: 0;
+        min-width: 0;
+      }
+
+      @keyframes file-preview-spin {
+        to {
+          transform: rotate(360deg);
+        }
       }
 
       .input-toolbar {
@@ -1082,6 +1200,12 @@ export function getChatPanelTemplate(): string {
         align-items: center;
         gap: 6px;
         padding: 2px 8px 4px;
+      }
+
+      .input-toolbar-label {
+        font-size: var(--sp-font-size-xs);
+        color: rgba(255, 255, 255, 0.5);
+        user-select: none;
       }
 
       .input-toolbar .attach-btn {
@@ -1332,6 +1456,7 @@ export function getChatPanelTemplate(): string {
                   <button type="button" class="dropup-item" data-value="gemini-3.1-pro-preview">Pro</button>
                 </div>
               </div>
+              <span class="input-toolbar-label">Thinking</span>
               <div class="dropup" id="speakeasy-thinking-dropup">
                 <button type="button" class="dropup-trigger" data-value="minimal">Min</button>
                 <div class="dropup-menu">

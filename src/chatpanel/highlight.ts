@@ -15,6 +15,7 @@ import sql from 'highlight.js/lib/languages/sql';
 import typescript from 'highlight.js/lib/languages/typescript';
 import xml from 'highlight.js/lib/languages/xml';
 import yaml from 'highlight.js/lib/languages/yaml';
+import { escapeHtml } from './html';
 
 interface HighlightCodeResult {
   value: string;
@@ -48,26 +49,6 @@ highlighter.registerAliases(['yml'], { languageName: 'yaml' });
 highlighter.registerAliases(['rb'], { languageName: 'ruby' });
 highlighter.registerAliases(['rs'], { languageName: 'rust' });
 
-const LANGUAGE_ALIASES: Record<string, string> = {
-  js: 'javascript',
-  py: 'python',
-  rb: 'ruby',
-  rs: 'rust',
-  sh: 'bash',
-  shell: 'bash',
-  ts: 'typescript',
-  yml: 'yaml',
-};
-
-const HTML_ESCAPE_PATTERN = /[&<>"']/g;
-const HTML_ESCAPES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
-
 export function highlightCode(text: string, lang?: string): HighlightCodeResult {
   const normalizedLanguage = normalizeLanguage(lang);
   if (!normalizedLanguage || !highlighter.getLanguage(normalizedLanguage)) {
@@ -94,9 +75,5 @@ function normalizeLanguage(lang?: string): string | undefined {
     return undefined;
   }
 
-  return LANGUAGE_ALIASES[candidate] ?? candidate;
-}
-
-function escapeHtml(input: string): string {
-  return input.replace(HTML_ESCAPE_PATTERN, (character) => HTML_ESCAPES[character] ?? character);
+  return candidate;
 }

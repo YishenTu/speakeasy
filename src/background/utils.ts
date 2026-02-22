@@ -1,11 +1,8 @@
 export { isRecord } from '../shared/utils';
+import { toErrorMessage as toSharedErrorMessage } from '../shared/error-message';
 
 export function toErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return 'Unexpected error.';
+  return toSharedErrorMessage(error, { fallback: 'Unexpected error.' });
 }
 
 export function assertNever(value: never): never {

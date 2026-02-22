@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../shared/chat';
+import type { ChatAttachment } from '../shared/messages';
 import { extractAttachments, renderContentForChat, renderThinkingSummaryForChat } from './gemini';
 import type { ChatBranchNode, ChatBranchTree, ChatSession, GeminiContent } from './types';
 import { isRecord } from './utils';
@@ -63,12 +64,18 @@ export function ensureBranchTree(session: ChatSession): ChatBranchTree {
 }
 
 export function cloneGeminiContent(content: GeminiContent): GeminiContent {
-  return {
-    ...(content.id ? { id: content.id } : {}),
+  const cloned: GeminiContent = {
     role: content.role,
     parts: content.parts.map((part) => ({ ...part })),
-    ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
   };
+  if (content.id) {
+    cloned.id = content.id;
+  }
+  if (content.metadata) {
+    cloned.metadata = structuredClone(content.metadata);
+  }
+
+  return cloned;
 }
 
 export function appendContentsToBranch(
@@ -210,7 +217,10 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
 
     const text = renderContentForChat(content).trim();
     const thinkingSummary = renderThinkingSummaryForChat(content).trim();
-    const attachments = extractAttachments(content);
+    const attachments = applyAttachmentPreviewMetadata(
+      extractAttachments(content),
+      content.metadata?.attachmentPreviewByFileUri,
+    );
     if (!text && !thinkingSummary && attachments.length === 0) {
       continue;
     }
@@ -233,20 +243,41 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
     const branchOptionCount = branchContext?.count ?? 0;
     const branchOptionIndex = branchContext?.selectedIndex ?? 0;
 
-    messages.push({
+    const message: ChatMessage = {
       id: crypto.randomUUID(),
       role,
       content: text,
-      ...(interactionId ? { interactionId } : {}),
-      ...(previousInteractionId ? { previousInteractionId } : {}),
-      ...(thinkingSummary ? { thinkingSummary } : {}),
-      ...(stats ? { stats } : {}),
-      ...(attachments.length > 0 ? { attachments } : {}),
-      ...(sourceModel ? { sourceModel } : {}),
-      ...(timestamp ? { timestamp } : {}),
-      ...(branchOptionCount > 1 ? { branchOptionInteractionIds, branchOptionCount } : {}),
-      ...(branchOptionIndex > 0 ? { branchOptionIndex } : {}),
-    });
+    };
+    if (interactionId) {
+      message.interactionId = interactionId;
+    }
+    if (previousInteractionId) {
+      message.previousInteractionId = previousInteractionId;
+    }
+    if (thinkingSummary) {
+      message.thinkingSummary = thinkingSummary;
+    }
+    if (stats) {
+      message.stats = stats;
+    }
+    if (attachments.length > 0) {
+      message.attachments = attachments;
+    }
+    if (sourceModel) {
+      message.sourceModel = sourceModel;
+    }
+    if (timestamp) {
+      message.timestamp = timestamp;
+    }
+    if (branchOptionCount > 1) {
+      message.branchOptionInteractionIds = branchOptionInteractionIds;
+      message.branchOptionCount = branchOptionCount;
+    }
+    if (branchOptionIndex > 0) {
+      message.branchOptionIndex = branchOptionIndex;
+    }
+
+    messages.push(message);
   }
 
   return messages;
@@ -255,12 +286,15 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
 export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   const rendered = renderContentForChat(content).trim();
   const thinkingSummary = renderThinkingSummaryForChat(content).trim();
-  const attachments = extractAttachments(content);
+  const attachments = applyAttachmentPreviewMetadata(
+    extractAttachments(content),
+    content.metadata?.attachmentPreviewByFileUri,
+  );
   const stats = content.metadata?.responseStats;
   const interactionId = content.metadata?.interactionId?.trim() || undefined;
   const sourceModel = content.metadata?.sourceModel?.trim();
   const timestamp = parseTimestamp(content.metadata?.createdAt);
-  return {
+  const message: ChatMessage = {
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
@@ -268,13 +302,61 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
       (!thinkingSummary && attachments.length === 0
         ? 'Gemini returned a response with no displayable text.'
         : ''),
-    ...(interactionId ? { interactionId } : {}),
-    ...(thinkingSummary ? { thinkingSummary } : {}),
-    ...(stats ? { stats } : {}),
-    ...(attachments.length > 0 ? { attachments } : {}),
-    ...(sourceModel ? { sourceModel } : {}),
-    ...(timestamp ? { timestamp } : {}),
   };
+  if (interactionId) {
+    message.interactionId = interactionId;
+  }
+  if (thinkingSummary) {
+    message.thinkingSummary = thinkingSummary;
+  }
+  if (stats) {
+    message.stats = stats;
+  }
+  if (attachments.length > 0) {
+    message.attachments = attachments;
+  }
+  if (sourceModel) {
+    message.sourceModel = sourceModel;
+  }
+  if (timestamp) {
+    message.timestamp = timestamp;
+  }
+
+  return message;
+}
+
+function applyAttachmentPreviewMetadata(
+  attachments: ChatAttachment[],
+  previewByFileUri: Record<string, string> | undefined,
+): ChatAttachment[] {
+  if (!previewByFileUri || attachments.length === 0) {
+    return attachments;
+  }
+
+  let changed = false;
+  const nextAttachments = attachments.map((attachment) => {
+    if (attachment.previewUrl) {
+      return attachment;
+    }
+
+    const fileUri = attachment.fileUri?.trim() ?? '';
+    if (!fileUri) {
+      return attachment;
+    }
+
+    const previewDataUrl = previewByFileUri[fileUri]?.trim() ?? '';
+    if (!previewDataUrl) {
+      return attachment;
+    }
+
+    changed = true;
+    return {
+      ...attachment,
+      previewUrl: previewDataUrl,
+    };
+  });
+
+  return changed ? nextAttachments : attachments;
 }
 
 interface AssistantBranchContext {
@@ -608,12 +690,18 @@ function normalizeBranchTree(tree: ChatBranchTree): void {
           .filter((childNodeId) => childNodeId.length > 0),
       ),
     );
-    normalizedNodes[normalizedNodeId] = {
+    const normalizedNode: ChatBranchNode = {
       id: normalizedNodeId,
-      ...(normalizedParentNodeId ? { parentNodeId: normalizedParentNodeId } : {}),
       childNodeIds,
-      ...(node.content ? { content: cloneGeminiContent(node.content) } : {}),
     };
+    if (normalizedParentNodeId) {
+      normalizedNode.parentNodeId = normalizedParentNodeId;
+    }
+    if (node.content) {
+      normalizedNode.content = cloneGeminiContent(node.content);
+    }
+
+    normalizedNodes[normalizedNodeId] = normalizedNode;
   }
 
   if (!normalizedNodes[normalizedRootNodeId]) {

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  appendContentsToBranch,
   createSession,
+  ensureBranchTree,
   mapSessionToChatMessages,
+  setActiveLeafNodeId,
   toAssistantChatMessage,
 } from '../../src/background/sessions';
 import type { ChatSession } from '../../src/background/types';
@@ -64,7 +67,11 @@ describe('sessions', () => {
             },
           ],
         },
-        { id: 'm5', role: 'model', parts: [{ unknown: true }] },
+        {
+          id: 'm5',
+          role: 'model',
+          parts: [{ interactionOutput: { type: 'unknown_part' } }],
+        },
       ],
     };
 
@@ -395,7 +402,7 @@ describe('sessions', () => {
   it('provides a fallback assistant message when content is not displayable', () => {
     const message = toAssistantChatMessage({
       role: 'model',
-      parts: [{ someHiddenPayload: true }],
+      parts: [{ interactionOutput: { type: 'opaque_payload' } }],
     });
 
     expect(message.role).toBe('assistant');
@@ -438,6 +445,46 @@ describe('sessions', () => {
     ]);
   });
 
+  it('maps persisted attachment preview metadata to rendered message previews', () => {
+    const session: ChatSession = {
+      id: 'chat-preview-meta',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      contents: [
+        {
+          id: 'u1',
+          role: 'user',
+          parts: [
+            {
+              fileData: {
+                fileUri: 'https://example.invalid/files/image.png',
+                mimeType: 'image/png',
+                displayName: 'image.png',
+              },
+            },
+          ],
+          metadata: {
+            attachmentPreviewByFileUri: {
+              'https://example.invalid/files/image.png': 'data:image/png;base64,aGVsbG8=',
+            },
+          },
+        },
+      ],
+    };
+
+    const messages = mapSessionToChatMessages(session);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]?.attachments).toEqual([
+      {
+        name: 'image.png',
+        mimeType: 'image/png',
+        fileUri: 'https://example.invalid/files/image.png',
+        previewUrl: 'data:image/png;base64,aGVsbG8=',
+      },
+    ]);
+  });
+
   it('maps assistant response stats and interaction id from content metadata', () => {
     const message = toAssistantChatMessage({
       id: 'assistant-content-1',
@@ -475,5 +522,107 @@ describe('sessions', () => {
     const session = createSession();
     expect(session.contents).toEqual([]);
     expect(session.createdAt).toBe(session.updatedAt);
+  });
+
+  it('reconstructs branch tree from legacy flat contents when branchTree is missing', () => {
+    const session: ChatSession = {
+      id: 'legacy-chat',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      contents: [
+        { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
+        {
+          id: 'm1',
+          role: 'model',
+          parts: [{ text: 'Answer' }],
+          metadata: { interactionId: 'interaction-1' },
+        },
+      ],
+    };
+
+    const branchTree = ensureBranchTree(session);
+    expect(Object.keys(branchTree.nodes).length).toBe(3);
+    expect(branchTree.nodes[branchTree.rootNodeId]?.content).toBeUndefined();
+
+    const messages = mapSessionToChatMessages(session);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.interactionId).toBe('interaction-1');
+  });
+
+  it('throws when appending contents to an unknown branch parent node', () => {
+    const session = createSession();
+    const content = {
+      id: 'user-next',
+      role: 'user' as const,
+      parts: [{ text: 'Follow-up' }],
+    };
+
+    expect(() => appendContentsToBranch(session, 'missing-node-id', [content])).toThrow(
+      /does not exist/i,
+    );
+  });
+
+  it('sets active leaf directly when followLatestDescendant is false', () => {
+    const session = createSession();
+    const rootNodeId = session.branchTree?.rootNodeId ?? '';
+    session.branchTree = {
+      rootNodeId,
+      activeLeafNodeId: 'assistant-node',
+      nodes: {
+        [rootNodeId]: {
+          id: rootNodeId,
+          childNodeIds: ['user-node'],
+        },
+        'user-node': {
+          id: 'user-node',
+          parentNodeId: rootNodeId,
+          childNodeIds: ['assistant-node'],
+          content: {
+            id: 'u1',
+            role: 'user',
+            parts: [{ text: 'Question' }],
+          },
+        },
+        'assistant-node': {
+          id: 'assistant-node',
+          parentNodeId: 'user-node',
+          childNodeIds: ['user-followup'],
+          content: {
+            id: 'm1',
+            role: 'model',
+            parts: [{ text: 'Answer' }],
+            metadata: { interactionId: 'interaction-1' },
+          },
+        },
+        'user-followup': {
+          id: 'user-followup',
+          parentNodeId: 'assistant-node',
+          childNodeIds: [],
+          content: {
+            id: 'u2',
+            role: 'user',
+            parts: [{ text: 'Follow-up' }],
+          },
+        },
+      },
+    };
+    session.contents = [
+      { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
+      {
+        id: 'm1',
+        role: 'model',
+        parts: [{ text: 'Answer' }],
+        metadata: { interactionId: 'interaction-1' },
+      },
+      { id: 'u2', role: 'user', parts: [{ text: 'Follow-up' }] },
+    ];
+    session.lastInteractionId = 'interaction-1';
+
+    const switched = setActiveLeafNodeId(session, 'assistant-node', false);
+
+    expect(switched).toBe(true);
+    expect(session.branchTree?.activeLeafNodeId).toBe('assistant-node');
+    expect(session.contents.map((content) => content.id)).toEqual(['u1', 'm1']);
+    expect(session.lastInteractionId).toBe('interaction-1');
   });
 });

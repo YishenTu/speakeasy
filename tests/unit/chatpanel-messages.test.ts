@@ -215,7 +215,7 @@ describe('chatpanel messages', () => {
     expect(label?.textContent).toBe('copied');
   });
 
-  it('revokes blob preview URLs after image load', () => {
+  it('keeps blob preview URLs alive after image load', () => {
     const testWindow = dom?.window;
     if (!testWindow) {
       throw new Error('DOM test environment is not installed.');
@@ -243,9 +243,49 @@ describe('chatpanel messages', () => {
     const image = messageList.querySelector('img');
     expect(image).not.toBeNull();
     image?.dispatchEvent(new testWindow.Event('load'));
-    expect(revokeSpy).toHaveBeenCalledWith('blob:preview-image');
+    expect(revokeSpy).not.toHaveBeenCalled();
 
     revokeSpy.mockRestore();
+  });
+
+  it('renders user attachments as composer-style tiles above and outside the user bubble', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'user-attachment-order',
+        role: 'user',
+        content: 'Describe this image.',
+        attachments: [
+          {
+            name: 'preview.png',
+            mimeType: 'image/png',
+            previewUrl: 'data:image/png;base64,cA==',
+          },
+          {
+            name: 'spec.pdf',
+            mimeType: 'application/pdf',
+          },
+        ],
+      },
+      messageList,
+    );
+
+    const row = messageList.querySelector(
+      'li[data-message-id="user-attachment-order"]',
+    ) as HTMLLIElement | null;
+    const strip = row?.querySelector('.message-attachment-strip') as HTMLDivElement | null;
+    const bubble = messageList.querySelector('.bubble-user') as HTMLDivElement | null;
+    const messageText = bubble?.querySelector('.message-text') as HTMLDivElement | null;
+    expect(strip).not.toBeNull();
+    expect(messageText).not.toBeNull();
+    expect(strip?.classList.contains('file-preview-strip')).toBe(true);
+    expect(strip?.querySelectorAll('.file-preview-tile')).toHaveLength(2);
+    expect(strip?.querySelectorAll('.file-preview-name')).toHaveLength(2);
+    expect(strip?.querySelector('.file-preview-generic.is-pdf')).not.toBeNull();
+    expect(bubble?.querySelector('.attachment-list')).toBeNull();
+    expect(row?.firstElementChild).toBe(strip);
+    expect(strip?.nextElementSibling).toBe(bubble);
   });
 
   it('renders assistant thinking disclosure expanded by default', () => {
@@ -498,6 +538,37 @@ describe('chatpanel messages', () => {
     expect(copyButton?.classList.contains('is-copied')).toBe(true);
   });
 
+  it('shows a temporary error state when response copy fails', async () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    const clipboard = {
+      writeText: (_value: string) => Promise.reject(new Error('clipboard denied')),
+    };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    appendMessage(
+      {
+        id: 'assistant-copy-failure',
+        role: 'assistant',
+        content: 'Final answer',
+      },
+      messageList,
+    );
+
+    const copyButton = messageList.querySelector('.message-copy-btn') as HTMLButtonElement | null;
+    expect(copyButton).not.toBeNull();
+
+    copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(copyButton?.getAttribute('aria-label')).toBe('Copy failed');
+    expect(copyButton?.classList.contains('is-copy-failed')).toBe(true);
+  });
+
   it('renders only regenerate action button for assistant messages with interaction ids', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
     const actionCalls: Array<{ action: 'regen'; messageId: string; interactionId: string }> = [];
@@ -717,6 +788,38 @@ describe('chatpanel messages', () => {
     ]);
   });
 
+  it('shows a temporary error label when fenced code copy fails', async () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    const clipboard = {
+      writeText: (_value: string) => Promise.reject(new Error('clipboard denied')),
+    };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+
+    renderAll(
+      [
+        {
+          id: 'a-code-copy-failure',
+          role: 'assistant',
+          content: ['```ts', 'const value = 1;', '```'].join('\n'),
+        },
+      ],
+      messageList,
+    );
+
+    const label = messageList.querySelector('.message-text .code-lang');
+    expect(label).not.toBeNull();
+
+    label?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(label?.textContent).toBe('copy failed');
+  });
+
   it('renders fork branch switch on user action bar and not assistant action bar', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
     const selected: Array<{ messageId: string; interactionId: string }> = [];
@@ -808,6 +911,99 @@ describe('chatpanel messages', () => {
     expect(messageList.querySelector('.message-fork-btn')).toBeNull();
   });
 
+  it('escapes message ids when replacing and removing rendered messages', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const trickyMessageId = 'assistant"\']special';
+
+    renderAll(
+      [
+        {
+          id: trickyMessageId,
+          role: 'assistant',
+          content: 'before',
+        },
+      ],
+      messageList,
+    );
+
+    expect(() =>
+      replaceMessageById(
+        trickyMessageId,
+        {
+          id: trickyMessageId,
+          role: 'assistant',
+          content: 'after',
+        },
+        messageList,
+      ),
+    ).not.toThrow();
+    expect(messageList.textContent).toContain('after');
+
+    expect(() => removeMessageById(trickyMessageId, messageList)).not.toThrow();
+    expect(messageList.children).toHaveLength(0);
+  });
+
+  it('revokes blob preview URLs when replacing image messages before load', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const revokeSpy = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    appendMessage(
+      {
+        id: 'assistant-preview-replace',
+        role: 'assistant',
+        content: 'Pending image',
+        attachments: [
+          {
+            name: 'preview.png',
+            mimeType: 'image/png',
+            previewUrl: 'blob:preview-before-load',
+          },
+        ],
+      },
+      messageList,
+    );
+
+    const replaced = replaceMessageById(
+      'assistant-preview-replace',
+      {
+        id: 'assistant-preview-replace',
+        role: 'assistant',
+        content: 'Replaced before preview load',
+      },
+      messageList,
+    );
+
+    expect(replaced).toBe(true);
+    expect(revokeSpy).toHaveBeenCalledWith('blob:preview-before-load');
+    revokeSpy.mockRestore();
+  });
+
+  it('revokes blob preview URLs when removing image messages before load', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const revokeSpy = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    appendMessage(
+      {
+        id: 'assistant-preview-remove',
+        role: 'assistant',
+        content: 'Pending image',
+        attachments: [
+          {
+            name: 'preview.png',
+            mimeType: 'image/png',
+            previewUrl: 'blob:preview-remove-before-load',
+          },
+        ],
+      },
+      messageList,
+    );
+
+    const removed = removeMessageById('assistant-preview-remove', messageList);
+    expect(removed).toBe(true);
+    expect(revokeSpy).toHaveBeenCalledWith('blob:preview-remove-before-load');
+    revokeSpy.mockRestore();
+  });
+
   it('renders a timestamp in the assistant action bar when present', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
     const ts = new Date('2026-02-22T14:30:00Z').getTime();
@@ -817,14 +1013,14 @@ describe('chatpanel messages', () => {
       options: Intl.DateTimeFormatOptions | undefined;
     }> = [];
 
-    Date.prototype.toLocaleTimeString = (function (
+    Date.prototype.toLocaleTimeString = function (
       this: Date,
       locales?: Intl.LocalesArgument,
       options?: Intl.DateTimeFormatOptions,
     ): string {
       formatCalls.push({ locales, options });
       return '14:30';
-    }) as typeof Date.prototype.toLocaleTimeString;
+    } as typeof Date.prototype.toLocaleTimeString;
 
     try {
       appendMessage(
@@ -855,6 +1051,8 @@ describe('chatpanel messages', () => {
 
   it('falls back to a generic error message for non-Error values', () => {
     expect(toErrorMessage(new Error('specific failure'))).toBe('specific failure');
-    expect(toErrorMessage('plain string')).toBe('Request failed. Please try again.');
+    expect(toErrorMessage('plain string')).toBe('plain string');
+    expect(toErrorMessage({ message: 'typed object error' })).toBe('typed object error');
+    expect(toErrorMessage({})).toBe('Request failed. Please try again.');
   });
 });

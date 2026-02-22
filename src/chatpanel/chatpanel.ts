@@ -1,4 +1,9 @@
 import {
+  ATTACHMENT_PREVIEW_MAX_BYTES,
+  ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
+  estimateBase64DecodedByteLength,
+} from '../shared/attachment-preview';
+import {
   type ChatMessage,
   createNewChat,
   deleteChatById,
@@ -11,7 +16,7 @@ import {
   sendMessage,
   switchAssistantBranch,
 } from '../shared/chat';
-import type { ChatSessionSummary } from '../shared/runtime';
+import type { ChatSessionSummary, FileDataAttachmentPayload } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
 import { createDeleteSessionConfirmation } from './delete-confirmation';
 import { queryRequiredElement } from './dom';
@@ -26,7 +31,6 @@ import {
 } from './messages';
 import { buildOptimisticUserMessage, findLatestAssistantInteractionId } from './optimistic-message';
 import { requestOpenSettings } from './runtime';
-import { runWithSuccessCommit } from './success-commit';
 import { getChatPanelTemplate } from './template';
 import { uploadFilesToGemini } from './uploads';
 
@@ -39,6 +43,7 @@ const DEFAULT_PANEL_WIDTH_PX = 430;
 const DEFAULT_PANEL_HEIGHT_RATIO = 0.8;
 const MAX_STAGED_FILES = 5;
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const INPUT_MAX_PANEL_HEIGHT_RATIO = 1 / 3;
 const ACCEPTED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -91,6 +96,9 @@ type StagedFile = {
   name: string;
   mimeType: string;
   previewUrl?: string;
+  uploadState: 'uploading' | 'uploaded' | 'failed';
+  uploadedAttachment?: FileDataAttachmentPayload;
+  uploadError?: string;
 };
 
 type ActiveStreamDraft = {
@@ -141,16 +149,50 @@ function mountChatPanel(): void {
     throw new Error('Missing resize zones in chat panel template.');
   }
 
-  const resizeComposerInput = (): void => {
-    input.style.height = 'auto';
-    input.style.height = `${input.scrollHeight}px`;
+  let panelLayout = createDefaultLayout();
+
+  const parseCssPixels = (value: string, fallbackValue: number): number => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallbackValue;
   };
+
+  const getComposerInputMinimumHeight = (): number => {
+    const computed = window.getComputedStyle(input);
+    const declaredRows = Number.parseInt(input.getAttribute('rows') ?? '1', 10);
+    const rows = Number.isFinite(declaredRows) && declaredRows > 0 ? declaredRows : 1;
+    const fontSize = parseCssPixels(computed.fontSize, 13);
+    const lineHeight = parseCssPixels(computed.lineHeight, fontSize * 1.4);
+    const verticalPadding =
+      parseCssPixels(computed.paddingTop, 0) + parseCssPixels(computed.paddingBottom, 0);
+    const verticalBorder =
+      parseCssPixels(computed.borderTopWidth, 0) + parseCssPixels(computed.borderBottomWidth, 0);
+
+    return Math.max(1, Math.ceil(rows * lineHeight + verticalPadding + verticalBorder));
+  };
+
+  const resizeComposerInput = (): void => {
+    const minInputHeight = getComposerInputMinimumHeight();
+    const panelHeight = shell.clientHeight || panelLayout.height;
+    const maxInputHeight = Math.max(
+      minInputHeight,
+      Math.floor(panelHeight * INPUT_MAX_PANEL_HEIGHT_RATIO),
+    );
+    input.style.minHeight = `${minInputHeight}px`;
+    input.style.maxHeight = `${maxInputHeight}px`;
+    input.style.height = 'auto';
+    const nextHeight = Math.max(input.scrollHeight, minInputHeight);
+    input.style.height = `${Math.min(nextHeight, maxInputHeight)}px`;
+  };
+  const syncPanelLayout = (): void => {
+    applyPanelLayout(shell, panelLayout);
+    resizeComposerInput();
+  };
+
   input.addEventListener('input', resizeComposerInput);
 
   let isPanelOpen = false;
   let isBusy = false;
   let hasLoadedHistory = false;
-  let panelLayout = createDefaultLayout();
   let interactionState: InteractionState | null = null;
   let previousUserSelect = '';
   let hasUserSelectOverride = false;
@@ -161,6 +203,7 @@ function mountChatPanel(): void {
   let historySessions: ChatSessionSummary[] = [];
   let isHistoryMenuOpen = false;
   const activeStreamDrafts = new Map<string, ActiveStreamDraft>();
+  const localAttachmentPreviewUrls = new Map<string, string>();
   const messageRenderOptions: MessageRenderOptions = {
     onAssistantAction: (action, message) => {
       void handleMessageAction(action, message);
@@ -173,7 +216,7 @@ function mountChatPanel(): void {
     },
   };
 
-  applyPanelLayout(shell, panelLayout);
+  syncPanelLayout();
   historyToggleButton.setAttribute('aria-expanded', 'false');
 
   input.addEventListener('paste', (event) => {
@@ -297,6 +340,7 @@ function mountChatPanel(): void {
         file,
         name: file.name,
         mimeType: file.type || 'application/octet-stream',
+        uploadState: 'uploading',
         ...(previewUrl ? { previewUrl } : {}),
       });
     }
@@ -306,34 +350,144 @@ function mountChatPanel(): void {
       appendLocalError(`Only ${availableSlots} additional file(s) were staged.`);
     }
     renderStagedFiles();
+    for (const staged of nextFiles) {
+      void uploadStagedFile(staged.id);
+    }
   }
 
   function renderStagedFiles(): void {
     const fragment = document.createDocumentFragment();
 
     for (const staged of stagedFiles) {
-      const chip = document.createElement('div');
-      chip.className = 'file-chip';
-      chip.dataset.fileId = staged.id;
+      const previewItem = document.createElement('div');
+      previewItem.className = 'file-preview-item';
+      previewItem.dataset.fileId = staged.id;
+      const tile = document.createElement('div');
+      tile.className = 'file-preview-tile';
+      tile.setAttribute('aria-label', `${staged.name} (${staged.mimeType})`);
+      tile.setAttribute('title', `${staged.name} (${staged.mimeType})`);
+      if (staged.uploadState === 'uploading') {
+        tile.classList.add('is-uploading');
+      } else if (staged.uploadState === 'failed') {
+        tile.classList.add('is-failed');
+      }
 
-      const label = document.createElement('span');
-      label.className = 'file-chip-label';
-      label.textContent = `${staged.name} (${staged.mimeType})`;
+      if (isImageMimeType(staged.mimeType) && staged.previewUrl) {
+        const image = document.createElement('img');
+        image.className = 'file-preview-image';
+        image.src = staged.previewUrl;
+        image.alt = staged.name;
+        image.loading = 'lazy';
+        tile.append(image);
+      } else {
+        const generic = document.createElement('div');
+        generic.className = 'file-preview-generic';
+        if (isPdfMimeType(staged.mimeType)) {
+          generic.classList.add('is-pdf');
+        }
+
+        const fileTypeLabel = document.createElement('span');
+        fileTypeLabel.className = 'file-preview-filetype';
+        fileTypeLabel.textContent = getFilePreviewTypeLabel(staged);
+
+        generic.append(fileTypeLabel);
+        tile.append(generic);
+      }
 
       const removeButton = document.createElement('button');
-      removeButton.className = 'file-chip-remove';
+      removeButton.className = 'file-preview-remove';
       removeButton.type = 'button';
       removeButton.textContent = '×';
       removeButton.setAttribute('aria-label', `Remove ${staged.name}`);
       removeButton.addEventListener('click', () => {
         removeStagedFile(staged.id);
       });
+      tile.append(removeButton);
 
-      chip.append(label, removeButton);
-      fragment.append(chip);
+      if (staged.uploadState === 'uploading') {
+        const overlay = document.createElement('div');
+        overlay.className = 'file-preview-upload-overlay';
+
+        const spinner = document.createElement('span');
+        spinner.className = 'file-preview-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+
+        overlay.append(spinner);
+        tile.append(overlay);
+      } else if (staged.uploadState === 'failed') {
+        const failedBadge = document.createElement('span');
+        failedBadge.className = 'file-preview-failed';
+        failedBadge.textContent = '!';
+        failedBadge.setAttribute('aria-label', 'Upload failed');
+        tile.append(failedBadge);
+      }
+
+      const nameLabel = document.createElement('span');
+      nameLabel.className = 'file-preview-name';
+      nameLabel.textContent = staged.name;
+      nameLabel.setAttribute('title', staged.name);
+
+      previewItem.append(tile, nameLabel);
+      fragment.append(previewItem);
     }
 
     filePreviews.replaceChildren(fragment);
+    resizeComposerInput();
+  }
+
+  async function uploadStagedFile(fileId: string): Promise<void> {
+    const staged = stagedFiles.find((candidate) => candidate.id === fileId);
+    if (!staged || staged.uploadState !== 'uploading') {
+      return;
+    }
+
+    try {
+      const uploaded = await uploadFilesToGemini([staged.file]);
+      const uploadedWithPreviews = await withAttachmentPreviewDataUrls(uploaded, [staged]);
+      const uploadedAttachment = uploadedWithPreviews[0];
+      if (!uploadedAttachment) {
+        throw new Error(`Failed to upload "${staged.name}".`);
+      }
+
+      if (!stagedFiles.some((candidate) => candidate.id === fileId)) {
+        return;
+      }
+
+      stagedFiles = stagedFiles.map((candidate) => {
+        if (candidate.id !== fileId) {
+          return candidate;
+        }
+        const { uploadError, ...rest } = candidate;
+        void uploadError;
+        return {
+          ...rest,
+          uploadState: 'uploaded' as const,
+          uploadedAttachment,
+        };
+      });
+      renderStagedFiles();
+    } catch (error: unknown) {
+      const current = stagedFiles.find((candidate) => candidate.id === fileId);
+      if (!current) {
+        return;
+      }
+
+      const errorMessage = toErrorMessage(error);
+      stagedFiles = stagedFiles.map((candidate) => {
+        if (candidate.id !== fileId) {
+          return candidate;
+        }
+        const { uploadedAttachment, ...rest } = candidate;
+        void uploadedAttachment;
+        return {
+          ...rest,
+          uploadState: 'failed' as const,
+          uploadError: errorMessage,
+        };
+      });
+      renderStagedFiles();
+      appendLocalError(`Failed to upload "${current.name}": ${errorMessage}`);
+    }
   }
 
   function removeStagedFile(fileId: string): void {
@@ -352,13 +506,28 @@ function mountChatPanel(): void {
   function clearStagedFiles(revokePreviews: boolean): void {
     if (revokePreviews) {
       for (const staged of stagedFiles) {
-        if (staged.previewUrl) {
-          URL.revokeObjectURL(staged.previewUrl);
+        const previewUrl = staged.previewUrl;
+        if (!previewUrl) {
+          continue;
         }
+        if (isRetainedLocalAttachmentPreview(previewUrl)) {
+          continue;
+        }
+        URL.revokeObjectURL(previewUrl);
       }
     }
     stagedFiles = [];
     renderStagedFiles();
+  }
+
+  function isRetainedLocalAttachmentPreview(previewUrl: string): boolean {
+    for (const retainedPreviewUrl of localAttachmentPreviewUrls.values()) {
+      if (retainedPreviewUrl === previewUrl) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   function appendLocalError(message: string): void {
@@ -414,8 +583,7 @@ function mountChatPanel(): void {
   }
 
   function formatHistoryMeta(session: ChatSessionSummary): string {
-    const timestamp = formatHistoryTimestamp(session.updatedAt);
-    return session.parentChatId ? `Branch · ${timestamp}` : timestamp;
+    return formatHistoryTimestamp(session.updatedAt);
   }
 
   function setHistoryMenuOpen(nextOpen: boolean): void {
@@ -558,8 +726,10 @@ function mountChatPanel(): void {
   }
 
   function renderMessages(messages: ChatMessage[]): void {
-    renderAll(messages, messageList, messageRenderOptions);
-    lastAssistantInteractionId = findLatestAssistantInteractionId(messages);
+    const messagesWithPreviews = applyLocalAttachmentPreviews(messages);
+    renderAll(messagesWithPreviews, messageList, messageRenderOptions);
+    lastAssistantInteractionId = findLatestAssistantInteractionId(messagesWithPreviews);
+    pruneLocalAttachmentPreviews(messagesWithPreviews);
   }
 
   async function handleMessageAction(
@@ -706,7 +876,7 @@ function mountChatPanel(): void {
 
   window.addEventListener('resize', () => {
     panelLayout = clampPanelLayout(panelLayout);
-    applyPanelLayout(shell, panelLayout);
+    syncPanelLayout();
   });
 
   dragHandle.addEventListener('pointerdown', (event) => {
@@ -778,7 +948,7 @@ function mountChatPanel(): void {
       );
     }
 
-    applyPanelLayout(shell, panelLayout);
+    syncPanelLayout();
   });
 
   shell.addEventListener('pointerup', (event) => {
@@ -890,6 +1060,29 @@ function mountChatPanel(): void {
     }
 
     const stagedSnapshot = [...stagedFiles];
+    const uploadingStagedFiles = stagedSnapshot.filter(
+      (staged) => staged.uploadState === 'uploading',
+    );
+    if (uploadingStagedFiles.length > 0) {
+      appendLocalError('Please wait for file uploads to finish before sending.');
+      return;
+    }
+
+    const failedStagedFiles = stagedSnapshot.filter((staged) => staged.uploadState === 'failed');
+    if (failedStagedFiles.length > 0) {
+      appendLocalError('Remove failed uploads before sending.');
+      return;
+    }
+
+    const attachmentsForSend: FileDataAttachmentPayload[] = [];
+    for (const staged of stagedSnapshot) {
+      if (!staged.uploadedAttachment) {
+        appendLocalError(`"${staged.name}" is not ready to send yet.`);
+        return;
+      }
+      attachmentsForSend.push(staged.uploadedAttachment);
+    }
+
     let optimisticUserMessageId: string | undefined;
     let assistantPlaceholderId: string | undefined;
     let streamRequestId: string | undefined;
@@ -898,15 +1091,14 @@ function mountChatPanel(): void {
     try {
       const selectedModel = toolbar.selectedModel();
       const selectedThinking = toolbar.selectedThinkingLevel();
-      const uploadedAttachments = await uploadFilesToGemini(
-        stagedSnapshot.map((staged) => staged.file),
-      );
       streamRequestId = crypto.randomUUID();
       const optimisticUserMessage = buildOptimisticUserMessage(
         userText,
         stagedSnapshot,
         lastAssistantInteractionId,
+        attachmentsForSend,
       );
+      rememberLocalAttachmentPreviews(optimisticUserMessage);
       optimisticUserMessageId = optimisticUserMessage.id;
       assistantPlaceholderId = crypto.randomUUID();
       appendMessage(optimisticUserMessage, messageList, messageRenderOptions);
@@ -921,8 +1113,8 @@ function mountChatPanel(): void {
       );
 
       input.value = '';
-      input.style.height = 'auto';
       clearStagedFiles(true);
+      resizeComposerInput();
 
       activeStreamDrafts.set(streamRequestId, {
         assistantMessageId: assistantPlaceholderId,
@@ -934,7 +1126,7 @@ function mountChatPanel(): void {
         userText,
         selectedModel,
         selectedThinking,
-        uploadedAttachments,
+        attachmentsForSend,
         streamRequestId,
       );
       activeStreamDrafts.delete(streamRequestId);
@@ -1023,8 +1215,8 @@ function mountChatPanel(): void {
   async function openPanel(): Promise<void> {
     isPanelOpen = true;
     panelLayout = clampPanelLayout(panelLayout);
-    applyPanelLayout(shell, panelLayout);
     shell.hidden = false;
+    syncPanelLayout();
 
     if (!hasLoadedHistory) {
       await loadConversationHistory();
@@ -1048,17 +1240,11 @@ function mountChatPanel(): void {
 
   async function loadConversationHistory(): Promise<void> {
     try {
-      await runWithSuccessCommit(
-        async () => {
-          const history = await loadChatMessages();
-          activeChatId = history.chatId;
-          renderMessages(history.messages);
-          await refreshHistoryDropdown();
-        },
-        () => {
-          hasLoadedHistory = true;
-        },
-      );
+      const history = await loadChatMessages();
+      activeChatId = history.chatId;
+      renderMessages(history.messages);
+      await refreshHistoryDropdown();
+      hasLoadedHistory = true;
     } catch (error: unknown) {
       renderMessages([
         {
@@ -1082,6 +1268,86 @@ function mountChatPanel(): void {
     historyToggleButton.disabled = nextBusy;
     renderHistoryMenu();
     form.toggleAttribute('aria-busy', nextBusy);
+  }
+
+  function rememberLocalAttachmentPreviews(message: ChatMessage): void {
+    for (const attachment of message.attachments ?? []) {
+      const fileUri = attachment.fileUri?.trim() ?? '';
+      const previewUrl = attachment.previewUrl?.trim() ?? '';
+      if (!fileUri || !previewUrl || !isImageMimeType(attachment.mimeType)) {
+        continue;
+      }
+
+      const existing = localAttachmentPreviewUrls.get(fileUri);
+      if (existing && existing !== previewUrl) {
+        URL.revokeObjectURL(existing);
+      }
+      localAttachmentPreviewUrls.set(fileUri, previewUrl);
+    }
+  }
+
+  function applyLocalAttachmentPreviews(messages: ChatMessage[]): ChatMessage[] {
+    return messages.map((message) => {
+      const attachments = message.attachments;
+      if (!attachments || attachments.length === 0) {
+        return message;
+      }
+
+      let changed = false;
+      const nextAttachments = attachments.map((attachment) => {
+        if (attachment.previewUrl || !isImageMimeType(attachment.mimeType)) {
+          return attachment;
+        }
+        const fileUri = attachment.fileUri?.trim() ?? '';
+        if (!fileUri) {
+          return attachment;
+        }
+
+        const localPreviewUrl = localAttachmentPreviewUrls.get(fileUri);
+        if (!localPreviewUrl) {
+          return attachment;
+        }
+
+        changed = true;
+        return {
+          ...attachment,
+          previewUrl: localPreviewUrl,
+        };
+      });
+
+      if (!changed) {
+        return message;
+      }
+
+      return {
+        ...message,
+        attachments: nextAttachments,
+      };
+    });
+  }
+
+  function pruneLocalAttachmentPreviews(messages: ChatMessage[]): void {
+    const previewByUri = new Map<string, string>();
+    for (const message of messages) {
+      for (const attachment of message.attachments ?? []) {
+        const fileUri = attachment.fileUri?.trim() ?? '';
+        if (!fileUri || !isImageMimeType(attachment.mimeType)) {
+          continue;
+        }
+
+        const previewUrl = attachment.previewUrl?.trim() ?? '';
+        previewByUri.set(fileUri, previewUrl);
+      }
+    }
+
+    for (const [fileUri, previewUrl] of localAttachmentPreviewUrls) {
+      const renderedPreviewUrl = previewByUri.get(fileUri);
+      if (renderedPreviewUrl && renderedPreviewUrl === previewUrl) {
+        continue;
+      }
+      URL.revokeObjectURL(previewUrl);
+      localAttachmentPreviewUrls.delete(fileUri);
+    }
   }
 }
 
@@ -1210,7 +1476,98 @@ function canSubmitMessage(userText: string, stagedFileCount: number): boolean {
 }
 
 function isAcceptedMimeType(mimeType: string): boolean {
-  return ACCEPTED_MIME_TYPES.has(mimeType.toLowerCase());
+  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  return ACCEPTED_MIME_TYPES.has(normalizedMimeType);
+}
+
+function isImageMimeType(mimeType: string): boolean {
+  return mimeType.split(';', 1)[0]?.trim().toLowerCase().startsWith('image/') ?? false;
+}
+
+function isPdfMimeType(mimeType: string): boolean {
+  return mimeType.split(';', 1)[0]?.trim().toLowerCase() === 'application/pdf';
+}
+
+function getFilePreviewTypeLabel(staged: Pick<StagedFile, 'name' | 'mimeType'>): string {
+  if (isPdfMimeType(staged.mimeType)) {
+    return 'PDF';
+  }
+
+  const extension = staged.name.split('.').pop()?.trim().toUpperCase() ?? '';
+  if (/^[A-Z0-9]{1,5}$/.test(extension)) {
+    return extension;
+  }
+
+  return 'FILE';
+}
+
+async function withAttachmentPreviewDataUrls(
+  uploadedAttachments: readonly FileDataAttachmentPayload[],
+  stagedFiles: readonly StagedFile[],
+): Promise<FileDataAttachmentPayload[]> {
+  if (uploadedAttachments.length === 0) {
+    return [];
+  }
+
+  return Promise.all(
+    uploadedAttachments.map(async (attachment, index) => {
+      if (!isImageMimeType(attachment.mimeType)) {
+        return attachment;
+      }
+
+      const stagedFile = stagedFiles[index];
+      if (!stagedFile) {
+        return attachment;
+      }
+
+      const previewDataUrl = await toImageDataUrl(stagedFile.file, attachment.mimeType);
+      if (!previewDataUrl) {
+        return attachment;
+      }
+
+      return {
+        ...attachment,
+        previewDataUrl,
+      };
+    }),
+  );
+}
+
+async function toImageDataUrl(file: File, mimeType: string): Promise<string | undefined> {
+  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  if (!normalizedMimeType.startsWith('image/')) {
+    return undefined;
+  }
+  if (file.size > ATTACHMENT_PREVIEW_MAX_BYTES) {
+    return undefined;
+  }
+
+  const base64Bytes = encodeArrayBufferToBase64(await file.arrayBuffer());
+  if (estimateBase64DecodedByteLength(base64Bytes) > ATTACHMENT_PREVIEW_MAX_BYTES) {
+    return undefined;
+  }
+
+  const dataUrl = `data:${normalizedMimeType};base64,${base64Bytes}`;
+  if (dataUrl.length > ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH) {
+    return undefined;
+  }
+
+  return dataUrl;
+}
+
+function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const end = Math.min(bytes.length, offset + chunkSize);
+    for (let index = offset; index < end; index += 1) {
+      binary += String.fromCharCode(bytes[index] ?? 0);
+    }
+  }
+
+  return btoa(binary);
 }
 
 function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {

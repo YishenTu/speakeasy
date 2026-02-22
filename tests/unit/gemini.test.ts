@@ -314,6 +314,26 @@ describe('normalizeContent', () => {
     expect(defaultedRole.role).toBe('model');
   });
 
+  it('normalizes snake_case function calls and opaque unknown parts', () => {
+    const content = normalizeContent({
+      role: 'model',
+      parts: [{ function_call: { id: 'call-1', name: 'lookup', args: '{"q":"x"}' } }, { foo: 1 }],
+    });
+
+    const functionCallPart = content.parts[0];
+    expect(functionCallPart?.functionCall).toEqual({
+      id: 'call-1',
+      name: 'lookup',
+      args: '{"q":"x"}',
+    });
+
+    const unknownPart = content.parts[1];
+    expect(unknownPart?.interactionOutput).toEqual({
+      type: 'unknown_part',
+      keys: ['foo'],
+    });
+  });
+
   it('keeps valid response stats metadata and drops invalid metadata', () => {
     const withStats = normalizeContent({
       role: 'model',
@@ -368,6 +388,84 @@ describe('normalizeContent', () => {
       },
     });
     expect(snakeCaseMetadata.metadata?.createdAt).toBe(createdAt);
+  });
+
+  it('keeps valid interactionId metadata and drops empty or non-string values', () => {
+    const withCamelCaseInteractionId = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        interactionId: ' interaction-123 ',
+      },
+    });
+    expect(withCamelCaseInteractionId.metadata?.interactionId).toBe('interaction-123');
+
+    const withSnakeCaseInteractionId = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        interaction_id: ' interaction-456 ',
+      },
+    });
+    expect(withSnakeCaseInteractionId.metadata?.interactionId).toBe('interaction-456');
+
+    const withInvalidInteractionId = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        interactionId: { bad: true },
+      },
+    });
+    expect(withInvalidInteractionId.metadata).toBeUndefined();
+
+    const withNumericInteractionId = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        interactionId: 42,
+      },
+    });
+    expect(withNumericInteractionId.metadata).toBeUndefined();
+
+    const withEmptyInteractionId = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        interactionId: '   ',
+      },
+    });
+    expect(withEmptyInteractionId.metadata).toBeUndefined();
+  });
+
+  it('keeps valid image preview metadata and drops invalid preview metadata entries', () => {
+    const withPreviewMetadata = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        attachmentPreviewByFileUri: {
+          ' https://example.invalid/files/image-1 ': ' data:image/png;base64,aGVsbG8= ',
+          'https://example.invalid/files/text': 'data:text/plain;base64,aGVsbG8=',
+          'https://example.invalid/files/empty': '   ',
+          'https://example.invalid/files/too-large': `data:image/png;base64,${'A'.repeat(500_000)}`,
+        },
+      },
+    });
+
+    expect(withPreviewMetadata.metadata?.attachmentPreviewByFileUri).toEqual({
+      'https://example.invalid/files/image-1': 'data:image/png;base64,aGVsbG8=',
+    });
+
+    const withOnlyInvalidPreviewMetadata = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        attachmentPreviewByFileUri: {
+          'https://example.invalid/files/image': 'not-a-data-url',
+        },
+      },
+    });
+
+    expect(withOnlyInvalidPreviewMetadata.metadata).toBeUndefined();
   });
 });
 
@@ -598,6 +696,47 @@ describe('completeAssistantTurn', () => {
     expect(content.parts).toEqual([{ text: 'Final response' }]);
     expect(session.lastInteractionId).toBe('interaction-stream');
     expect(fetchRequestBodies[0]).toMatchObject({ stream: true });
+  });
+
+  it('ignores non-string stream delta payload values', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        delta: { type: 'text', text: 123 },
+      },
+      {
+        event_type: 'content.delta',
+        delta: {
+          type: 'thought_summary',
+          content: { type: 'text', text: 456 },
+        },
+      },
+      {
+        event_type: 'content.delta',
+        delta: {
+          type: 'thought',
+          thought: 789,
+          content: { type: 'text', text: 999 },
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-non-string-delta',
+          outputs: [{ type: 'text', text: 'Final response' }],
+        },
+      },
+    );
+
+    const deltas: Array<{ textDelta?: string; thinkingDelta?: string }> = [];
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const content = await completeAssistantTurn(session, settings, undefined, (delta) => {
+      deltas.push(delta);
+    });
+
+    expect(deltas).toEqual([]);
+    expect(content.parts).toEqual([{ text: 'Final response' }]);
   });
 
   it('uses streamed deltas as fallback when interaction.complete omits outputs', async () => {
@@ -926,7 +1065,7 @@ describe('completeAssistantTurn', () => {
     expect(session.lastInteractionId).toBe('interaction-2');
   });
 
-  it('does not throw when Gemini returns function calls without call ids', async () => {
+  it('throws when Gemini returns function calls without call ids', async () => {
     enqueueGeminiResponses({
       id: 'interaction-1',
       outputs: [
@@ -942,14 +1081,8 @@ describe('completeAssistantTurn', () => {
     settings.tools.functionCalling = true;
     const session = createSession('call tool');
 
-    const assistantContent = await completeAssistantTurn(session, settings);
-
-    expect(assistantContent.parts).toEqual([
-      { functionCall: { name: 'get_extension_info', args: {} } },
-    ]);
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/missing call id/i);
     expect(fetchRequestBodies).toHaveLength(1);
-    expect(session.contents).toHaveLength(2);
-    expect(session.lastInteractionId).toBe('interaction-1');
   });
 
   it('returns tool error responses for unknown tools and malformed JSON args', async () => {

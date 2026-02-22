@@ -9,6 +9,7 @@ import {
   regenerateAssistantMessage,
   sendMessage,
   switchAssistantBranch,
+  uploadChatFiles,
 } from '../../src/shared/chat';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
@@ -415,5 +416,60 @@ describe('shared chat client', () => {
       /target interaction id/i,
     );
     expect(runtimeRequests).toEqual([]);
+  });
+
+  it('returns empty upload payload when no files are provided', async () => {
+    const payload = await uploadChatFiles([]);
+
+    expect(payload).toEqual({
+      attachments: [],
+      failures: [],
+    });
+    expect(runtimeRequests).toEqual([]);
+  });
+
+  it('sends upload payloads through runtime bridge', async () => {
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        attachments: [
+          {
+            name: 'note.txt',
+            mimeType: 'text/plain',
+            fileUri: 'https://example.invalid/files/note',
+          },
+        ],
+        failures: [],
+      },
+    });
+
+    const payload = await uploadChatFiles([file]);
+
+    expect(runtimeRequests).toHaveLength(1);
+    const request = runtimeRequests[0];
+    expect(request).toMatchObject({
+      type: 'chat/upload-files',
+      files: [
+        {
+          name: 'note.txt',
+          mimeType: expect.stringContaining('text/plain'),
+        },
+      ],
+    });
+    if (request.type !== 'chat/upload-files') {
+      throw new Error('Expected upload files runtime request.');
+    }
+    expect(request.files[0]?.bytesBase64).toBe('aGVsbG8=');
+    expect(payload).toEqual({
+      attachments: [
+        {
+          name: 'note.txt',
+          mimeType: 'text/plain',
+          fileUri: 'https://example.invalid/files/note',
+        },
+      ],
+      failures: [],
+    });
   });
 });

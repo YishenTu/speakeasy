@@ -9,8 +9,10 @@ import type {
   ChatSendPayload,
   ChatSessionSummary,
   ChatSwitchBranchPayload,
+  ChatUploadFilesPayload,
   FileDataAttachmentPayload,
   RuntimeRequest,
+  UploadFileTransportPayload,
 } from './runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from './settings';
 
@@ -200,4 +202,51 @@ export async function listChatSessions(): Promise<ChatSessionSummary[]> {
 
 export async function getActiveChatId(): Promise<string | undefined> {
   return readActiveChatId();
+}
+
+export interface UploadChatFilesOptions {
+  uploadTimeoutMs?: number;
+}
+
+export async function uploadChatFiles(
+  files: File[],
+  options: UploadChatFilesOptions = {},
+): Promise<ChatUploadFilesPayload> {
+  if (files.length === 0) {
+    return {
+      attachments: [],
+      failures: [],
+    };
+  }
+
+  const payloadFiles: UploadFileTransportPayload[] = await Promise.all(
+    files.map(async (file) => ({
+      name: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      bytesBase64: encodeArrayBufferToBase64(await file.arrayBuffer()),
+    })),
+  );
+
+  return sendRuntimeRequest<ChatUploadFilesPayload>({
+    type: 'chat/upload-files',
+    files: payloadFiles,
+    ...(typeof options.uploadTimeoutMs === 'number'
+      ? { uploadTimeoutMs: options.uploadTimeoutMs }
+      : {}),
+  });
+}
+
+function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = '';
+
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const end = Math.min(bytes.length, offset + chunkSize);
+    for (let index = offset; index < end; index += 1) {
+      binary += String.fromCharCode(bytes[index] ?? 0);
+    }
+  }
+
+  return btoa(binary);
 }

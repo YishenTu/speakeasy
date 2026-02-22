@@ -50,4 +50,29 @@ describe('chatpanel template', () => {
     expect(template).not.toContain('overflow-x: auto;');
     expect(template).not.toContain('white-space: pre;');
   });
+
+  it('shows a Thinking label before the thinking-level selector', () => {
+    const template = getChatPanelTemplate();
+
+    const labelMarkup = '<span class="input-toolbar-label">Thinking</span>';
+    expect(template).toContain(labelMarkup);
+
+    const labelIndex = template.indexOf(labelMarkup);
+    const thinkingDropupIndex = template.indexOf('id="speakeasy-thinking-dropup"');
+    expect(labelIndex).toBeGreaterThan(-1);
+    expect(thinkingDropupIndex).toBeGreaterThan(labelIndex);
+  });
+
+  it('uses square staged-file previews and removes legacy chip styling', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.file-preview-item {');
+    expect(template).toContain('.file-preview-tile {');
+    expect(template).toContain('.file-preview-generic {');
+    expect(template).toContain('.file-preview-filetype {');
+    expect(template).toContain('.file-preview-name {');
+    expect(template).toContain('text-overflow: ellipsis;');
+    expect(template).toContain('.message-attachment-strip {');
+    expect(template).not.toContain('.file-chip {');
+  });
 });

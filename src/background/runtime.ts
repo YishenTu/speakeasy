@@ -1,3 +1,9 @@
+import {
+  ATTACHMENT_PREVIEW_MAX_BYTES,
+  ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
+  estimateBase64DecodedByteLength,
+  parseImageDataUrl,
+} from '../shared/attachment-preview';
 import type {
   ChatDeletePayload,
   ChatForkPayload,
@@ -9,10 +15,14 @@ import type {
   ChatSessionSummary,
   ChatStreamDeltaEvent,
   ChatSwitchBranchPayload,
+  ChatUploadFailurePayload,
+  ChatUploadFilesPayload,
   FileDataAttachmentPayload,
   OpenOptionsPayload,
   RuntimeRequest,
   RuntimeResponse,
+  UploadFilePayload,
+  UploadFileTransportPayload,
 } from '../shared/runtime';
 import {
   GEMINI_SETTINGS_STORAGE_KEY,
@@ -41,6 +51,7 @@ import {
   toAssistantChatMessage,
 } from './sessions';
 import type { ChatBranchNode, ChatSession, GeminiContent } from './types';
+import { uploadFilesToGemini as uploadFilesToGeminiInBackground } from './uploads';
 import { assertNever, isRecord, toErrorMessage } from './utils';
 
 type RuntimePayload =
@@ -52,6 +63,7 @@ type RuntimePayload =
   | ChatSwitchBranchPayload
   | ChatDeletePayload
   | ChatListPayload
+  | ChatUploadFilesPayload
   | OpenOptionsPayload;
 
 interface RuntimeDependencies {
@@ -69,6 +81,11 @@ interface RuntimeDependencies {
     firstUserQuery: string,
     attachments?: FileDataAttachmentPayload[],
   ) => Promise<string>;
+  uploadFilesToGemini: (
+    files: UploadFilePayload[],
+    apiKey: string,
+    uploadTimeoutMs?: number,
+  ) => Promise<ChatUploadFilesPayload>;
   openOptionsPage: () => Promise<void>;
   now: () => Date;
 }
@@ -93,6 +110,7 @@ type MutationEnqueuer = <TPayload>(operation: () => Promise<TPayload>) => Promis
 
 const EXPIRED_INTERACTION_MESSAGE =
   'Conversation context expired. Please resend your last message to continue.';
+const BOOTSTRAP_READY_WAIT_MS = 50;
 
 export function registerBackgroundRuntimeHandlers(): void {
   const handleRuntimeRequest = createRuntimeRequestHandler();
@@ -131,18 +149,31 @@ export function createRuntimeRequestHandler(
     readGeminiSettings,
     completeAssistantTurn,
     generateSessionTitle,
+    uploadFilesToGemini: (files, apiKey, uploadTimeoutMs) => {
+      const options: Parameters<typeof uploadFilesToGeminiInBackground>[3] = {};
+      if (typeof uploadTimeoutMs === 'number') {
+        options.uploadTimeoutMs = uploadTimeoutMs;
+      }
+
+      return uploadFilesToGeminiInBackground(files, apiKey, {}, options);
+    },
     openOptionsPage,
     now: () => new Date(),
     ...overrides,
   };
 
   let mutationQueue: Promise<void> = Promise.resolve();
+  let storageReady = false;
+  let bootstrapCompleted = false;
   const ready = (async () => {
     try {
       await dependencies.bootstrapChatStorage();
       await pruneExpiredSessionsBestEffort(dependencies, dependencies.now().getTime());
+      storageReady = true;
     } catch (error: unknown) {
       console.error('Failed to initialize chat storage bootstrap.', error);
+    } finally {
+      bootstrapCompleted = true;
     }
   })();
 
@@ -159,7 +190,24 @@ export function createRuntimeRequestHandler(
     request: RuntimeRequest,
     context?: RuntimeRequestContext,
   ): Promise<RuntimePayload> => {
+    if (request.type === 'app/open-options') {
+      await dependencies.openOptionsPage();
+      return {
+        opened: true,
+      };
+    }
+
+    if (!bootstrapCompleted) {
+      await Promise.race([ready, sleep(BOOTSTRAP_READY_WAIT_MS)]);
+    }
+    if (!bootstrapCompleted) {
+      throw new Error('Chat storage is still initializing. Please try again in a few seconds.');
+    }
+
     await ready;
+    if (!storageReady) {
+      throw new Error('Chat storage is unavailable. Reload the extension and try again.');
+    }
 
     switch (request.type) {
       case 'chat/load':
@@ -185,7 +233,9 @@ export function createRuntimeRequestHandler(
               result.pendingTitleGeneration,
               dependencies,
               enqueueMutation,
-            );
+            ).catch((error: unknown) => {
+              console.warn('Unexpected failure while generating chat session title.', error);
+            });
           }
 
           return result.payload;
@@ -215,15 +265,18 @@ export function createRuntimeRequestHandler(
       case 'chat/list':
         await mutationQueue;
         return handleListChats(dependencies);
-      case 'app/open-options':
-        await dependencies.openOptionsPage();
-        return {
-          opened: true,
-        };
+      case 'chat/upload-files':
+        return handleUploadFiles(request.files, request.uploadTimeoutMs, dependencies);
       default:
         return assertNever(request);
     }
   };
+}
+
+function sleep(durationMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function isRuntimeRequest(value: unknown): value is RuntimeRequest {
@@ -241,6 +294,7 @@ function isRuntimeRequest(value: unknown): value is RuntimeRequest {
     type === 'chat/new' ||
     type === 'chat/delete' ||
     type === 'chat/list' ||
+    type === 'chat/upload-files' ||
     type === 'app/open-options'
   );
 }
@@ -322,6 +376,7 @@ async function handleSendMessage(
       fileData: {
         fileUri: attachment.fileUri,
         mimeType: attachment.mimeType,
+        displayName: attachment.name,
       },
     })),
   ];
@@ -331,6 +386,12 @@ async function handleSendMessage(
     role: 'user',
     parts: userParts,
   };
+  const attachmentPreviewByFileUri = buildAttachmentPreviewByFileUri(normalizedAttachments);
+  if (Object.keys(attachmentPreviewByFileUri).length > 0) {
+    userContent.metadata = {
+      attachmentPreviewByFileUri,
+    };
+  }
   const branchStartNodeId = workingSession.branchTree?.activeLeafNodeId;
   if (!branchStartNodeId) {
     throw new Error('Failed to resolve active branch state.');
@@ -384,14 +445,18 @@ async function handleSendMessage(
     return { payload };
   }
 
+  const pendingTitleGeneration: PendingSessionTitleGeneration = {
+    chatId: workingSession.id,
+    apiKey: settings.apiKey,
+    firstUserQuery: normalizedText,
+  };
+  if (normalizedAttachments.length > 0) {
+    pendingTitleGeneration.attachments = normalizedAttachments;
+  }
+
   return {
     payload,
-    pendingTitleGeneration: {
-      chatId: workingSession.id,
-      apiKey: settings.apiKey,
-      firstUserQuery: normalizedText,
-      ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
-    },
+    pendingTitleGeneration,
   };
 }
 
@@ -548,12 +613,16 @@ async function completeAssistantTurnOnBranchNode(input: {
   const prefixContents = getBranchContentsToNode(input.session, input.targetNodeId);
   const workingSession: ChatSession = {
     id: input.session.id,
-    ...(input.session.title ? { title: input.session.title } : {}),
     createdAt: input.session.createdAt,
     updatedAt: input.session.updatedAt,
     contents: prefixContents,
-    ...(input.previousInteractionId ? { lastInteractionId: input.previousInteractionId } : {}),
   };
+  if (input.session.title) {
+    workingSession.title = input.session.title;
+  }
+  if (input.previousInteractionId) {
+    workingSession.lastInteractionId = input.previousInteractionId;
+  }
 
   const prefixLength = prefixContents.length;
   const assistantContent = await input.dependencies.completeAssistantTurn(
@@ -645,22 +714,62 @@ async function handleListChats(dependencies: RuntimeDependencies): Promise<ChatL
   };
 }
 
+async function handleUploadFiles(
+  files: UploadFileTransportPayload[] | undefined,
+  uploadTimeoutMs: number | undefined,
+  dependencies: RuntimeDependencies,
+): Promise<ChatUploadFilesPayload> {
+  const normalizedUpload = normalizeUploadFiles(files);
+  if (normalizedUpload.files.length === 0) {
+    return {
+      attachments: [],
+      failures: normalizedUpload.failures,
+    };
+  }
+
+  const settings = await dependencies.readGeminiSettings();
+  if (!settings.apiKey) {
+    throw new Error('Gemini API key is missing. Add it in Speakeasy Settings.');
+  }
+
+  const uploaded = await dependencies.uploadFilesToGemini(
+    normalizedUpload.files,
+    settings.apiKey,
+    uploadTimeoutMs,
+  );
+  if (normalizedUpload.failures.length === 0) {
+    return uploaded;
+  }
+
+  return {
+    attachments: uploaded.attachments,
+    failures: [...uploaded.failures, ...normalizedUpload.failures],
+  };
+}
+
 async function generateAndPersistSessionTitle(
   pending: PendingSessionTitleGeneration,
   dependencies: RuntimeDependencies,
   enqueueMutation: MutationEnqueuer,
 ): Promise<void> {
+  let generatedTitle = '';
   try {
-    const generatedTitle = await dependencies.generateSessionTitle(
+    generatedTitle = await dependencies.generateSessionTitle(
       pending.apiKey,
       pending.firstUserQuery,
       pending.attachments,
     );
-    if (!generatedTitle) {
-      return;
-    }
+  } catch (error: unknown) {
+    console.warn('Failed to generate chat session title.', error);
+    return;
+  }
 
-    void enqueueMutation(async () => {
+  if (!generatedTitle) {
+    return;
+  }
+
+  try {
+    await enqueueMutation(async () => {
       const session = await dependencies.repository.getSession(pending.chatId);
       if (!session || session.title?.trim()) {
         return;
@@ -669,7 +778,7 @@ async function generateAndPersistSessionTitle(
       await dependencies.repository.upsertSession(session, dependencies.now().getTime());
     });
   } catch (error: unknown) {
-    console.warn('Failed to generate chat session title.', error);
+    console.warn('Failed to persist generated chat session title.', error);
   }
 }
 
@@ -694,15 +803,155 @@ function normalizeFileDataAttachments(
         ? attachment.fileName.trim()
         : undefined;
 
-    normalized.push({
+    const normalizedAttachment: FileDataAttachmentPayload = {
       name,
       mimeType,
       fileUri,
-      ...(fileName ? { fileName } : {}),
-    });
+    };
+    if (fileName) {
+      normalizedAttachment.fileName = fileName;
+    }
+    const previewDataUrl = normalizeAttachmentPreviewDataUrl(attachment.previewDataUrl, mimeType);
+    if (previewDataUrl) {
+      normalizedAttachment.previewDataUrl = previewDataUrl;
+    }
+
+    normalized.push(normalizedAttachment);
   }
 
   return normalized;
+}
+
+function buildAttachmentPreviewByFileUri(
+  attachments: readonly FileDataAttachmentPayload[],
+): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const attachment of attachments) {
+    const fileUri = attachment.fileUri.trim();
+    const previewDataUrl = attachment.previewDataUrl?.trim();
+    if (!fileUri || !previewDataUrl) {
+      continue;
+    }
+
+    normalized[fileUri] = previewDataUrl;
+  }
+
+  return normalized;
+}
+
+function normalizeAttachmentPreviewDataUrl(value: unknown, mimeType: string): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.length > ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH) {
+    return undefined;
+  }
+  const parsedDataUrl = parseImageDataUrl(normalized);
+  if (!parsedDataUrl) {
+    return undefined;
+  }
+  if (estimateBase64DecodedByteLength(parsedDataUrl.base64) > ATTACHMENT_PREVIEW_MAX_BYTES) {
+    return undefined;
+  }
+
+  const normalizedAttachmentMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  if (!normalizedAttachmentMimeType.startsWith('image/')) {
+    return undefined;
+  }
+  if (parsedDataUrl.mimeType !== normalizedAttachmentMimeType) {
+    return undefined;
+  }
+
+  return normalized;
+}
+
+function normalizeUploadFiles(files: UploadFileTransportPayload[] | undefined): {
+  files: UploadFilePayload[];
+  failures: ChatUploadFailurePayload[];
+} {
+  if (!Array.isArray(files)) {
+    return {
+      files: [],
+      failures: [],
+    };
+  }
+
+  const normalized: UploadFilePayload[] = [];
+  const failures: ChatUploadFailurePayload[] = [];
+  for (const [index, file] of files.entries()) {
+    const name = typeof file.name === 'string' ? file.name.trim() : '';
+    const mimeType = typeof file.mimeType === 'string' ? file.mimeType.trim() : '';
+    const candidateBytes =
+      typeof file.bytesBase64 === 'string'
+        ? file.bytesBase64
+        : (file as UploadFileTransportPayload & { bytes?: unknown }).bytes;
+    const bytes = normalizeUploadFileBytes(candidateBytes);
+    if (!bytes) {
+      const normalizedName = name || 'attachment';
+      failures.push({
+        index,
+        fileName: normalizedName,
+        message: `Failed to upload "${normalizedName}": file bytes were malformed.`,
+      });
+      continue;
+    }
+
+    normalized.push({
+      name: name || 'attachment',
+      mimeType: mimeType || 'application/octet-stream',
+      bytes,
+    });
+  }
+
+  return {
+    files: normalized,
+    failures,
+  };
+}
+
+function normalizeUploadFileBytes(value: unknown): ArrayBuffer | null {
+  if (typeof value === 'string') {
+    return decodeBase64ToArrayBuffer(value);
+  }
+
+  if (
+    value instanceof ArrayBuffer ||
+    Object.prototype.toString.call(value) === '[object ArrayBuffer]'
+  ) {
+    return value as ArrayBuffer;
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    const view = value;
+    const bytes = new Uint8Array(view.byteLength);
+    bytes.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
+    return bytes.buffer;
+  }
+
+  return null;
+}
+
+function decodeBase64ToArrayBuffer(encoded: string): ArrayBuffer | null {
+  const normalized = encoded.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    const binary = atob(normalized);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes.buffer;
+  } catch {
+    return null;
+  }
 }
 
 function createStreamDeltaEmitter(
@@ -732,9 +981,13 @@ function createStreamDeltaEmitter(
     const payload: ChatStreamDeltaEvent = {
       type: 'chat/stream-delta',
       requestId,
-      ...(delta.textDelta ? { textDelta: delta.textDelta } : {}),
-      ...(delta.thinkingDelta ? { thinkingDelta: delta.thinkingDelta } : {}),
     };
+    if (delta.textDelta) {
+      payload.textDelta = delta.textDelta;
+    }
+    if (delta.thinkingDelta) {
+      payload.thinkingDelta = delta.thinkingDelta;
+    }
 
     try {
       if (sendOptions) {
@@ -742,8 +995,8 @@ function createStreamDeltaEmitter(
       } else {
         chrome.tabs.sendMessage(tabId, payload, swallowDisconnect);
       }
-    } catch {
-      // Best-effort: don't fail the chat request lifecycle.
+    } catch (error: unknown) {
+      console.warn('Failed to forward stream delta to the chat panel tab.', error);
     }
   };
 }

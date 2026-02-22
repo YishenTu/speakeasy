@@ -1,4 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
+import {
+  ATTACHMENT_PREVIEW_MAX_BYTES,
+  ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
+  estimateBase64DecodedByteLength,
+  parseImageDataUrl,
+} from '../shared/attachment-preview';
 import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
 import type { AssistantResponseStats, ChatAttachment } from '../shared/messages';
 import type { FileDataAttachmentPayload } from '../shared/runtime';
@@ -103,11 +109,14 @@ const LOCAL_FUNCTION_TOOLS: Record<string, LocalToolDefinition> = {
     execute: async (args) => {
       const timeZone = typeof args.timeZone === 'string' ? args.timeZone.trim() : '';
       const now = new Date();
-      const formatter = new Intl.DateTimeFormat('en-US', {
+      const formatterOptions: Intl.DateTimeFormatOptions = {
         dateStyle: 'full',
         timeStyle: 'long',
-        ...(timeZone ? { timeZone } : {}),
-      });
+      };
+      if (timeZone) {
+        formatterOptions.timeZone = timeZone;
+      }
+      const formatter = new Intl.DateTimeFormat('en-US', formatterOptions);
 
       return {
         iso: now.toISOString(),
@@ -163,13 +172,17 @@ export async function completeAssistantTurn(
   const functionDeclarations = Object.values(LOCAL_FUNCTION_TOOLS).map((tool) => tool.declaration);
   const thinkingOpts = thinkingLevel ? { thinkingLevel } : {};
   let pendingInput = buildInteractionInputFromContent(latestContent);
-  let requestPlan = composeGeminiInteractionRequest({
+  const initialRequestInput: Parameters<typeof composeGeminiInteractionRequest>[0] = {
     settings,
     input: pendingInput,
     functionDeclarations,
-    ...(session.lastInteractionId ? { previousInteractionId: session.lastInteractionId } : {}),
     ...thinkingOpts,
-  });
+  };
+  if (session.lastInteractionId) {
+    initialRequestInput.previousInteractionId = session.lastInteractionId;
+  }
+
+  let requestPlan = composeGeminiInteractionRequest(initialRequestInput);
   const { functionCallingEnabled } = requestPlan;
   let latestAssistantContent: GeminiContent | null = null;
   const requestStartedAtMs = getMonotonicNowMs();
@@ -331,8 +344,13 @@ export function normalizeContent(value: unknown): GeminiContent {
 
   const parts: GeminiPart[] = [];
   for (const rawPart of rawParts) {
-    if (isRecord(rawPart)) {
-      parts.push({ ...rawPart });
+    if (!isRecord(rawPart)) {
+      continue;
+    }
+
+    const normalizedPart = normalizeGeminiPart(rawPart);
+    if (normalizedPart) {
+      parts.push(normalizedPart);
     }
   }
 
@@ -342,11 +360,122 @@ export function normalizeContent(value: unknown): GeminiContent {
 
   const metadata = normalizeContentMetadata(value.metadata);
 
-  return {
-    ...(rawId ? { id: rawId } : {}),
+  const content: GeminiContent = {
     role,
     parts,
-    ...(metadata ? { metadata } : {}),
+  };
+  if (rawId) {
+    content.id = rawId;
+  }
+  if (metadata) {
+    content.metadata = metadata;
+  }
+
+  return content;
+}
+
+function normalizeGeminiPart(rawPart: Record<string, unknown>): GeminiPart | null {
+  if (typeof rawPart.text === 'string') {
+    return { text: rawPart.text };
+  }
+
+  if (typeof rawPart.thoughtSummary === 'string') {
+    return { thoughtSummary: rawPart.thoughtSummary };
+  }
+
+  const functionCall = readPartRecord(rawPart, 'functionCall', 'function_call');
+  if (functionCall) {
+    const name = readStringField(functionCall, 'name');
+    if (!name) {
+      return { interactionOutput: { type: 'function_call' } };
+    }
+
+    const id = readStringField(functionCall, 'id');
+    const rawArgs =
+      Object.prototype.hasOwnProperty.call(functionCall, 'args') && functionCall.args !== undefined
+        ? functionCall.args
+        : functionCall.arguments;
+
+    const normalizedFunctionCall: { id?: string; name: string; args?: unknown } = {
+      name,
+    };
+    if (id) {
+      normalizedFunctionCall.id = id;
+    }
+    if (rawArgs !== undefined) {
+      normalizedFunctionCall.args = rawArgs;
+    }
+
+    return { functionCall: normalizedFunctionCall };
+  }
+
+  const functionResponse = readPartRecord(rawPart, 'functionResponse', 'function_response');
+  if (functionResponse) {
+    const id = readStringField(functionResponse, 'id');
+    const name = readStringField(functionResponse, 'name');
+    const response = isRecord(functionResponse.response) ? { ...functionResponse.response } : {};
+    const normalizedFunctionResponse: {
+      id?: string;
+      name?: string;
+      response: Record<string, unknown>;
+    } = {
+      response,
+    };
+    if (id) {
+      normalizedFunctionResponse.id = id;
+    }
+    if (name) {
+      normalizedFunctionResponse.name = name;
+    }
+
+    return { functionResponse: normalizedFunctionResponse };
+  }
+
+  const fileData = readPartRecord(rawPart, 'fileData', 'file_data');
+  if (fileData) {
+    return { fileData: { ...fileData } };
+  }
+
+  const inlineData = readPartRecord(rawPart, 'inlineData', 'inline_data');
+  if (inlineData) {
+    return { inlineData: { ...inlineData } };
+  }
+
+  const codeExecutionResult = readPartRecord(
+    rawPart,
+    'codeExecutionResult',
+    'code_execution_result',
+  );
+  if (codeExecutionResult) {
+    const output = typeof codeExecutionResult.output === 'string' ? codeExecutionResult.output : '';
+    return { codeExecutionResult: { output } };
+  }
+
+  const executableCode = readPartRecord(rawPart, 'executableCode', 'executable_code');
+  if (executableCode) {
+    const language =
+      typeof executableCode.language === 'string' ? executableCode.language : undefined;
+    const code = typeof executableCode.code === 'string' ? executableCode.code : undefined;
+    const normalizedExecutableCode: { language?: string; code?: string } = {};
+    if (language) {
+      normalizedExecutableCode.language = language;
+    }
+    if (code) {
+      normalizedExecutableCode.code = code;
+    }
+
+    return { executableCode: normalizedExecutableCode };
+  }
+
+  const interactionOutput = readPartRecord(rawPart, 'interactionOutput', 'interaction_output');
+  if (interactionOutput) {
+    return {
+      interactionOutput: summarizeInteractionOutput(interactionOutput),
+    };
+  }
+
+  return {
+    interactionOutput: summarizeUnknownPart(rawPart),
   };
 }
 
@@ -356,35 +485,79 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   }
 
   const responseStats = normalizeAssistantResponseStats(value.responseStats);
-  const interactionId =
-    typeof value.interactionId === 'string'
-      ? value.interactionId.trim()
-      : typeof value.interaction_id === 'string'
-        ? value.interaction_id.trim()
-        : '';
-  const sourceModel =
-    typeof value.sourceModel === 'string'
-      ? value.sourceModel.trim()
-      : typeof value.source_model === 'string'
-        ? value.source_model.trim()
-        : '';
-  const createdAt =
-    typeof value.createdAt === 'string'
-      ? value.createdAt.trim()
-      : typeof value.created_at === 'string'
-        ? value.created_at.trim()
-        : '';
+  const interactionId = readStringField(value, 'interactionId', 'interaction_id');
+  const sourceModel = readStringField(value, 'sourceModel', 'source_model');
+  const createdAt = readStringField(value, 'createdAt', 'created_at');
+  const attachmentPreviewByFileUri = normalizeAttachmentPreviewByFileUri(
+    readPartRecord(value, 'attachmentPreviewByFileUri', 'attachment_preview_by_file_uri'),
+  );
 
-  if (!responseStats && !interactionId && !sourceModel && !createdAt) {
+  if (
+    !responseStats &&
+    !interactionId &&
+    !sourceModel &&
+    !createdAt &&
+    !attachmentPreviewByFileUri
+  ) {
     return undefined;
   }
 
-  return {
-    ...(responseStats ? { responseStats } : {}),
-    ...(interactionId ? { interactionId } : {}),
-    ...(sourceModel ? { sourceModel } : {}),
-    ...(createdAt ? { createdAt } : {}),
-  };
+  const metadata: NonNullable<GeminiContent['metadata']> = {};
+  if (responseStats) {
+    metadata.responseStats = responseStats;
+  }
+  if (interactionId) {
+    metadata.interactionId = interactionId;
+  }
+  if (sourceModel) {
+    metadata.sourceModel = sourceModel;
+  }
+  if (createdAt) {
+    metadata.createdAt = createdAt;
+  }
+  if (attachmentPreviewByFileUri) {
+    metadata.attachmentPreviewByFileUri = attachmentPreviewByFileUri;
+  }
+
+  return metadata;
+}
+
+function normalizeAttachmentPreviewByFileUri(
+  value: Record<string, unknown> | null,
+): Record<string, string> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [rawFileUri, rawPreviewDataUrl] of Object.entries(value)) {
+    const fileUri = rawFileUri.trim();
+    if (!fileUri || typeof rawPreviewDataUrl !== 'string') {
+      continue;
+    }
+
+    const previewDataUrl = rawPreviewDataUrl.trim();
+    if (!isImageDataUrl(previewDataUrl)) {
+      continue;
+    }
+
+    normalized[fileUri] = previewDataUrl;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function isImageDataUrl(value: string): boolean {
+  if (value.length > ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH) {
+    return false;
+  }
+
+  const parsedDataUrl = parseImageDataUrl(value);
+  if (!parsedDataUrl) {
+    return false;
+  }
+
+  return estimateBase64DecodedByteLength(parsedDataUrl.base64) <= ATTACHMENT_PREVIEW_MAX_BYTES;
 }
 
 function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats | undefined {
@@ -402,12 +575,7 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
     'timeToFirstTokenMs',
     'time_to_first_token_ms',
   );
-  const hasStreamingToken =
-    typeof value.hasStreamingToken === 'boolean'
-      ? value.hasStreamingToken
-      : typeof value.has_streaming_token === 'boolean'
-        ? value.has_streaming_token
-        : undefined;
+  const hasStreamingToken = readBooleanField(value, 'hasStreamingToken', 'has_streaming_token');
 
   if (
     requestDurationMs === undefined ||
@@ -434,19 +602,47 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
     'total_tokens_per_second',
   );
 
-  return {
+  const stats: AssistantResponseStats = {
     requestDurationMs,
     timeToFirstTokenMs,
-    ...(outputTokens !== undefined ? { outputTokens } : {}),
-    ...(inputTokens !== undefined ? { inputTokens } : {}),
-    ...(thoughtTokens !== undefined ? { thoughtTokens } : {}),
-    ...(toolUseTokens !== undefined ? { toolUseTokens } : {}),
-    ...(cachedTokens !== undefined ? { cachedTokens } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
-    ...(outputTokensPerSecond !== undefined ? { outputTokensPerSecond } : {}),
-    ...(totalTokensPerSecond !== undefined ? { totalTokensPerSecond } : {}),
     hasStreamingToken,
   };
+  if (outputTokens !== undefined) {
+    stats.outputTokens = outputTokens;
+  }
+  if (inputTokens !== undefined) {
+    stats.inputTokens = inputTokens;
+  }
+  if (thoughtTokens !== undefined) {
+    stats.thoughtTokens = thoughtTokens;
+  }
+  if (toolUseTokens !== undefined) {
+    stats.toolUseTokens = toolUseTokens;
+  }
+  if (cachedTokens !== undefined) {
+    stats.cachedTokens = cachedTokens;
+  }
+  if (totalTokens !== undefined) {
+    stats.totalTokens = totalTokens;
+  }
+  if (outputTokensPerSecond !== undefined) {
+    stats.outputTokensPerSecond = outputTokensPerSecond;
+  }
+  if (totalTokensPerSecond !== undefined) {
+    stats.totalTokensPerSecond = totalTokensPerSecond;
+  }
+
+  return stats;
+}
+
+function readBooleanField(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function readNonNegativeNumberField(
@@ -516,29 +712,13 @@ export function extractAttachments(content: GeminiContent): ChatAttachment[] {
   for (const part of content.parts) {
     const fileData = readPartRecord(part, 'fileData', 'file_data');
     if (fileData) {
-      const fileUri =
-        typeof fileData.fileUri === 'string'
-          ? fileData.fileUri.trim()
-          : typeof fileData.file_uri === 'string'
-            ? fileData.file_uri.trim()
-            : '';
-      const mimeType =
-        typeof fileData.mimeType === 'string'
-          ? fileData.mimeType.trim()
-          : typeof fileData.mime_type === 'string'
-            ? fileData.mime_type.trim()
-            : '';
+      const fileUri = readStringField(fileData, 'fileUri', 'file_uri');
+      const mimeType = readStringField(fileData, 'mimeType', 'mime_type');
       if (!fileUri || !mimeType) {
         continue;
       }
 
-      const displayName =
-        typeof fileData.displayName === 'string'
-          ? fileData.displayName.trim()
-          : typeof fileData.display_name === 'string'
-            ? fileData.display_name.trim()
-            : '';
-
+      const displayName = readStringField(fileData, 'displayName', 'display_name');
       attachments.push({
         name: displayName || inferFileNameFromUri(fileUri),
         mimeType,
@@ -552,22 +732,12 @@ export function extractAttachments(content: GeminiContent): ChatAttachment[] {
       continue;
     }
 
-    const mimeType =
-      typeof inlineData.mimeType === 'string'
-        ? inlineData.mimeType.trim()
-        : typeof inlineData.mime_type === 'string'
-          ? inlineData.mime_type.trim()
-          : '';
+    const mimeType = readStringField(inlineData, 'mimeType', 'mime_type');
     if (!mimeType) {
       continue;
     }
 
-    const displayName =
-      typeof inlineData.displayName === 'string'
-        ? inlineData.displayName.trim()
-        : typeof inlineData.display_name === 'string'
-          ? inlineData.display_name.trim()
-          : '';
+    const displayName = readStringField(inlineData, 'displayName', 'display_name');
     attachments.push({
       name: displayName || inferAttachmentNameFromMimeType(mimeType),
       mimeType,
@@ -720,19 +890,17 @@ function normalizeGeminiInteractionResponse(response: unknown): GeminiInteractio
   const usage = normalizeInteractionUsage(response.usage);
 
   const rawOutputs = Array.isArray(response.outputs) ? response.outputs : undefined;
-  if (!rawOutputs) {
-    return {
-      id: interactionId,
-      ...(usage ? { usage } : {}),
-    };
+  const normalized: GeminiInteraction = {
+    id: interactionId,
+  };
+  if (usage) {
+    normalized.usage = usage;
+  }
+  if (rawOutputs) {
+    normalized.outputs = rawOutputs.filter(isRecord).map((output) => ({ ...output }));
   }
 
-  const outputs = rawOutputs.filter(isRecord).map((output) => ({ ...output }));
-  return {
-    id: interactionId,
-    outputs,
-    ...(usage ? { usage } : {}),
-  };
+  return normalized;
 }
 
 function normalizeInteractionUsage(value: unknown): GeminiInteractionUsage | undefined {
@@ -778,14 +946,27 @@ function normalizeInteractionUsage(value: unknown): GeminiInteractionUsage | und
     return undefined;
   }
 
-  return {
-    ...(totalInputTokens !== undefined ? { totalInputTokens } : {}),
-    ...(totalOutputTokens !== undefined ? { totalOutputTokens } : {}),
-    ...(totalThoughtTokens !== undefined ? { totalThoughtTokens } : {}),
-    ...(totalToolUseTokens !== undefined ? { totalToolUseTokens } : {}),
-    ...(totalCachedTokens !== undefined ? { totalCachedTokens } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
-  };
+  const usage: GeminiInteractionUsage = {};
+  if (totalInputTokens !== undefined) {
+    usage.totalInputTokens = totalInputTokens;
+  }
+  if (totalOutputTokens !== undefined) {
+    usage.totalOutputTokens = totalOutputTokens;
+  }
+  if (totalThoughtTokens !== undefined) {
+    usage.totalThoughtTokens = totalThoughtTokens;
+  }
+  if (totalToolUseTokens !== undefined) {
+    usage.totalToolUseTokens = totalToolUseTokens;
+  }
+  if (totalCachedTokens !== undefined) {
+    usage.totalCachedTokens = totalCachedTokens;
+  }
+  if (totalTokens !== undefined) {
+    usage.totalTokens = totalTokens;
+  }
+
+  return usage;
 }
 
 function readNonNegativeIntegerField(
@@ -875,23 +1056,37 @@ function buildAssistantResponseStats(input: {
       ? (input.usageTotals.totalTokens * 1000) / requestDurationForRateMs
       : undefined;
 
-  return {
+  const responseStats: AssistantResponseStats = {
     requestDurationMs,
     timeToFirstTokenMs,
-    ...(input.usageTotals.hasOutputTokens ? { outputTokens: input.usageTotals.outputTokens } : {}),
-    ...(input.usageTotals.hasInputTokens ? { inputTokens: input.usageTotals.inputTokens } : {}),
-    ...(input.usageTotals.hasThoughtTokens
-      ? { thoughtTokens: input.usageTotals.thoughtTokens }
-      : {}),
-    ...(input.usageTotals.hasToolUseTokens
-      ? { toolUseTokens: input.usageTotals.toolUseTokens }
-      : {}),
-    ...(input.usageTotals.hasCachedTokens ? { cachedTokens: input.usageTotals.cachedTokens } : {}),
-    ...(input.usageTotals.hasTotalTokens ? { totalTokens: input.usageTotals.totalTokens } : {}),
-    ...(outputTokensPerSecond !== undefined ? { outputTokensPerSecond } : {}),
-    ...(totalTokensPerSecond !== undefined ? { totalTokensPerSecond } : {}),
     hasStreamingToken: input.firstStreamTokenAtMs !== null,
   };
+  if (input.usageTotals.hasOutputTokens) {
+    responseStats.outputTokens = input.usageTotals.outputTokens;
+  }
+  if (input.usageTotals.hasInputTokens) {
+    responseStats.inputTokens = input.usageTotals.inputTokens;
+  }
+  if (input.usageTotals.hasThoughtTokens) {
+    responseStats.thoughtTokens = input.usageTotals.thoughtTokens;
+  }
+  if (input.usageTotals.hasToolUseTokens) {
+    responseStats.toolUseTokens = input.usageTotals.toolUseTokens;
+  }
+  if (input.usageTotals.hasCachedTokens) {
+    responseStats.cachedTokens = input.usageTotals.cachedTokens;
+  }
+  if (input.usageTotals.hasTotalTokens) {
+    responseStats.totalTokens = input.usageTotals.totalTokens;
+  }
+  if (outputTokensPerSecond !== undefined) {
+    responseStats.outputTokensPerSecond = outputTokensPerSecond;
+  }
+  if (totalTokensPerSecond !== undefined) {
+    responseStats.totalTokensPerSecond = totalTokensPerSecond;
+  }
+
+  return responseStats;
 }
 
 function withAssistantResponseStats(
@@ -914,14 +1109,22 @@ function withAssistantInteractionMetadata(
 ): GeminiContent {
   const normalizedInteractionId = interactionId.trim();
   const normalizedModel = model.trim();
+  const metadata = {
+    ...(content.metadata ?? {}),
+  };
+  if (normalizedInteractionId) {
+    metadata.interactionId = normalizedInteractionId;
+  }
+  if (normalizedModel) {
+    metadata.sourceModel = normalizedModel;
+  }
+  if (!metadata.createdAt) {
+    metadata.createdAt = new Date().toISOString();
+  }
+
   return {
     ...content,
-    metadata: {
-      ...(content.metadata ?? {}),
-      ...(normalizedInteractionId ? { interactionId: normalizedInteractionId } : {}),
-      ...(normalizedModel ? { sourceModel: normalizedModel } : {}),
-      createdAt: content.metadata?.createdAt ?? new Date().toISOString(),
-    },
+    metadata,
   };
 }
 
@@ -1026,15 +1229,21 @@ function buildStreamedFunctionCallOutputs(
 ): Array<Record<string, unknown>> {
   return [...functionCallDeltas.values()]
     .sort((left, right) => left.order - right.order)
-    .map((callDelta) => ({
-      type: 'function_call',
-      ...(callDelta.id ? { id: callDelta.id } : {}),
-      name: callDelta.name,
-      arguments:
-        callDelta.argumentsObject !== undefined
-          ? normalizeFunctionCallArgs(callDelta.argumentsObject)
-          : normalizeFunctionCallArgs(callDelta.argumentChunks.join('')),
-    }));
+    .map((callDelta) => {
+      const output: Record<string, unknown> = {
+        type: 'function_call',
+        name: callDelta.name,
+        arguments:
+          callDelta.argumentsObject !== undefined
+            ? normalizeFunctionCallArgs(callDelta.argumentsObject)
+            : normalizeFunctionCallArgs(callDelta.argumentChunks.join('')),
+      };
+      if (callDelta.id) {
+        output.id = callDelta.id;
+      }
+
+      return output;
+    });
 }
 
 function readStreamContentIndex(event: Record<string, unknown>): number | null {
@@ -1054,12 +1263,14 @@ function extractStreamDelta(event: Record<string, unknown>): GeminiStreamDelta |
 
   const deltaType = readStringField(delta, 'type');
   if (deltaType === 'text') {
-    return delta.text ? { textDelta: delta.text as string } : null;
+    const text = delta.text;
+    return typeof text === 'string' && text ? { textDelta: text } : null;
   }
 
   if (deltaType === 'thought_summary') {
     const content = isRecord(delta.content) ? delta.content : null;
-    return content?.text ? { thinkingDelta: content.text as string } : null;
+    const text = content?.text;
+    return typeof text === 'string' && text ? { thinkingDelta: text } : null;
   }
 
   if (deltaType === 'thought') {
@@ -1069,7 +1280,8 @@ function extractStreamDelta(event: Record<string, unknown>): GeminiStreamDelta |
     }
 
     const content = isRecord(delta.content) ? delta.content : null;
-    return content?.text ? { thinkingDelta: content.text as string } : null;
+    const text = content?.text;
+    return typeof text === 'string' && text ? { thinkingDelta: text } : null;
   }
 
   return null;
@@ -1117,12 +1329,7 @@ function isPreviousInteractionIdError(error: unknown): boolean {
     return false;
   }
 
-  const errorMessage =
-    typeof error.message === 'string'
-      ? error.message.toLowerCase()
-      : typeof error.error === 'string'
-        ? error.error.toLowerCase()
-        : '';
+  const errorMessage = readStringField(error, 'message', 'error').toLowerCase();
   return (
     errorMessage.includes('previous_interaction_id') ||
     (errorMessage.includes('previous interaction') && errorMessage.includes('id'))
@@ -1174,12 +1381,16 @@ function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart
       }
 
       const id = typeof output.id === 'string' ? output.id.trim() : '';
+      const normalizedFunctionCall: { id?: string; name: string; args: Record<string, unknown> } = {
+        name,
+        args: normalizeFunctionCallArgs(output.arguments),
+      };
+      if (id) {
+        normalizedFunctionCall.id = id;
+      }
+
       return {
-        functionCall: {
-          ...(id ? { id } : {}),
-          name,
-          args: normalizeFunctionCallArgs(output.arguments),
-        },
+        functionCall: normalizedFunctionCall,
       };
     }
     case 'code_execution_result': {
@@ -1260,11 +1471,15 @@ function mapInteractionMediaOutputToPart(output: Record<string, unknown>): Gemin
   }
 
   const data = readStringField(output, 'data');
+  const inlineData: { mimeType: string; data?: string } = {
+    mimeType,
+  };
+  if (data) {
+    inlineData.data = data;
+  }
+
   return {
-    inlineData: {
-      mimeType,
-      ...(data ? { data } : {}),
-    },
+    inlineData,
   };
 }
 
@@ -1291,9 +1506,29 @@ function summarizeInteractionOutput(output: Record<string, unknown>): Record<str
   return summary;
 }
 
-function readStringField(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  return typeof value === 'string' ? value.trim() : '';
+function summarizeUnknownPart(part: Record<string, unknown>): Record<string, unknown> {
+  const keys = Object.keys(part).slice(0, 8);
+  const summary: Record<string, unknown> = {
+    type: 'unknown_part',
+  };
+  if (keys.length > 0) {
+    summary.keys = keys;
+  }
+
+  return summary;
+}
+
+function readStringField(record: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return '';
 }
 
 function extractFunctionCalls(parts: GeminiPart[]): GeminiFunctionCall[] {
@@ -1308,8 +1543,11 @@ function parseFunctionCall(part: GeminiPart): GeminiFunctionCall | null {
 
   const id = typeof rawFunctionCall.id === 'string' ? rawFunctionCall.id.trim() : '';
   const name = typeof rawFunctionCall.name === 'string' ? rawFunctionCall.name.trim() : '';
-  if (!id || !name) {
+  if (!name) {
     return null;
+  }
+  if (!id) {
+    throw new Error(`Gemini function call "${name}" is missing call id.`);
   }
 
   const args = normalizeFunctionCallArgs(rawFunctionCall.args);
@@ -1317,7 +1555,7 @@ function parseFunctionCall(part: GeminiPart): GeminiFunctionCall | null {
 }
 
 function readPartRecord(
-  part: GeminiPart,
+  part: Record<string, unknown>,
   camelKey: string,
   snakeKey: string,
 ): Record<string, unknown> | null {
@@ -1416,28 +1654,25 @@ function buildFunctionResponsePart(
   response: Record<string, unknown>,
 ): GeminiPart {
   const functionResponse: Record<string, unknown> = {
+    id: call.id,
     name: call.name,
     response,
   };
-  if (call.id) {
-    functionResponse.id = call.id;
-  }
   return { functionResponse };
 }
 
 function buildFunctionResultInput(call: ExecutedFunctionCall): Record<string, unknown> {
-  const callId = typeof call.call.id === 'string' ? call.call.id.trim() : '';
-  if (!callId) {
-    throw new Error(`Gemini function call "${call.call.name}" is missing call id.`);
-  }
-
-  return {
+  const result: Record<string, unknown> = {
     type: 'function_result',
-    call_id: callId,
+    call_id: call.call.id,
     name: call.call.name,
     result: call.response,
-    ...(call.isError ? { is_error: true } : {}),
   };
+  if (call.isError) {
+    result.is_error = true;
+  }
+
+  return result;
 }
 
 function buildInteractionInputFromContent(content: GeminiContent): Array<Record<string, unknown>> {
@@ -1475,11 +1710,15 @@ function buildInteractionInputFromContent(content: GeminiContent): Array<Record<
       }
 
       const data = readStringField(inlineData, 'data');
-      input.push({
+      const mediaInput: Record<string, unknown> = {
         type: inferMediaTypeFromMimeType(mimeType),
         mime_type: mimeType,
-        ...(data ? { data } : {}),
-      });
+      };
+      if (data) {
+        mediaInput.data = data;
+      }
+
+      input.push(mediaInput);
     }
   }
 

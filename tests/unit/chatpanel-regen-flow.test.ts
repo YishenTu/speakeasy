@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import type { ChatMessage } from '../../src/shared/messages';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
@@ -8,6 +8,18 @@ type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T) => void;
   reject: (reason?: unknown) => void;
+};
+
+type UploadFilesRuntimeResponse = {
+  ok: true;
+  payload: {
+    attachments: Array<{
+      name: string;
+      mimeType: string;
+      fileUri: string;
+    }>;
+    failures: [];
+  };
 };
 
 function createDeferred<T>(): Deferred<T> {
@@ -39,11 +51,22 @@ describe('chatpanel regenerate flow', () => {
   let openOptionsErrorMessage: string | null;
   let newChatErrorMessage: string | null;
   let sendErrorMessage: string | null;
+  let sendRequest: Extract<RuntimeRequest, { type: 'chat/send' }> | null;
+  let sendDeferred: Deferred<{
+    ok: true;
+    payload: {
+      chatId: string;
+      assistantMessage: ChatMessage;
+    };
+  }> | null;
   let regenRequest: Extract<RuntimeRequest, { type: 'chat/regen' }> | null;
   let forkRequest: Extract<RuntimeRequest, { type: 'chat/fork' }> | null;
   let switchBranchRequest: Extract<RuntimeRequest, { type: 'chat/switch-branch' }> | null;
+  let uploadRequests: Extract<RuntimeRequest, { type: 'chat/upload-files' }>[];
+  let deferredUploadResponsesByFileName: Map<string, Deferred<UploadFilesRuntimeResponse>>;
   let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
   let loadMessageSnapshots: string[];
+  let runtimeMessageListeners: Array<(request: unknown) => void>;
   let regenDeferred: Deferred<{
     ok: true;
     payload: {
@@ -70,11 +93,16 @@ describe('chatpanel regenerate flow', () => {
     openOptionsErrorMessage = null;
     newChatErrorMessage = null;
     sendErrorMessage = null;
+    sendRequest = null;
+    sendDeferred = null;
     regenRequest = null;
     forkRequest = null;
     switchBranchRequest = null;
+    uploadRequests = [];
+    deferredUploadResponsesByFileName = new Map();
     loadRequests = [];
     loadMessageSnapshots = [];
+    runtimeMessageListeners = [];
     regenDeferred = createDeferred();
 
     (globalThis as { chrome?: unknown }).chrome = {
@@ -176,11 +204,15 @@ describe('chatpanel regenerate flow', () => {
             });
           }
           if (request.type === 'chat/send') {
+            sendRequest = request;
             if (sendErrorMessage) {
               return Promise.resolve({
                 ok: false as const,
                 error: sendErrorMessage,
               });
+            }
+            if (sendDeferred) {
+              return sendDeferred.promise;
             }
             return Promise.resolve({
               ok: true as const,
@@ -192,6 +224,26 @@ describe('chatpanel regenerate flow', () => {
                   content: 'Sent response',
                   interactionId: 'interaction-send',
                 },
+              },
+            });
+          }
+          if (request.type === 'chat/upload-files') {
+            uploadRequests.push(request);
+            const deferredUploadResponse = request.files
+              .map((file) => deferredUploadResponsesByFileName.get(file.name))
+              .find((deferred) => !!deferred);
+            if (deferredUploadResponse) {
+              return deferredUploadResponse.promise;
+            }
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                attachments: request.files.map((file, index) => ({
+                  name: file.name,
+                  mimeType: file.mimeType,
+                  fileUri: `https://example.invalid/files/${index + 1}`,
+                })),
+                failures: [],
               },
             });
           }
@@ -210,7 +262,9 @@ describe('chatpanel regenerate flow', () => {
           throw new Error(`Unexpected runtime request type: ${request.type}`);
         },
         onMessage: {
-          addListener: () => {},
+          addListener: (listener: (request: unknown) => void) => {
+            runtimeMessageListeners.push(listener);
+          },
         },
       },
     };
@@ -351,6 +405,198 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList?.textContent).toContain('send failed');
     expect(messageList?.textContent).not.toContain('failure prompt');
     expect(messageList?.querySelectorAll('li[data-message-id]').length).toBe(1);
+  });
+
+  it('keeps uploaded image preview visible while streaming and after send reconciliation', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    currentMessages = [];
+    listSessionsPayload = [];
+    sendDeferred = createDeferred();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(fileInput).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!form || !input || !fileInput || !messageList) {
+      throw new Error('Expected chatpanel form controls.');
+    }
+    const revokeSpy = spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    const imageFile = new File(['image-bytes'], 'pasted.png', { type: 'image/png' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [imageFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(20);
+    expect(shadowRoot.querySelector('#speakeasy-file-previews .file-preview-spinner')).toBeNull();
+
+    input.value = 'What is in this image?';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(30);
+
+    expect(sendRequest?.type).toBe('chat/send');
+    expect(sendRequest?.attachments).toHaveLength(1);
+    expect(sendRequest?.attachments?.[0]).toMatchObject({
+      name: 'pasted.png',
+      mimeType: 'image/png',
+      fileUri: 'https://example.invalid/files/1',
+    });
+    expect(sendRequest?.attachments?.[0]?.previewDataUrl).toMatch(/^data:image\/png;base64,/);
+    const requestId = sendRequest?.streamRequestId;
+    expect(typeof requestId).toBe('string');
+    expect(requestId?.length).toBeGreaterThan(0);
+
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: 'chat/stream-delta',
+        requestId,
+        textDelta: 'Streaming reply',
+      });
+    }
+    await flushMicrotasks(6);
+
+    const streamedPreviewImage = messageList.querySelector(
+      '.message-attachment-strip .file-preview-image',
+    ) as HTMLImageElement | null;
+    expect(streamedPreviewImage).not.toBeNull();
+    expect(streamedPreviewImage?.src.startsWith('data:image/png;base64,')).toBe(true);
+    const streamedPreviewUrl = streamedPreviewImage?.src ?? '';
+
+    currentMessages = [
+      {
+        id: 'persisted-user-1',
+        role: 'user',
+        content: 'What is in this image?',
+        attachments: [
+          {
+            name: 'pasted.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/1',
+          },
+        ],
+      },
+      {
+        id: 'persisted-assistant-1',
+        role: 'assistant',
+        content: 'Looks like a test image.',
+        interactionId: 'interaction-stream-final',
+      },
+    ];
+
+    sendDeferred.resolve({
+      ok: true,
+      payload: {
+        chatId: 'chat-seed',
+        assistantMessage: {
+          id: 'assistant-send',
+          role: 'assistant',
+          content: 'Looks like a test image.',
+          interactionId: 'interaction-stream-final',
+        },
+      },
+    });
+    await flushMicrotasks(20);
+
+    const reconciledPreviewImage = messageList.querySelector(
+      '.message-attachment-strip .file-preview-image',
+    ) as HTMLImageElement | null;
+    expect(reconciledPreviewImage).not.toBeNull();
+    expect(reconciledPreviewImage?.src.startsWith('data:image/png;base64,')).toBe(true);
+    expect(revokeSpy).not.toHaveBeenCalledWith(streamedPreviewUrl);
+    expect(messageList.textContent).toContain('Looks like a test image.');
+  });
+
+  it('starts uploading on attach and blocks submit until image upload finishes', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    currentMessages = [];
+    listSessionsPayload = [];
+    const pendingUpload = createDeferred<UploadFilesRuntimeResponse>();
+    deferredUploadResponsesByFileName.set('pending.png', pendingUpload);
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(fileInput).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!form || !input || !fileInput || !filePreviewContainer || !messageList) {
+      throw new Error('Expected form controls, preview container, and message list elements.');
+    }
+
+    const imageFile = new File(['pending-image'], 'pending.png', { type: 'image/png' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [imageFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(8);
+
+    expect(uploadRequests).toHaveLength(1);
+    expect(uploadRequests[0]?.files).toHaveLength(1);
+    expect(uploadRequests[0]?.files[0]?.name).toBe('pending.png');
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-spinner')).toHaveLength(1);
+
+    input.value = 'Describe this image.';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(10);
+
+    expect(sendRequest).toBeNull();
+    expect(messageList.textContent).toContain(
+      'Please wait for file uploads to finish before sending.',
+    );
+
+    pendingUpload.resolve({
+      ok: true,
+      payload: {
+        attachments: [
+          {
+            name: 'pending.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/pending',
+          },
+        ],
+        failures: [],
+      },
+    });
+    await flushMicrotasks(16);
+
+    expect(filePreviewContainer.querySelector('.file-preview-spinner')).toBeNull();
+
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(16);
+
+    expect(sendRequest?.type).toBe('chat/send');
+    expect(sendRequest?.attachments).toHaveLength(1);
+    expect(sendRequest?.attachments?.[0]).toMatchObject({
+      name: 'pending.png',
+      mimeType: 'image/png',
+      fileUri: 'https://example.invalid/files/pending',
+    });
   });
 
   it('switches assistant branches from the branch selector and reloads messages', async () => {
@@ -497,6 +743,346 @@ describe('chatpanel regenerate flow', () => {
     expect(userRowBranchSwitch?.textContent?.trim()).toBe('<2/2>');
     expect(assistantRowBranchSwitch).toBeNull();
     expect(messageList?.textContent).toContain('Forked second answer');
+  });
+
+  it('stages accepted files from drop events', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const shell = shadowRoot.querySelector('#speakeasy-shell') as HTMLElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    expect(shell).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    if (!shell || !filePreviewContainer) {
+      throw new Error('Expected chatpanel shell and file preview container.');
+    }
+
+    const file = new File(['hello'], 'dropped.txt', { type: 'text/plain' });
+    const dropEvent = new testWindow.Event('drop', { bubbles: true, cancelable: true }) as Event & {
+      dataTransfer: DataTransfer;
+    };
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      configurable: true,
+      value: {
+        types: ['Files'],
+        items: [{ kind: 'file', getAsFile: () => file }],
+        files: [file],
+      },
+    });
+
+    shell.dispatchEvent(dropEvent);
+
+    const previewTiles = filePreviewContainer.querySelectorAll('.file-preview-tile');
+    expect(previewTiles).toHaveLength(1);
+    expect(filePreviewContainer.textContent).toContain('dropped.txt');
+  });
+
+  it('enforces staged-file limits and reports overflow', async () => {
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(fileInput).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!fileInput || !filePreviewContainer || !messageList) {
+      throw new Error('Expected file input, preview container, and message list elements.');
+    }
+
+    const files = Array.from(
+      { length: 6 },
+      (_, index) => new File([`file-${index}`], `file-${index}.txt`, { type: 'text/plain' }),
+    );
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: files,
+    });
+    fileInput.dispatchEvent(new Event('change'));
+
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(5);
+    expect(messageList.textContent).toContain('Only 5 additional file(s) were staged.');
+  });
+
+  it('rejects unsupported or oversized staged files with assistant errors', async () => {
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(fileInput).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!fileInput || !filePreviewContainer || !messageList) {
+      throw new Error('Expected file input, preview container, and message list elements.');
+    }
+
+    const oversizedFile = new File([new Uint8Array(20 * 1024 * 1024 + 1)], 'large.txt', {
+      type: 'text/plain',
+    });
+    const unsupportedFile = new File(['{}'], 'data.json', { type: 'application/json' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [oversizedFile, unsupportedFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(0);
+    expect(messageList.textContent).toContain('"large.txt" exceeds the 20 MB file size limit.');
+    expect(messageList.textContent).toContain('Unsupported file type for "data.json".');
+  });
+
+  it('renders staged pdf attachments as square tiles instead of chips', async () => {
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    expect(fileInput).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    if (!fileInput || !filePreviewContainer) {
+      throw new Error('Expected file input and file preview container elements.');
+    }
+
+    const pdfFile = new File(['%PDF-1.7'], 'spec.pdf', { type: 'application/pdf' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [pdfFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(16);
+
+    const pdfTile = filePreviewContainer.querySelector(
+      '.file-preview-tile',
+    ) as HTMLDivElement | null;
+    const pdfGeneric = filePreviewContainer.querySelector(
+      '.file-preview-generic.is-pdf',
+    ) as HTMLDivElement | null;
+    expect(pdfTile).not.toBeNull();
+    expect(pdfGeneric).not.toBeNull();
+    expect(filePreviewContainer.querySelector('.file-chip')).toBeNull();
+    expect(filePreviewContainer.textContent).toContain('PDF');
+    expect(filePreviewContainer.textContent).toContain('spec.pdf');
+  });
+
+  it('applies composer auto-resize on mount to avoid first-keystroke jump', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
+    const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
+      textareaPrototype,
+      'scrollHeight',
+    );
+    const originalScrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      textareaPrototype,
+      'scrollHeight',
+    );
+
+    Object.defineProperty(textareaPrototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 96,
+    });
+
+    try {
+      await importFreshChatpanelModule();
+      await flushMicrotasks();
+
+      const shadowRoot = getChatpanelShadowRoot();
+      const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+      expect(input).not.toBeNull();
+      expect(input?.style.height).toBe('96px');
+    } finally {
+      if (hasOwnScrollHeightDescriptor && originalScrollHeightDescriptor) {
+        Object.defineProperty(textareaPrototype, 'scrollHeight', originalScrollHeightDescriptor);
+      } else {
+        Reflect.deleteProperty(textareaPrototype, 'scrollHeight');
+      }
+    }
+  });
+
+  it('grows input with content and caps height to one-third of panel height', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    let nextScrollHeight = 72;
+    const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
+    const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
+      textareaPrototype,
+      'scrollHeight',
+    );
+    const originalScrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      textareaPrototype,
+      'scrollHeight',
+    );
+
+    Object.defineProperty(textareaPrototype, 'scrollHeight', {
+      configurable: true,
+      get: () => nextScrollHeight,
+    });
+
+    try {
+      await importFreshChatpanelModule();
+      await flushMicrotasks();
+
+      const shadowRoot = getChatpanelShadowRoot();
+      const shell = shadowRoot.querySelector('#speakeasy-shell') as HTMLElement | null;
+      const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+      expect(shell).not.toBeNull();
+      expect(input).not.toBeNull();
+
+      if (!shell || !input) {
+        throw new Error('Expected chatpanel shell and input elements.');
+      }
+
+      Object.defineProperty(shell, 'clientHeight', {
+        configurable: true,
+        get: () => 600,
+      });
+
+      input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+      expect(input.style.maxHeight).toBe('200px');
+      const firstResizeHeight = Number.parseFloat(input.style.height);
+      expect(firstResizeHeight).toBeGreaterThanOrEqual(72);
+      expect(firstResizeHeight).toBeLessThanOrEqual(200);
+
+      nextScrollHeight = 320;
+      input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+      expect(input.style.maxHeight).toBe('200px');
+      expect(input.style.height).toBe('200px');
+    } finally {
+      if (hasOwnScrollHeightDescriptor && originalScrollHeightDescriptor) {
+        Object.defineProperty(textareaPrototype, 'scrollHeight', originalScrollHeightDescriptor);
+      } else {
+        Reflect.deleteProperty(textareaPrototype, 'scrollHeight');
+      }
+    }
+  });
+
+  it('keeps a multiline minimum height when scrollHeight is zero', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
+    const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
+      textareaPrototype,
+      'scrollHeight',
+    );
+    const originalScrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      textareaPrototype,
+      'scrollHeight',
+    );
+
+    Object.defineProperty(textareaPrototype, 'scrollHeight', {
+      configurable: true,
+      get: () => 0,
+    });
+
+    try {
+      await importFreshChatpanelModule();
+      await flushMicrotasks();
+
+      const shadowRoot = getChatpanelShadowRoot();
+      const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+      expect(input).not.toBeNull();
+
+      const resolvedHeight = Number.parseFloat(input?.style.height ?? '0');
+      expect(Number.isFinite(resolvedHeight)).toBe(true);
+      expect(resolvedHeight).toBeGreaterThan(30);
+    } finally {
+      if (hasOwnScrollHeightDescriptor && originalScrollHeightDescriptor) {
+        Object.defineProperty(textareaPrototype, 'scrollHeight', originalScrollHeightDescriptor);
+      } else {
+        Reflect.deleteProperty(textareaPrototype, 'scrollHeight');
+      }
+    }
+  });
+
+  it('stabilizes input height after file staging so first typing does not jump again', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    let nextScrollHeight = 0;
+    const textareaPrototype = testWindow.HTMLTextAreaElement.prototype;
+    const hasOwnScrollHeightDescriptor = Object.prototype.hasOwnProperty.call(
+      textareaPrototype,
+      'scrollHeight',
+    );
+    const originalScrollHeightDescriptor = Object.getOwnPropertyDescriptor(
+      textareaPrototype,
+      'scrollHeight',
+    );
+
+    Object.defineProperty(textareaPrototype, 'scrollHeight', {
+      configurable: true,
+      get: () => nextScrollHeight,
+    });
+
+    try {
+      await importFreshChatpanelModule();
+      await flushMicrotasks();
+
+      const shadowRoot = getChatpanelShadowRoot();
+      const shell = shadowRoot.querySelector('#speakeasy-shell') as HTMLElement | null;
+      const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+      const fileInput = shadowRoot.querySelector(
+        '#speakeasy-file-input',
+      ) as HTMLInputElement | null;
+      expect(shell).not.toBeNull();
+      expect(input).not.toBeNull();
+      expect(fileInput).not.toBeNull();
+
+      if (!shell || !input || !fileInput) {
+        throw new Error('Expected shell, input, and file input elements.');
+      }
+
+      Object.defineProperty(shell, 'clientHeight', {
+        configurable: true,
+        get: () => 600,
+      });
+
+      const beforeStageHeight = Number.parseFloat(input.style.height);
+      nextScrollHeight = 108;
+
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['img'], 'pasted.png', { type: 'image/png' })],
+      });
+      fileInput.dispatchEvent(new Event('change'));
+
+      const stagedHeight = Number.parseFloat(input.style.height);
+      expect(stagedHeight).toBeGreaterThan(beforeStageHeight);
+
+      input.value = 'a';
+      input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+      const typedHeight = Number.parseFloat(input.style.height);
+      expect(typedHeight).toBe(stagedHeight);
+    } finally {
+      if (hasOwnScrollHeightDescriptor && originalScrollHeightDescriptor) {
+        Object.defineProperty(textareaPrototype, 'scrollHeight', originalScrollHeightDescriptor);
+      } else {
+        Reflect.deleteProperty(textareaPrototype, 'scrollHeight');
+      }
+    }
   });
 });
 

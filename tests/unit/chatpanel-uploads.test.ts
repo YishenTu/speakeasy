@@ -1,217 +1,191 @@
 import { describe, expect, it } from 'bun:test';
-import { GoogleGenAI } from '@google/genai';
 import { uploadFilesToGemini } from '../../src/chatpanel/uploads';
-import { GEMINI_SETTINGS_STORAGE_KEY } from '../../src/shared/settings';
+import type { RuntimeRequest } from '../../src/shared/runtime';
 
 describe('chatpanel uploads', () => {
   it('returns empty list when no files were provided', async () => {
-    let readApiKeyCalls = 0;
+    let uploadCalls = 0;
     const attachments = await uploadFilesToGemini([], {
-      readGeminiApiKey: async () => {
-        readApiKeyCalls += 1;
-        return 'unused';
+      uploadChatFiles: async () => {
+        uploadCalls += 1;
+        return {
+          attachments: [],
+          failures: [],
+        };
       },
     });
 
     expect(attachments).toEqual([]);
-    expect(readApiKeyCalls).toBe(0);
+    expect(uploadCalls).toBe(0);
   });
 
-  it('throws when Gemini API key is missing', async () => {
-    await expect(
-      uploadFilesToGemini([new File(['hello'], 'note.txt', { type: 'text/plain' })], {
-        readGeminiApiKey: async () => '',
-        getGeminiClient: () => {
-          throw new Error('should not create client without API key');
+  it('forwards upload timeout option through chat upload bridge', async () => {
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
+    let receivedTimeout: number | undefined;
+
+    await uploadFilesToGemini(
+      [file],
+      {
+        uploadChatFiles: async (_files, options) => {
+          receivedTimeout = options.uploadTimeoutMs;
+          return {
+            attachments: [],
+            failures: [{ index: 0, fileName: 'note.txt', message: 'timed out' }],
+          };
         },
-      }),
-    ).rejects.toThrow(/api key is missing/i);
+      },
+      { uploadTimeoutMs: 50 },
+    ).catch(() => undefined);
+
+    expect(receivedTimeout).toBe(50);
   });
 
-  it('throws when Gemini upload response has no file URI', async () => {
-    await expect(
-      uploadFilesToGemini([new File(['hello'], 'note.txt', { type: 'text/plain' })], {
-        readGeminiApiKey: async () => 'test-key',
-        getGeminiClient: () => ({
-          files: {
-            upload: async () => ({
-              mimeType: 'text/plain',
-            }),
+  it('returns successful uploaded attachments', async () => {
+    const file = new File(['hello'], 'note.txt', { type: 'text/plain' });
+
+    const attachments = await uploadFilesToGemini([file], {
+      uploadChatFiles: async () => ({
+        attachments: [
+          {
+            name: 'note.txt',
+            mimeType: 'text/plain',
+            fileUri: 'https://example.invalid/files/note',
+            fileName: 'remote-note',
           },
-        }),
-      }),
-    ).rejects.toThrow(/did not return a file uri/i);
-  });
-
-  it('throws when Gemini upload response has a blank file URI', async () => {
-    await expect(
-      uploadFilesToGemini([new File(['hello'], 'note.txt', { type: 'text/plain' })], {
-        readGeminiApiKey: async () => 'test-key',
-        getGeminiClient: () => ({
-          files: {
-            upload: async () => ({
-              uri: '   ',
-              mimeType: 'text/plain',
-            }),
-          },
-        }),
-      }),
-    ).rejects.toThrow(/did not return a file uri/i);
-  });
-
-  it('trims upload metadata and applies mime-type fallbacks', async () => {
-    const typedFile = new File(['hello'], 'typed.txt', { type: 'text/plain' });
-    const untypedFile = new File([new Uint8Array([1, 2, 3])], 'bytes.bin');
-
-    const responses = [
-      {
-        uri: ' https://example.invalid/files/typed ',
-        mimeType: '   ',
-        name: '   ',
-      },
-      {
-        uri: ' https://example.invalid/files/untyped ',
-        mimeType: ' text/csv ',
-        name: ' remote-name ',
-      },
-    ];
-
-    const attachments = await uploadFilesToGemini([typedFile, untypedFile], {
-      readGeminiApiKey: async () => 'test-key',
-      getGeminiClient: () => ({
-        files: {
-          upload: async () => {
-            const next = responses.shift();
-            if (!next) {
-              throw new Error('unexpected upload call');
-            }
-            return next;
-          },
-        },
-      }),
-    });
-
-    expect(attachments).toEqual([
-      {
-        name: 'typed.txt',
-        mimeType: typedFile.type || 'text/plain',
-        fileUri: 'https://example.invalid/files/typed',
-      },
-      {
-        name: 'bytes.bin',
-        mimeType: 'text/csv',
-        fileUri: 'https://example.invalid/files/untyped',
-        fileName: 'remote-name',
-      },
-    ]);
-  });
-
-  it('normalizes upload metadata for persisted attachments', async () => {
-    const textFile = new File(['hello'], 'note.txt', { type: 'text/plain' });
-    const unknownMimeFile = new File([new Uint8Array([1, 2, 3])], 'blob.bin');
-
-    const responses = [
-      {
-        uri: 'https://example.invalid/files/text',
-        mimeType: 'text/markdown',
-        name: 'gemini-file-1',
-      },
-      {
-        uri: 'https://example.invalid/files/blob',
-      },
-    ];
-
-    const attachments = await uploadFilesToGemini([textFile, unknownMimeFile], {
-      readGeminiApiKey: async () => 'test-key',
-      getGeminiClient: () => ({
-        files: {
-          upload: async () => {
-            const next = responses.shift();
-            if (!next) {
-              throw new Error('unexpected upload call');
-            }
-            return next;
-          },
-        },
+        ],
+        failures: [],
       }),
     });
 
     expect(attachments).toEqual([
       {
         name: 'note.txt',
-        mimeType: 'text/markdown',
-        fileUri: 'https://example.invalid/files/text',
-        fileName: 'gemini-file-1',
-      },
-      {
-        name: 'blob.bin',
-        mimeType: 'application/octet-stream',
-        fileUri: 'https://example.invalid/files/blob',
+        mimeType: 'text/plain',
+        fileUri: 'https://example.invalid/files/note',
+        fileName: 'remote-note',
       },
     ]);
   });
 
-  it('uses default dependencies to read settings and create Gemini clients', async () => {
-    const inputFile = new File(['hello'], 'default.txt', { type: 'text/plain' });
-    const probeClient = new GoogleGenAI({ apiKey: 'probe', apiVersion: 'v1beta' });
-    const filesPrototype = Object.getPrototypeOf(probeClient.files) as {
-      upload: (input: {
-        file: File;
-        config: {
-          displayName: string;
-          mimeType?: string;
-        };
-      }) => Promise<{ uri?: string; mimeType?: string; name?: string }>;
-    };
-    const originalUpload = filesPrototype.upload;
-    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
-    const uploadCalls: Array<{
-      fileName: string;
-      displayName: string;
-      mimeType: string | undefined;
-    }> = [];
+  it('reports partial upload failures while returning successful attachments', async () => {
+    const okFile = new File(['ok'], 'ok.txt', { type: 'text/plain' });
+    const badFile = new File(['bad'], 'bad.txt', { type: 'text/plain' });
+    const failureReports: Array<{ fileName: string; message: string }> = [];
 
-    filesPrototype.upload = async (input) => {
-      uploadCalls.push({
-        fileName: input.file.name,
-        displayName: input.config.displayName,
-        mimeType: input.config.mimeType,
-      });
-      return {
-        uri: ' https://example.invalid/files/default ',
-      };
-    };
-    (globalThis as { chrome?: unknown }).chrome = {
-      storage: {
-        local: {
-          get: async () => ({
-            [GEMINI_SETTINGS_STORAGE_KEY]: {
-              apiKey: '  test-key  ',
+    const attachments = await uploadFilesToGemini(
+      [okFile, badFile],
+      {
+        uploadChatFiles: async () => ({
+          attachments: [
+            {
+              name: 'ok.txt',
+              mimeType: 'text/plain',
+              fileUri: 'https://example.invalid/files/ok',
             },
-          }),
+          ],
+          failures: [{ index: 1, fileName: 'bad.txt', message: 'network unavailable' }],
+        }),
+      },
+      {
+        onPartialFailure: (failures) => {
+          for (const failure of failures) {
+            failureReports.push({
+              fileName: failure.file.name,
+              message: failure.message,
+            });
+          }
+        },
+      },
+    );
+
+    expect(attachments).toEqual([
+      {
+        name: 'ok.txt',
+        mimeType: 'text/plain',
+        fileUri: 'https://example.invalid/files/ok',
+      },
+    ]);
+    expect(failureReports).toEqual([
+      {
+        fileName: 'bad.txt',
+        message: 'network unavailable',
+      },
+    ]);
+  });
+
+  it('throws when all file uploads fail', async () => {
+    const file = new File(['bad'], 'bad.txt', { type: 'text/plain' });
+
+    await expect(
+      uploadFilesToGemini([file], {
+        uploadChatFiles: async () => ({
+          attachments: [],
+          failures: [{ index: 0, fileName: 'bad.txt', message: 'request failed' }],
+        }),
+      }),
+    ).rejects.toThrow(/request failed/i);
+  });
+
+  it('throws when upload bridge returns no attachments and no failures', async () => {
+    const file = new File(['bad'], 'bad.txt', { type: 'text/plain' });
+
+    await expect(
+      uploadFilesToGemini([file], {
+        uploadChatFiles: async () => ({
+          attachments: [],
+          failures: [],
+        }),
+      }),
+    ).rejects.toThrow('Failed to upload selected file(s).');
+  });
+
+  it('uses background runtime upload path by default', async () => {
+    const file = new File(['hello'], 'default.txt', { type: 'text/plain' });
+    const runtimeRequests: RuntimeRequest[] = [];
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        sendMessage: async (request: RuntimeRequest) => {
+          runtimeRequests.push(request);
+          return {
+            ok: true,
+            payload: {
+              attachments: [
+                {
+                  name: 'default.txt',
+                  mimeType: 'text/plain',
+                  fileUri: 'https://example.invalid/files/default',
+                },
+              ],
+              failures: [],
+            },
+          };
         },
       },
     };
 
     try {
-      const attachments = await uploadFilesToGemini([inputFile]);
+      const attachments = await uploadFilesToGemini([file], {}, { uploadTimeoutMs: 44 });
 
       expect(attachments).toEqual([
         {
           name: 'default.txt',
-          mimeType: inputFile.type || 'application/octet-stream',
+          mimeType: 'text/plain',
           fileUri: 'https://example.invalid/files/default',
         },
       ]);
-      expect(uploadCalls).toEqual([
-        {
-          fileName: 'default.txt',
-          displayName: 'default.txt',
-          mimeType: inputFile.type,
-        },
-      ]);
+      expect(runtimeRequests).toHaveLength(1);
+      expect(runtimeRequests[0]).toMatchObject({
+        type: 'chat/upload-files',
+        files: [{ name: 'default.txt', mimeType: expect.stringContaining('text/plain') }],
+        uploadTimeoutMs: 44,
+      });
+      const firstRequest = runtimeRequests[0];
+      if (firstRequest?.type !== 'chat/upload-files') {
+        throw new Error('Expected upload runtime request.');
+      }
+      expect(firstRequest.files[0]?.bytesBase64).toBe('aGVsbG8=');
     } finally {
-      filesPrototype.upload = originalUpload;
       (globalThis as { chrome?: unknown }).chrome = originalChrome;
     }
   });

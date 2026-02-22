@@ -5,6 +5,25 @@ export interface FileDataAttachmentPayload {
   mimeType: string;
   fileUri: string;
   fileName?: string;
+  previewDataUrl?: string;
+}
+
+export interface UploadFilePayload {
+  name: string;
+  mimeType: string;
+  bytes: ArrayBuffer;
+}
+
+export interface UploadFileTransportPayload {
+  name: string;
+  mimeType: string;
+  bytesBase64: string;
+}
+
+export interface ChatUploadFailurePayload {
+  index: number;
+  fileName: string;
+  message: string;
 }
 
 export type RuntimeRequest =
@@ -48,6 +67,11 @@ export type RuntimeRequest =
     }
   | {
       type: 'chat/list';
+    }
+  | {
+      type: 'chat/upload-files';
+      files: UploadFileTransportPayload[];
+      uploadTimeoutMs?: number;
     }
   | {
       type: 'app/open-options';
@@ -101,13 +125,15 @@ export interface ChatSessionSummary {
   chatId: string;
   title: string;
   updatedAt: string;
-  parentChatId?: string;
-  rootChatId?: string;
-  forkedAt?: string;
 }
 
 export interface ChatListPayload {
   sessions: ChatSessionSummary[];
+}
+
+export interface ChatUploadFilesPayload {
+  attachments: FileDataAttachmentPayload[];
+  failures: ChatUploadFailurePayload[];
 }
 
 export interface OpenOptionsPayload {

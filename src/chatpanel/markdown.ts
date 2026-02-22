@@ -2,6 +2,7 @@ import DOMPurify, { type Config } from 'dompurify';
 import renderMathInElement from 'katex/contrib/auto-render';
 import { Marked, type Tokens } from 'marked';
 import { highlightCode } from './highlight';
+import { escapeHtml } from './html';
 
 const markdownParser = new Marked({
   gfm: true,
@@ -22,49 +23,46 @@ markdownParser.use({
   },
 });
 
+const BASE_ALLOWED_TAGS = [
+  'a',
+  'blockquote',
+  'br',
+  'code',
+  'del',
+  'em',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'hr',
+  'input',
+  'li',
+  'ol',
+  'p',
+  'pre',
+  'span',
+  'strong',
+  'table',
+  'tbody',
+  'td',
+  'th',
+  'thead',
+  'tr',
+  'ul',
+] as const;
+
 const SANITIZE_CONFIG: Config = {
   ALLOW_ARIA_ATTR: false,
   ALLOW_DATA_ATTR: false,
-  ALLOWED_TAGS: [
-    'a',
-    'blockquote',
-    'br',
-    'code',
-    'del',
-    'em',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'hr',
-    'input',
-    'li',
-    'ol',
-    'p',
-    'pre',
-    'span',
-    'strong',
-    'table',
-    'tbody',
-    'td',
-    'th',
-    'thead',
-    'tr',
-    'ul',
-  ],
+  ALLOWED_TAGS: [...BASE_ALLOWED_TAGS],
   ALLOWED_ATTR: ['align', 'checked', 'class', 'disabled', 'href', 'title', 'type'],
 };
 
-const HTML_ESCAPE_PATTERN = /[&<>"']/g;
-const HTML_ESCAPES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
+const POST_MATH_BLOCKED_TAG_SELECTOR = 'base,embed,iframe,link,meta,object,script,style';
+const POST_MATH_URL_ATTRS = new Set(['href', 'src', 'xlink:href']);
+const POST_MATH_SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 export function renderMarkdownToSafeHtml(markdown: string, ownerDocument: Document): string {
   if (!markdown.trim()) {
@@ -98,13 +96,9 @@ export function renderMarkdownToSafeHtml(markdown: string, ownerDocument: Docume
     trust: false,
   });
 
+  sanitizePostMathDom(container);
   return container.innerHTML;
 }
-
-function escapeHtml(input: string): string {
-  return input.replace(HTML_ESCAPE_PATTERN, (character) => HTML_ESCAPES[character] ?? character);
-}
-
 function normalizeTexLineBreaks(tex: string): string {
   // Some model responses use a single trailing "\" per row in matrix environments.
   // KaTeX expects "\\", so normalize this common variant before rendering.
@@ -208,4 +202,41 @@ function normalizeAlignedLine(line: string): string {
   }
 
   return `${withoutTrailingBreak.slice(0, equalsIndex)}&${withoutTrailingBreak.slice(equalsIndex)}`;
+}
+
+function sanitizePostMathDom(container: HTMLElement): void {
+  for (const node of Array.from(container.querySelectorAll(POST_MATH_BLOCKED_TAG_SELECTOR))) {
+    node.remove();
+  }
+
+  for (const element of Array.from(container.querySelectorAll<HTMLElement>('*'))) {
+    for (const attribute of Array.from(element.attributes)) {
+      const name = attribute.name.toLowerCase();
+      if (name.startsWith('on') || name === 'style') {
+        element.removeAttribute(attribute.name);
+        continue;
+      }
+
+      if (!POST_MATH_URL_ATTRS.has(name)) {
+        continue;
+      }
+
+      if (!isSafePostMathUrl(attribute.value)) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+}
+
+function isSafePostMathUrl(href: string): boolean {
+  if (!/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href)) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(href, 'https://speakeasy.invalid');
+    return POST_MATH_SAFE_LINK_PROTOCOLS.has(parsed.protocol);
+  } catch {
+    return false;
+  }
 }

@@ -1,98 +1,79 @@
-import { GoogleGenAI } from '@google/genai';
-import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
-import type { FileDataAttachmentPayload } from '../shared/runtime';
-import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../shared/settings';
-
-const MAX_GEMINI_CLIENT_CACHE_SIZE = 2;
-const geminiClients = new Map<string, GoogleGenAI>();
-
-interface UploadFileClient {
-  files: {
-    upload: (input: {
-      file: File;
-      config: {
-        displayName: string;
-        mimeType?: string;
-      };
-    }) => Promise<{
-      uri?: string;
-      mimeType?: string;
-      name?: string;
-    }>;
-  };
-}
+import { type UploadChatFilesOptions, uploadChatFiles } from '../shared/chat';
+import type { ChatUploadFilesPayload, FileDataAttachmentPayload } from '../shared/runtime';
 
 interface UploadDependencies {
-  readGeminiApiKey: () => Promise<string>;
-  getGeminiClient: (apiKey: string) => UploadFileClient;
+  uploadChatFiles: (
+    files: File[],
+    options: UploadChatFilesOptions,
+  ) => Promise<ChatUploadFilesPayload>;
+}
+
+export interface UploadFileFailure {
+  file: File;
+  message: string;
+}
+
+export interface UploadFilesOptions {
+  uploadTimeoutMs?: number;
+  onPartialFailure?: (failures: UploadFileFailure[]) => void;
 }
 
 export async function uploadFilesToGemini(
   files: File[],
   overrides: Partial<UploadDependencies> = {},
+  options: UploadFilesOptions = {},
 ): Promise<FileDataAttachmentPayload[]> {
   if (files.length === 0) {
     return [];
   }
 
   const dependencies: UploadDependencies = {
-    readGeminiApiKey,
-    getGeminiClient,
+    uploadChatFiles,
     ...overrides,
   };
-
-  const apiKey = await dependencies.readGeminiApiKey();
-  if (!apiKey) {
-    throw new Error('Gemini API key is missing. Add it in Speakeasy Settings.');
+  const uploadOptions: UploadChatFilesOptions = {};
+  if (typeof options.uploadTimeoutMs === 'number') {
+    uploadOptions.uploadTimeoutMs = options.uploadTimeoutMs;
   }
 
-  const client = dependencies.getGeminiClient(apiKey);
-  const uploadedAttachments: FileDataAttachmentPayload[] = [];
+  const payload = await dependencies.uploadChatFiles(files, uploadOptions);
+  const failures = mapFailuresToFiles(payload.failures, files);
+  if (payload.attachments.length === 0 && failures.length > 0) {
+    throw new Error(failures[0]?.message || 'Failed to upload selected file(s).');
+  }
+  if (payload.attachments.length === 0) {
+    throw new Error('Failed to upload selected file(s).');
+  }
+  if (failures.length > 0) {
+    options.onPartialFailure?.(failures);
+  }
 
-  for (const file of files) {
-    const upload = await client.files.upload({
-      file,
-      config: {
-        displayName: file.name,
-        ...(file.type ? { mimeType: file.type } : {}),
-      },
-    });
+  return payload.attachments;
+}
 
-    const fileUri = typeof upload.uri === 'string' ? upload.uri.trim() : '';
-    if (!fileUri) {
-      throw new Error(`Failed to upload "${file.name}": Gemini did not return a file URI.`);
+function mapFailuresToFiles(
+  failures: ChatUploadFilesPayload['failures'],
+  files: File[],
+): UploadFileFailure[] {
+  const normalized: UploadFileFailure[] = [];
+  for (const failure of failures) {
+    const sourceFile = files[failure.index];
+    if (sourceFile) {
+      normalized.push({
+        file: sourceFile,
+        message: failure.message,
+      });
+      continue;
     }
 
-    const mimeType = typeof upload.mimeType === 'string' ? upload.mimeType.trim() : '';
-    const normalizedMimeType = mimeType || file.type || 'application/octet-stream';
-    const fileName = typeof upload.name === 'string' ? upload.name.trim() : '';
-
-    uploadedAttachments.push({
-      name: file.name,
-      mimeType: normalizedMimeType,
-      fileUri,
-      ...(fileName ? { fileName } : {}),
-    });
+    const fallbackFile = files.find((file) => file.name === failure.fileName);
+    if (fallbackFile) {
+      normalized.push({
+        file: fallbackFile,
+        message: failure.message,
+      });
+    }
   }
 
-  return uploadedAttachments;
-}
-
-async function readGeminiApiKey(): Promise<string> {
-  const stored = await chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY);
-  const settings = normalizeGeminiSettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
-  return settings.apiKey.trim();
-}
-
-function getGeminiClient(apiKey: string): GoogleGenAI {
-  return getOrCreateBoundedCacheValue({
-    cache: geminiClients,
-    key: apiKey,
-    maxSize: MAX_GEMINI_CLIENT_CACHE_SIZE,
-    create: () =>
-      new GoogleGenAI({
-        apiKey,
-        apiVersion: 'v1beta',
-      }),
-  });
+  return normalized;
 }
