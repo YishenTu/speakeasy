@@ -10,7 +10,7 @@
 
 @layer components {
   .settings-page {
-    @apply min-h-screen bg-surface-900 text-white/90 tracking-wide;
+    @apply min-h-screen bg-black text-white/90 tracking-wide;
   }
 
   .settings-layout {

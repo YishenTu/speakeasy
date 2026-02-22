@@ -1,9 +1,11 @@
 import type { ChatMessage } from './messages';
 import type {
   ChatDeletePayload,
+  ChatForkPayload,
   ChatListPayload,
   ChatLoadPayload,
   ChatNewPayload,
+  ChatRegenPayload,
   ChatSendPayload,
   ChatSessionSummary,
   FileDataAttachmentPayload,
@@ -96,6 +98,55 @@ export async function sendMessage(
       : {}),
     ...(normalizedStreamRequestId ? { streamRequestId: normalizedStreamRequestId } : {}),
     ...(chatId ? { chatId } : {}),
+  });
+
+  await writeActiveChatId(payload.chatId);
+  return payload.assistantMessage;
+}
+
+export async function forkChat(previousInteractionId: string): Promise<string> {
+  const chatId = await readActiveChatId();
+  if (!chatId) {
+    throw new Error('No active chat selected. Open a chat before forking.');
+  }
+
+  const normalizedInteractionId = previousInteractionId.trim();
+  if (!normalizedInteractionId) {
+    throw new Error('Cannot fork without a target message.');
+  }
+
+  const payload = await sendRuntimeRequest<ChatForkPayload>({
+    type: 'chat/fork',
+    chatId,
+    previousInteractionId: normalizedInteractionId,
+  });
+  await writeActiveChatId(payload.chatId);
+  return payload.chatId;
+}
+
+export async function regenerateAssistantMessage(
+  previousInteractionId: string,
+  model: string,
+  thinkingLevel?: string,
+  streamRequestId?: string,
+): Promise<ChatMessage> {
+  const chatId = await readActiveChatId();
+  if (!chatId) {
+    throw new Error('No active chat selected. Open a chat before regenerating.');
+  }
+
+  const normalizedInteractionId = previousInteractionId.trim();
+  if (!normalizedInteractionId) {
+    throw new Error('Cannot regenerate without a target interaction id.');
+  }
+  const normalizedStreamRequestId = streamRequestId?.trim();
+  const payload = await sendRuntimeRequest<ChatRegenPayload>({
+    type: 'chat/regen',
+    chatId,
+    model,
+    previousInteractionId: normalizedInteractionId,
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+    ...(normalizedStreamRequestId ? { streamRequestId: normalizedStreamRequestId } : {}),
   });
 
   await writeActiveChatId(payload.chatId);

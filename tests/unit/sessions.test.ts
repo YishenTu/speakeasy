@@ -22,12 +22,19 @@ describe('sessions', () => {
       createdAt: '2025-01-01T00:00:00.000Z',
       updatedAt: '2025-01-01T00:00:00.000Z',
       contents: [
-        { role: 'user', parts: [{ text: 'Question' }] },
-        { role: 'model', parts: [{ text: 'Answer' }] },
+        { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
         {
+          id: 'm1',
+          role: 'model',
+          parts: [{ text: 'Answer' }],
+          metadata: { interactionId: 'interaction-1' },
+        },
+        {
+          id: 'm2',
           role: 'model',
           parts: [{ text: 'Answer with stats' }],
           metadata: {
+            interactionId: 'interaction-2',
             responseStats: {
               requestDurationMs: 800,
               timeToFirstTokenMs: 120,
@@ -40,10 +47,12 @@ describe('sessions', () => {
           },
         },
         {
+          id: 'm3',
           role: 'model',
           parts: [{ thoughtSummary: 'Compared two parsing strategies.' }],
         },
         {
+          id: 'm4',
           role: 'model',
           parts: [
             {
@@ -55,7 +64,7 @@ describe('sessions', () => {
             },
           ],
         },
-        { role: 'model', parts: [{ unknown: true }] },
+        { id: 'm5', role: 'model', parts: [{ unknown: true }] },
       ],
     };
 
@@ -66,13 +75,16 @@ describe('sessions', () => {
       role: 'user',
       content: 'Question',
     });
+    expect(messages[0]?.previousInteractionId).toBeUndefined();
     expect(messages[1]).toMatchObject({
       role: 'assistant',
       content: 'Answer',
+      interactionId: 'interaction-1',
     });
     expect(messages[2]).toMatchObject({
       role: 'assistant',
       content: 'Answer with stats',
+      interactionId: 'interaction-2',
       stats: {
         requestDurationMs: 800,
         timeToFirstTokenMs: 120,
@@ -88,6 +100,7 @@ describe('sessions', () => {
       content: '',
       thinkingSummary: 'Compared two parsing strategies.',
     });
+    expect(messages[3]?.interactionId).toBeUndefined();
     expect(messages[4]).toMatchObject({
       role: 'assistant',
       content: '',
@@ -147,11 +160,13 @@ describe('sessions', () => {
     ]);
   });
 
-  it('maps assistant response stats from content metadata', () => {
+  it('maps assistant response stats and interaction id from content metadata', () => {
     const message = toAssistantChatMessage({
+      id: 'assistant-content-1',
       role: 'model',
       parts: [{ text: 'Measured answer' }],
       metadata: {
+        interactionId: 'interaction-stats-1',
         responseStats: {
           requestDurationMs: 950,
           timeToFirstTokenMs: 140,
@@ -175,6 +190,7 @@ describe('sessions', () => {
       totalTokensPerSecond: 100,
       hasStreamingToken: true,
     });
+    expect(message.interactionId).toBe('interaction-stats-1');
   });
 
   it('createSession produces empty content history', () => {

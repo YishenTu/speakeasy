@@ -1,6 +1,7 @@
 import type { AssistantResponseStats } from '../shared/messages';
 
 export interface GeminiContent {
+  id?: string;
   role: 'user' | 'model';
   parts: GeminiPart[];
   metadata?: GeminiContentMetadata;
@@ -10,6 +11,9 @@ export type GeminiPart = Record<string, unknown>;
 
 export interface GeminiContentMetadata {
   responseStats?: AssistantResponseStats;
+  interactionId?: string;
+  sourceModel?: string;
+  createdAt?: string;
 }
 
 export interface GeminiFunctionCall {
@@ -20,6 +24,10 @@ export interface GeminiFunctionCall {
 
 export interface ChatSession {
   id: string;
+  parentChatId?: string;
+  rootChatId?: string;
+  forkedFromInteractionId?: string;
+  forkedAt?: string;
   title?: string;
   createdAt: string;
   updatedAt: string;

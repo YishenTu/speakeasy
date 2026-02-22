@@ -871,7 +871,7 @@ describe('completeAssistantTurn', () => {
 
     expect(assistantContent.parts).toEqual([{ text: 'Done after tool call' }]);
     expect(session.contents).toHaveLength(4);
-    expect(session.contents[2]).toEqual({
+    expect(session.contents[2]).toMatchObject({
       role: 'user',
       parts: [
         {
@@ -887,6 +887,7 @@ describe('completeAssistantTurn', () => {
         },
       ],
     });
+    expect(typeof session.contents[2]?.id).toBe('string');
     expect(fetchRequestBodies).toHaveLength(2);
     expect(fetchRequestBodies[1]?.previous_interaction_id).toBe('interaction-1');
     expect(fetchRequestBodies[1]?.input).toEqual([
@@ -953,7 +954,7 @@ describe('completeAssistantTurn', () => {
     expect(assistantContent.parts).toEqual([
       { functionCall: { id: 'x', name: 'missing_tool', args: {} } },
     ]);
-    expect(session.contents[2]).toEqual({
+    expect(session.contents[2]).toMatchObject({
       role: 'user',
       parts: [
         {
@@ -965,6 +966,7 @@ describe('completeAssistantTurn', () => {
         },
       ],
     });
+    expect(typeof session.contents[2]?.id).toBe('string');
     expect(fetchRequestBodies).toHaveLength(1);
   });
 

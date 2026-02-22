@@ -2,6 +2,15 @@ import { describe, expect, it } from 'bun:test';
 import { getChatPanelTemplate } from '../../src/chatpanel/template';
 
 describe('chatpanel template', () => {
+  it('keeps extra space above composer for message action bars and expanded stats', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('--sp-composer-top-gap: 12px;');
+    expect(template).toContain('--sp-messages-bottom-clearance: 32px;');
+    expect(template).toContain('.composer {');
+    expect(template).toContain('margin-top: var(--sp-composer-top-gap);');
+  });
+
   it('renders stats panel at full action-row width', () => {
     const template = getChatPanelTemplate();
 
@@ -12,6 +21,23 @@ describe('chatpanel template', () => {
     expect(template).toContain('right: 0;');
     expect(template).toContain('width: auto;');
     expect(template).not.toContain('width: min(360px, 100%);');
+  });
+
+  it('reserves vertical clearance for rows that show action bars', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('--sp-message-actions-clearance: 16px;');
+    expect(template).toContain('.row-with-actions {');
+    expect(template).toContain('padding-bottom: var(--sp-message-actions-clearance);');
+  });
+
+  it('keeps action rows visible while hovering the message bubble or action bar', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.row-assistant:hover .message-actions-assistant,');
+    expect(template).toContain('.row-assistant .message-actions-assistant:hover,');
+    expect(template).toContain('.row-user:hover .message-actions-user,');
+    expect(template).toContain('.row-user .message-actions-user:hover');
   });
 
   it('wraps fenced code blocks without horizontal scrolling', () => {

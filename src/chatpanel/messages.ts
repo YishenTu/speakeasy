@@ -1,18 +1,31 @@
 import type { ChatMessage } from '../shared/chat';
 import { renderMarkdownToSafeHtml } from './markdown';
 
-export function renderAll(messages: ChatMessage[], messageList: HTMLOListElement): void {
+export interface MessageRenderOptions {
+  onAssistantAction?: (action: 'regen', message: ChatMessage) => void;
+  onUserAction?: (action: 'fork', message: ChatMessage) => void;
+}
+
+export function renderAll(
+  messages: ChatMessage[],
+  messageList: HTMLOListElement,
+  options: MessageRenderOptions = {},
+): void {
   const fragment = document.createDocumentFragment();
   for (const message of messages) {
-    fragment.append(createMessageNode(message, messageList));
+    fragment.append(createMessageNode(message, messageList, options));
   }
 
   messageList.replaceChildren(fragment);
   scrollMessageListToBottom(messageList);
 }
 
-export function appendMessage(message: ChatMessage, messageList: HTMLOListElement): void {
-  messageList.append(createMessageNode(message, messageList));
+export function appendMessage(
+  message: ChatMessage,
+  messageList: HTMLOListElement,
+  options: MessageRenderOptions = {},
+): void {
+  messageList.append(createMessageNode(message, messageList, options));
   scrollMessageListToBottom(messageList);
 }
 
@@ -20,13 +33,14 @@ export function replaceMessageById(
   messageId: string,
   message: ChatMessage,
   messageList: HTMLOListElement,
+  options: MessageRenderOptions = {},
 ): boolean {
   const existing = findMessageNodeById(messageList, messageId);
   if (!existing) {
     return false;
   }
 
-  existing.replaceWith(createMessageNode(message, messageList));
+  existing.replaceWith(createMessageNode(message, messageList, options));
   scrollMessageListToBottom(messageList);
   return true;
 }
@@ -49,7 +63,11 @@ export function toErrorMessage(error: unknown): string {
   return 'Request failed. Please try again.';
 }
 
-function createMessageNode(message: ChatMessage, messageList: HTMLOListElement): HTMLLIElement {
+function createMessageNode(
+  message: ChatMessage,
+  messageList: HTMLOListElement,
+  options: MessageRenderOptions,
+): HTMLLIElement {
   const item = document.createElement('li');
   const bubble = document.createElement('div');
 
@@ -114,12 +132,18 @@ function createMessageNode(message: ChatMessage, messageList: HTMLOListElement):
     bubble.append(attachmentList);
   }
 
-  const assistantActions = createAssistantActionBar(message, stats, messageList);
-  if (assistantActions) {
-    bubble.append(assistantActions);
+  const assistantActions = createAssistantActionBar(message, stats, messageList, options);
+  const userActions = createUserActionBar(message, options);
+  if (assistantActions || userActions) {
+    item.classList.add('row-with-actions');
   }
-
   item.append(bubble);
+  if (assistantActions) {
+    item.append(assistantActions);
+  }
+  if (userActions) {
+    item.append(userActions);
+  }
   return item;
 }
 
@@ -224,26 +248,82 @@ function createAssistantActionBar(
   message: ChatMessage,
   stats: NonNullable<ChatMessage['stats']> | undefined,
   messageList: HTMLOListElement,
+  options: MessageRenderOptions,
 ): HTMLDivElement | null {
   if (message.role !== 'assistant') {
     return null;
   }
 
+  const hasRegenerateAction = !!message.interactionId?.trim() && !!options.onAssistantAction;
   const copyText = buildCopyableAssistantResponse(message);
   const hasCopyableText = copyText.length > 0;
-  if (!stats && !hasCopyableText) {
+  if (!stats && !hasCopyableText && !hasRegenerateAction && !message.timestamp) {
     return null;
   }
 
   const actionBar = document.createElement('div');
-  actionBar.className = 'message-actions';
+  actionBar.className = 'message-actions message-actions-assistant';
 
   if (hasCopyableText) {
-    actionBar.append(createCopyResponseButton(copyText));
+    actionBar.append(createCopyActionButton(copyText, 'Copy response'));
+  }
+
+  if (hasRegenerateAction) {
+    actionBar.append(
+      createAssistantActionButton(
+        'message-regen-btn',
+        'Regenerate response',
+        createRefreshIconNode(),
+        () => options.onAssistantAction?.('regen', message),
+      ),
+    );
   }
 
   if (stats) {
     actionBar.append(createStatsDisclosure(stats, messageList));
+  }
+
+  if (message.timestamp) {
+    const time = document.createElement('time');
+    time.className = 'message-timestamp';
+    time.textContent = formatMessageTime(message.timestamp);
+    actionBar.append(time);
+  }
+
+  return actionBar.childElementCount > 0 ? actionBar : null;
+}
+
+function createUserActionBar(
+  message: ChatMessage,
+  options: MessageRenderOptions,
+): HTMLDivElement | null {
+  if (message.role !== 'user') {
+    return null;
+  }
+
+  const copyText = buildCopyableUserQuery(message);
+  const hasCopyableText = copyText.length > 0;
+  const hasForkAction = !!message.previousInteractionId?.trim() && !!options.onUserAction;
+  if (!hasCopyableText && !hasForkAction) {
+    return null;
+  }
+
+  const actionBar = document.createElement('div');
+  actionBar.className = 'message-actions message-actions-user';
+
+  if (hasCopyableText) {
+    actionBar.append(createCopyActionButton(copyText, 'Copy query'));
+  }
+
+  if (hasForkAction) {
+    actionBar.append(
+      createAssistantActionButton(
+        'message-fork-btn',
+        'Edit and retry in branch',
+        createForkIconNode(),
+        () => options.onUserAction?.('fork', message),
+      ),
+    );
   }
 
   return actionBar.childElementCount > 0 ? actionBar : null;
@@ -275,12 +355,33 @@ function buildCopyableAssistantResponse(message: ChatMessage): string {
   return blocks.join('\n\n').trim();
 }
 
-function createCopyResponseButton(copyText: string): HTMLButtonElement {
+function buildCopyableUserQuery(message: ChatMessage): string {
+  if (message.role !== 'user') {
+    return '';
+  }
+
+  const blocks: string[] = [];
+  const content = message.content.trim();
+  if (content) {
+    blocks.push(content);
+  }
+
+  if (message.attachments && message.attachments.length > 0) {
+    const attachmentLines = message.attachments.map(
+      (attachment) => `- ${attachment.name} (${attachment.mimeType})`,
+    );
+    blocks.push(`Attachments:\n${attachmentLines.join('\n')}`);
+  }
+
+  return blocks.join('\n\n').trim();
+}
+
+function createCopyActionButton(copyText: string, copyLabel: string): HTMLButtonElement {
   const button = document.createElement('button');
   button.className = 'message-action-btn message-copy-btn';
   button.type = 'button';
-  button.setAttribute('aria-label', 'Copy response');
-  button.setAttribute('title', 'Copy response');
+  button.setAttribute('aria-label', copyLabel);
+  button.setAttribute('title', copyLabel);
   button.append(createCopyIconNode());
 
   button.addEventListener('click', () => {
@@ -290,8 +391,8 @@ function createCopyResponseButton(copyText: string): HTMLButtonElement {
         button.setAttribute('aria-label', 'Copied');
         button.classList.add('is-copied');
         setTimeout(() => {
-          button.setAttribute('title', 'Copy response');
-          button.setAttribute('aria-label', 'Copy response');
+          button.setAttribute('title', copyLabel);
+          button.setAttribute('aria-label', copyLabel);
           button.classList.remove('is-copied');
         }, 1200);
       },
@@ -302,68 +403,96 @@ function createCopyResponseButton(copyText: string): HTMLButtonElement {
   return button;
 }
 
+function createAssistantActionButton(
+  className: string,
+  title: string,
+  icon: SVGSVGElement,
+  onClick: () => void,
+): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.className = `message-action-btn ${className}`;
+  button.type = 'button';
+  button.setAttribute('title', title);
+  button.setAttribute('aria-label', title);
+  button.append(icon);
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function createActionSvg(): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.classList.add('message-action-icon');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.8');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  return svg;
+}
+
+function svgPath(d: string): SVGPathElement {
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', d);
+  return path;
+}
+
+function svgRect(x: number, y: number, w: number, h: number, rx: number): SVGRectElement {
+  const rect = document.createElementNS(SVG_NS, 'rect');
+  rect.setAttribute('x', String(x));
+  rect.setAttribute('y', String(y));
+  rect.setAttribute('width', String(w));
+  rect.setAttribute('height', String(h));
+  rect.setAttribute('rx', String(rx));
+  return rect;
+}
+
+function svgCircle(cx: number, cy: number, r: number): SVGCircleElement {
+  const circle = document.createElementNS(SVG_NS, 'circle');
+  circle.setAttribute('cx', String(cx));
+  circle.setAttribute('cy', String(cy));
+  circle.setAttribute('r', String(r));
+  return circle;
+}
+
 function createStatsGaugeIconNode(): SVGSVGElement {
-  const svgNamespace = 'http://www.w3.org/2000/svg';
-  const icon = document.createElementNS(svgNamespace, 'svg');
-  icon.classList.add('message-stats-icon');
-  icon.setAttribute('viewBox', '0 0 24 24');
-  icon.setAttribute('aria-hidden', 'true');
-
-  const arc = document.createElementNS(svgNamespace, 'path');
-  arc.setAttribute('d', 'M4 14a8 8 0 0 1 16 0');
-  arc.setAttribute('fill', 'none');
-  arc.setAttribute('stroke', 'currentColor');
-  arc.setAttribute('stroke-width', '1.8');
-  arc.setAttribute('stroke-linecap', 'round');
-  arc.setAttribute('stroke-linejoin', 'round');
-
-  const needle = document.createElementNS(svgNamespace, 'path');
-  needle.setAttribute('d', 'M12 14 16 10');
-  needle.setAttribute('fill', 'none');
-  needle.setAttribute('stroke', 'currentColor');
-  needle.setAttribute('stroke-width', '1.8');
-  needle.setAttribute('stroke-linecap', 'round');
-  needle.setAttribute('stroke-linejoin', 'round');
-
-  const pivot = document.createElementNS(svgNamespace, 'circle');
-  pivot.setAttribute('cx', '12');
-  pivot.setAttribute('cy', '14');
-  pivot.setAttribute('r', '1.1');
-  pivot.setAttribute('fill', 'currentColor');
-
-  icon.append(arc, needle, pivot);
+  const icon = createActionSvg();
+  icon.append(svgPath('M18 20V10'), svgPath('M12 20V4'), svgPath('M6 20V14'));
   return icon;
 }
 
 function createCopyIconNode(): SVGSVGElement {
-  const svgNamespace = 'http://www.w3.org/2000/svg';
-  const icon = document.createElementNS(svgNamespace, 'svg');
-  icon.classList.add('message-copy-icon');
-  icon.setAttribute('viewBox', '0 0 24 24');
-  icon.setAttribute('aria-hidden', 'true');
-
-  const back = document.createElementNS(svgNamespace, 'rect');
-  back.setAttribute('x', '8');
-  back.setAttribute('y', '8');
-  back.setAttribute('width', '10');
-  back.setAttribute('height', '10');
-  back.setAttribute('rx', '1.8');
-  back.setAttribute('fill', 'none');
-  back.setAttribute('stroke', 'currentColor');
-  back.setAttribute('stroke-width', '1.8');
-
-  const front = document.createElementNS(svgNamespace, 'rect');
-  front.setAttribute('x', '5');
-  front.setAttribute('y', '5');
-  front.setAttribute('width', '10');
-  front.setAttribute('height', '10');
-  front.setAttribute('rx', '1.8');
-  front.setAttribute('fill', 'none');
-  front.setAttribute('stroke', 'currentColor');
-  front.setAttribute('stroke-width', '1.8');
-
-  icon.append(back, front);
+  const icon = createActionSvg();
+  icon.append(
+    svgRect(9, 9, 13, 13, 2),
+    svgPath('M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'),
+  );
   return icon;
+}
+
+function createRefreshIconNode(): SVGSVGElement {
+  const icon = createActionSvg();
+  icon.append(svgPath('M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'), svgPath('M3 3v5h5'));
+  return icon;
+}
+
+function createForkIconNode(): SVGSVGElement {
+  const icon = createActionSvg();
+  icon.append(
+    svgCircle(12, 18, 3),
+    svgCircle(6, 6, 3),
+    svgCircle(18, 6, 3),
+    svgPath('M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9'),
+    svgPath('M12 12v3'),
+  );
+  return icon;
+}
+
+function formatMessageTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function formatTokenCount(value: number | undefined): string {

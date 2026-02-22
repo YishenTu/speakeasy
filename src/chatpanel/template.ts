@@ -11,7 +11,7 @@ export function getChatPanelTemplate(): string {
         --sp-color-text-dim: rgba(255, 255, 255, 0.42);
         --sp-color-border-base: rgba(255, 255, 255, 0.1);
         --sp-color-border-focus: rgba(255, 255, 255, 0.55);
-        --sp-color-surface-panel: rgba(0, 0, 0, 0.85);
+        --sp-color-surface-panel: rgba(12, 12, 12, 0.8);
         --sp-color-surface-overlay: rgba(18, 18, 18, 0.94);
         --sp-color-surface-subtle: rgba(255, 255, 255, 0.04);
         --sp-color-surface-hover: rgba(255, 255, 255, 0.08);
@@ -20,6 +20,10 @@ export function getChatPanelTemplate(): string {
         --sp-radius-sm: 4px;
         --sp-font-size-xs: 11px;
         --sp-font-size-sm: 12px;
+        --sp-action-icon-size: 14px;
+        --sp-composer-top-gap: 12px;
+        --sp-messages-bottom-clearance: 32px;
+        --sp-message-actions-clearance: 16px;
         --sp-transition-fast: 120ms ease;
         --sp-transition-medium: 150ms ease;
       }
@@ -50,9 +54,9 @@ export function getChatPanelTemplate(): string {
         grid-template-rows: auto minmax(0, 1fr) auto;
         border: 1px solid var(--sp-color-border-base);
         background: var(--sp-color-surface-panel);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
-        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        box-shadow: none;
       }
 
       .top {
@@ -69,10 +73,11 @@ export function getChatPanelTemplate(): string {
 
       .brand-title {
         margin: 0;
+        font-family: 'Avenir Next', 'SF Pro Text', 'Segoe UI', sans-serif;
         font-size: 14px;
-        font-weight: 500;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        text-transform: none;
         color: var(--sp-color-text-default);
         display: flex;
         align-items: center;
@@ -208,12 +213,13 @@ export function getChatPanelTemplate(): string {
       }
 
       .history-item-delete {
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        background: var(--sp-color-surface-subtle);
+        border: none;
+        background: transparent;
         color: rgba(255, 255, 255, 0.58);
-        border-radius: var(--sp-radius-md);
-        width: 22px;
-        height: 22px;
+        border-radius: 0;
+        width: auto;
+        height: auto;
+        margin-right: 4px;
         padding: 0;
         cursor: pointer;
         font-size: 14px;
@@ -225,8 +231,7 @@ export function getChatPanelTemplate(): string {
 
       .history-item-delete:hover {
         color: rgba(255, 255, 255, 0.92);
-        border-color: rgba(255, 255, 255, 0.35);
-        background: rgba(255, 255, 255, 0.12);
+        background: transparent;
       }
 
       .history-item-delete:disabled {
@@ -240,14 +245,88 @@ export function getChatPanelTemplate(): string {
         font-size: var(--sp-font-size-xs);
       }
 
+      .delete-confirm-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 22;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(5, 5, 5, 0.54);
+      }
+
+      .delete-confirm-overlay[hidden] {
+        display: none;
+      }
+
+      .delete-confirm-dialog {
+        width: min(320px, 100%);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: var(--sp-radius-panel);
+        background: var(--sp-color-surface-overlay);
+        color: var(--sp-color-text-default);
+        padding: 14px;
+      }
+
+      .delete-confirm-text {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .delete-confirm-skip {
+        margin-top: 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--sp-color-text-secondary);
+        font-size: var(--sp-font-size-xs);
+      }
+
+      .delete-confirm-skip input {
+        margin: 0;
+      }
+
+      .delete-confirm-actions {
+        margin-top: 12px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .delete-confirm-btn {
+        border: 1px solid var(--sp-color-border-base);
+        background: transparent;
+        color: var(--sp-color-text-default);
+        border-radius: var(--sp-radius-md);
+        padding: 6px 10px;
+        font-size: var(--sp-font-size-xs);
+        cursor: pointer;
+      }
+
+      .delete-confirm-btn:hover {
+        background: var(--sp-color-surface-hover);
+      }
+
+      .delete-confirm-btn-danger {
+        border-color: rgba(239, 68, 68, 0.55);
+        color: rgba(254, 202, 202, 0.98);
+        background: rgba(239, 68, 68, 0.12);
+      }
+
+      .delete-confirm-btn-danger:hover {
+        background: rgba(239, 68, 68, 0.2);
+      }
+
       .messages {
         margin: 0;
-        padding: 16px;
+        padding: 16px 16px var(--sp-messages-bottom-clearance);
         overflow: auto;
         list-style: none;
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
         scroll-behavior: smooth;
       }
 
@@ -265,9 +344,14 @@ export function getChatPanelTemplate(): string {
       }
 
       .row {
+        position: relative;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 2px;
+      }
+
+      .row-with-actions {
+        padding-bottom: var(--sp-message-actions-clearance);
       }
 
       .row-user {
@@ -290,7 +374,7 @@ export function getChatPanelTemplate(): string {
       }
 
       .bubble-user {
-        background: rgba(255, 255, 255, 0.12);
+        background: #000;
         color: var(--sp-color-text-primary);
         border-radius: var(--sp-radius-panel);
       }
@@ -667,13 +751,17 @@ export function getChatPanelTemplate(): string {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 30px;
-        height: 30px;
+        width: 22px;
+        min-width: 22px;
+        height: 22px;
         padding: 0;
         border: none;
+        border-radius: 999px;
         background: transparent;
         color: var(--sp-color-text-dim);
-        transition: color var(--sp-transition-fast);
+        transition:
+          color var(--sp-transition-fast),
+          background-color var(--sp-transition-fast);
       }
 
       .message-stats-trigger {
@@ -684,6 +772,7 @@ export function getChatPanelTemplate(): string {
       .message-stats-trigger:hover,
       .message-action-btn:hover {
         color: rgba(255, 255, 255, 0.9);
+        background: rgba(255, 255, 255, 0.08);
       }
 
       .message-stats-trigger:focus-visible,
@@ -692,18 +781,25 @@ export function getChatPanelTemplate(): string {
         outline-offset: 1px;
       }
 
+      .message-action-icon {
+        width: var(--sp-action-icon-size);
+        height: var(--sp-action-icon-size);
+        display: block;
+      }
+
+      .message-timestamp {
+        margin-left: auto;
+        font-size: var(--sp-font-size-xs);
+        color: var(--sp-color-text-muted);
+        white-space: nowrap;
+      }
+
       .message-stats-trigger::-webkit-details-marker {
         display: none;
       }
 
       .message-stats-trigger::marker {
         content: '';
-      }
-
-      .message-stats-icon {
-        width: 22px;
-        height: 22px;
-        display: block;
       }
 
       .message-stats[open] .message-stats-trigger {
@@ -745,26 +841,39 @@ export function getChatPanelTemplate(): string {
       }
 
       .message-actions {
-        margin-top: 8px;
-        position: relative;
+        margin-top: 0;
+        position: absolute;
+        top: calc(100% - var(--sp-message-actions-clearance));
+        left: 0;
+        right: 0;
+        z-index: 2;
         display: flex;
         width: 100%;
         align-items: center;
         gap: 8px;
+        font-size: 13px;
+        line-height: 1;
         opacity: 0;
         transform: translateY(1px);
         pointer-events: none;
         transition: opacity var(--sp-transition-fast), transform var(--sp-transition-fast);
       }
 
-      .message-copy-icon {
-        width: 22px;
-        height: 22px;
-        display: block;
+      .message-actions-assistant {
+        margin-top: 0;
+        justify-content: flex-start;
       }
 
-      .row-assistant:hover .message-actions,
-      .row-assistant:focus-within .message-actions {
+      .message-actions-user {
+        justify-content: flex-end;
+      }
+
+      .row-assistant:hover .message-actions-assistant,
+      .row-assistant:focus-within .message-actions-assistant,
+      .row-assistant .message-actions-assistant:hover,
+      .row-user:hover .message-actions-user,
+      .row-user:focus-within .message-actions-user,
+      .row-user .message-actions-user:hover {
         opacity: 1;
         transform: translateY(0);
         pointer-events: auto;
@@ -814,6 +923,7 @@ export function getChatPanelTemplate(): string {
 
       .composer {
         padding: 0 14px;
+        margin-top: var(--sp-composer-top-gap);
         margin-bottom: 8px;
         background: transparent;
       }
@@ -1193,6 +1303,30 @@ export function getChatPanelTemplate(): string {
           </div>
         </form>
       </section>
+      <div id="speakeasy-delete-confirm-overlay" class="delete-confirm-overlay" hidden>
+        <section
+          class="delete-confirm-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="speakeasy-delete-confirm-text">
+          <p id="speakeasy-delete-confirm-text" class="delete-confirm-text">Delete this session?</p>
+          <label class="delete-confirm-skip" for="speakeasy-delete-confirm-skip">
+            <input id="speakeasy-delete-confirm-skip" type="checkbox" />
+            Don't ask again
+          </label>
+          <div class="delete-confirm-actions">
+            <button id="speakeasy-delete-confirm-cancel" class="delete-confirm-btn" type="button">
+              Cancel
+            </button>
+            <button
+              id="speakeasy-delete-confirm-accept"
+              class="delete-confirm-btn delete-confirm-btn-danger"
+              type="button">
+              Delete
+            </button>
+          </div>
+        </section>
+      </div>
       <div class="resize-zone resize-top" data-resize="top"></div>
       <div class="resize-zone resize-right" data-resize="right"></div>
       <div class="resize-zone resize-bottom" data-resize="bottom"></div>

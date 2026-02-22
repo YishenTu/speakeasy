@@ -404,7 +404,7 @@ describe('chatpanel messages', () => {
     expect(stats?.querySelector('.message-stats-trigger')?.getAttribute('aria-label')).toBe(
       'Response statistics',
     );
-    expect(stats?.querySelector('.message-stats-icon')).not.toBeNull();
+    expect(stats?.querySelector('.message-action-icon')).not.toBeNull();
     expect(stats?.textContent).toContain('TTFT');
     expect(stats?.textContent).toContain('240 ms');
     expect(stats?.textContent).toContain('Output TPS');
@@ -496,6 +496,184 @@ describe('chatpanel messages', () => {
     );
     expect(copyButton?.getAttribute('aria-label')).toBe('Copied');
     expect(copyButton?.classList.contains('is-copied')).toBe(true);
+  });
+
+  it('renders only regenerate action button for assistant messages with interaction ids', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const actionCalls: Array<{ action: 'regen'; messageId: string; interactionId: string }> = [];
+
+    appendMessage(
+      {
+        id: 'assistant-action-target',
+        role: 'assistant',
+        content: 'Final answer',
+        interactionId: 'interaction-1',
+      },
+      messageList,
+      {
+        onAssistantAction: (action, message) => {
+          if (action !== 'regen') {
+            return;
+          }
+          actionCalls.push({
+            action,
+            messageId: message.id,
+            interactionId: message.interactionId ?? '',
+          });
+        },
+      },
+    );
+
+    const regenButton = messageList.querySelector('.message-regen-btn') as HTMLButtonElement | null;
+    const forkButton = messageList.querySelector('.message-fork-btn') as HTMLButtonElement | null;
+    expect(regenButton).not.toBeNull();
+    expect(forkButton).toBeNull();
+    expect(regenButton?.querySelector('svg')).not.toBeNull();
+
+    regenButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(actionCalls).toEqual([
+      {
+        action: 'regen',
+        messageId: 'assistant-action-target',
+        interactionId: 'interaction-1',
+      },
+    ]);
+  });
+
+  it('renders regenerate button for empty assistant responses with interaction ids', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-empty-action-target',
+        role: 'assistant',
+        content: '',
+        interactionId: 'interaction-empty-1',
+      },
+      messageList,
+      {
+        onAssistantAction: () => {},
+      },
+    );
+
+    const regenButton = messageList.querySelector('.message-regen-btn') as HTMLButtonElement | null;
+    const forkButton = messageList.querySelector('.message-fork-btn') as HTMLButtonElement | null;
+    expect(regenButton).not.toBeNull();
+    expect(forkButton).toBeNull();
+    expect(regenButton?.querySelector('svg')).not.toBeNull();
+    expect(regenButton?.getAttribute('aria-label')).toBe('Regenerate response');
+  });
+
+  it('renders user action bar with copy and edit-and-retry buttons', async () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const actionCalls: Array<{
+      action: 'fork';
+      messageId: string;
+      previousInteractionId: string;
+    }> = [];
+    const clipboard = {
+      writeText: (_value: string) => Promise.resolve(),
+    };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+    const writeTextSpy = spyOn(clipboard, 'writeText').mockImplementation(() => Promise.resolve());
+
+    appendMessage(
+      {
+        id: 'user-action-target',
+        role: 'user',
+        content: 'Original prompt',
+        previousInteractionId: 'interaction-1',
+      },
+      messageList,
+      {
+        onUserAction: (action, message) => {
+          if (action !== 'fork') {
+            return;
+          }
+          actionCalls.push({
+            action,
+            messageId: message.id,
+            previousInteractionId: message.previousInteractionId ?? '',
+          });
+        },
+      },
+    );
+
+    const actionBar = messageList.querySelector('.message-actions-user') as HTMLDivElement | null;
+    const copyButton = messageList.querySelector('.message-copy-btn') as HTMLButtonElement | null;
+    const editButton = messageList.querySelector('.message-fork-btn') as HTMLButtonElement | null;
+    const bubble = messageList.querySelector('.bubble-user') as HTMLDivElement | null;
+    const row = messageList.querySelector(
+      'li[data-message-id="user-action-target"]',
+    ) as HTMLLIElement | null;
+    expect(actionBar).not.toBeNull();
+    expect(copyButton).not.toBeNull();
+    expect(editButton).not.toBeNull();
+    expect(editButton?.getAttribute('aria-label')).toBe('Edit and retry in branch');
+    expect(bubble?.querySelector('.message-actions-user')).toBeNull();
+    expect(actionBar?.parentElement).toBe(row);
+
+    copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    expect(writeTextSpy).toHaveBeenCalledTimes(1);
+    expect(writeTextSpy).toHaveBeenCalledWith('Original prompt');
+    expect(actionCalls).toEqual([
+      {
+        action: 'fork',
+        messageId: 'user-action-target',
+        previousInteractionId: 'interaction-1',
+      },
+    ]);
+  });
+
+  it('does not render regenerate/fork actions without interaction ids', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    appendMessage(
+      {
+        id: 'assistant-no-interaction-id',
+        role: 'assistant',
+        content: 'No branch target',
+      },
+      messageList,
+    );
+    appendMessage(
+      {
+        id: 'user-message',
+        role: 'user',
+        content: 'User text',
+      },
+      messageList,
+    );
+
+    expect(messageList.querySelector('.message-regen-btn')).toBeNull();
+    expect(messageList.querySelector('.message-fork-btn')).toBeNull();
+  });
+
+  it('renders a timestamp in the assistant action bar when present', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const ts = new Date('2026-02-22T14:30:00Z').getTime();
+
+    appendMessage(
+      {
+        id: 'assistant-ts',
+        role: 'assistant',
+        content: 'Timestamped response',
+        timestamp: ts,
+      },
+      messageList,
+    );
+
+    const timeEl = messageList.querySelector('.message-timestamp');
+    const row = messageList.querySelector('li[data-message-id="assistant-ts"]');
+    expect(timeEl).not.toBeNull();
+    expect(timeEl?.textContent).toBeTruthy();
+    expect(row?.classList.contains('row-with-actions')).toBe(true);
   });
 
   it('falls back to a generic error message for non-Error values', () => {

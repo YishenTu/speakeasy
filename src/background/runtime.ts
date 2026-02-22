@@ -1,8 +1,10 @@
 import type {
   ChatDeletePayload,
+  ChatForkPayload,
   ChatListPayload,
   ChatLoadPayload,
   ChatNewPayload,
+  ChatRegenPayload,
   ChatSendPayload,
   ChatSessionSummary,
   ChatStreamDeltaEvent,
@@ -32,6 +34,8 @@ type RuntimePayload =
   | ChatLoadPayload
   | ChatNewPayload
   | ChatSendPayload
+  | ChatRegenPayload
+  | ChatForkPayload
   | ChatDeletePayload
   | ChatListPayload
   | OpenOptionsPayload;
@@ -172,6 +176,22 @@ export function createRuntimeRequestHandler(
 
           return result.payload;
         });
+      case 'chat/regen':
+        return enqueueMutation(() =>
+          handleRegenerate(
+            request.chatId,
+            request.model,
+            request.previousInteractionId,
+            request.thinkingLevel,
+            request.streamRequestId,
+            context?.sender,
+            dependencies,
+          ),
+        );
+      case 'chat/fork':
+        return enqueueMutation(() =>
+          handleForkChat(request.chatId, request.previousInteractionId, dependencies),
+        );
       case 'chat/delete':
         return enqueueMutation(() => handleDeleteChat(request.chatId, dependencies));
       case 'chat/list':
@@ -196,6 +216,8 @@ function isRuntimeRequest(value: unknown): value is RuntimeRequest {
   const type = value.type;
   return (
     type === 'chat/send' ||
+    type === 'chat/regen' ||
+    type === 'chat/fork' ||
     type === 'chat/load' ||
     type === 'chat/new' ||
     type === 'chat/delete' ||
@@ -283,6 +305,7 @@ async function handleSendMessage(
   ];
 
   workingSession.contents.push({
+    id: crypto.randomUUID(),
     role: 'user',
     parts: userParts,
   });
@@ -338,6 +361,232 @@ async function handleSendMessage(
   };
 }
 
+async function handleForkChat(
+  chatId: string,
+  previousInteractionId: string,
+  dependencies: RuntimeDependencies,
+): Promise<ChatForkPayload> {
+  const normalizedChatId = chatId.trim();
+  const normalizedInteractionId = (previousInteractionId ?? '').trim();
+  if (!normalizedChatId || !normalizedInteractionId) {
+    throw new Error('Fork requires both a chat id and a target interaction id.');
+  }
+
+  const sourceSession = await dependencies.repository.getSession(normalizedChatId);
+  if (!sourceSession) {
+    throw new Error('Cannot fork a chat that does not exist.');
+  }
+
+  const assistantIndex = findAssistantIndexByInteractionId(sourceSession, normalizedInteractionId);
+  if (assistantIndex < 0) {
+    throw new Error('Cannot fork: target assistant message was not found in this chat.');
+  }
+
+  const now = dependencies.now();
+  const branch = createForkedSession({
+    sourceSession,
+    prefixEndIndex: assistantIndex,
+    forkedFromInteractionId: normalizedInteractionId,
+    now,
+  });
+
+  await dependencies.repository.upsertSession(branch, now.getTime());
+  await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
+  return {
+    chatId: branch.id,
+  };
+}
+
+async function handleRegenerate(
+  chatId: string,
+  model: string,
+  previousInteractionId: string,
+  thinkingLevel: string | undefined,
+  streamRequestId: string | undefined,
+  sender: chrome.runtime.MessageSender | undefined,
+  dependencies: RuntimeDependencies,
+): Promise<ChatRegenPayload> {
+  const normalizedChatId = chatId.trim();
+  if (!normalizedChatId) {
+    throw new Error('Regenerate requires a chat id.');
+  }
+  const normalizedInteractionId = (previousInteractionId ?? '').trim();
+  if (!normalizedInteractionId) {
+    throw new Error('Regenerate requires a target interaction id.');
+  }
+
+  const sourceSession = await dependencies.repository.getSession(normalizedChatId);
+  if (!sourceSession) {
+    throw new Error('Cannot regenerate in a chat that does not exist.');
+  }
+
+  const targetAssistantIndex = findAssistantIndexByInteractionId(
+    sourceSession,
+    normalizedInteractionId,
+  );
+  if (targetAssistantIndex < 0) {
+    throw new Error('Cannot regenerate: target assistant message was not found.');
+  }
+
+  const promptUserIndex = findRegeneratePromptUserIndex(sourceSession, targetAssistantIndex);
+  if (promptUserIndex < 0) {
+    throw new Error('Cannot regenerate: no originating user prompt was found.');
+  }
+
+  const now = dependencies.now();
+  const branch = createForkedSession({
+    sourceSession,
+    prefixEndIndex: promptUserIndex,
+    forkedFromInteractionId: normalizedInteractionId,
+    now,
+  });
+
+  const settings = await dependencies.readGeminiSettings();
+  if (!settings.apiKey) {
+    throw new Error('Gemini API key is missing. Add it in Speakeasy Settings.');
+  }
+  settings.model = model;
+
+  const streamDeltaEmitter = createStreamDeltaEmitter(streamRequestId, sender);
+  let assistantContent: GeminiContent;
+  try {
+    assistantContent = await dependencies.completeAssistantTurn(
+      branch,
+      settings,
+      thinkingLevel,
+      streamDeltaEmitter,
+    );
+  } catch (error: unknown) {
+    if (isInvalidPreviousInteractionIdError(error)) {
+      throw new Error(EXPIRED_INTERACTION_MESSAGE);
+    }
+    throw error;
+  }
+
+  branch.updatedAt = now.toISOString();
+  await dependencies.repository.upsertSession(branch, now.getTime());
+  await pruneExpiredSessionsBestEffort(dependencies, now.getTime());
+
+  return {
+    chatId: branch.id,
+    assistantMessage: toAssistantChatMessage(assistantContent),
+  };
+}
+
+function createForkedSession(input: {
+  sourceSession: ChatSession;
+  prefixEndIndex: number;
+  forkedFromInteractionId: string;
+  now: Date;
+}): ChatSession {
+  const branch = createSession();
+  const sourceRootChatId = input.sourceSession.rootChatId?.trim() || input.sourceSession.id;
+  branch.parentChatId = input.sourceSession.id;
+  branch.rootChatId = sourceRootChatId;
+  branch.forkedFromInteractionId = input.forkedFromInteractionId;
+  branch.forkedAt = input.now.toISOString();
+  branch.contents = input.sourceSession.contents
+    .slice(0, input.prefixEndIndex + 1)
+    .map((content) => cloneSessionContent(content));
+
+  const branchLastInteractionId = findLastModelInteractionId(branch.contents);
+  if (branchLastInteractionId) {
+    branch.lastInteractionId = branchLastInteractionId;
+  }
+
+  if (input.sourceSession.title?.trim()) {
+    branch.title = input.sourceSession.title.trim();
+  }
+
+  branch.createdAt = input.now.toISOString();
+  branch.updatedAt = input.now.toISOString();
+  return branch;
+}
+
+function cloneSessionContent(content: GeminiContent): GeminiContent {
+  return {
+    ...(content.id ? { id: content.id } : {}),
+    role: content.role,
+    parts: content.parts.map((part) => ({ ...part })),
+    ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
+  };
+}
+
+function findLastModelInteractionId(contents: GeminiContent[]): string | undefined {
+  for (let index = contents.length - 1; index >= 0; index -= 1) {
+    const content = contents[index];
+    if (content?.role !== 'model') {
+      continue;
+    }
+
+    const interactionId = content.metadata?.interactionId;
+    const normalized = typeof interactionId === 'string' ? interactionId.trim() : '';
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function findAssistantIndexByInteractionId(session: ChatSession, interactionId: string): number {
+  return session.contents.findIndex(
+    (content) => content.role === 'model' && content.metadata?.interactionId === interactionId,
+  );
+}
+
+function findRegeneratePromptUserIndex(session: ChatSession, assistantIndex: number): number {
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const content = session.contents[index];
+    if (!content || content.role !== 'user') {
+      continue;
+    }
+
+    if (isUserPromptContent(content)) {
+      return index;
+    }
+  }
+
+  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+    const content = session.contents[index];
+    if (content?.role === 'user') {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function isUserPromptContent(content: GeminiContent): boolean {
+  for (const part of content.parts) {
+    if (typeof part.text === 'string' && part.text.trim()) {
+      return true;
+    }
+
+    const fileData = part.fileData;
+    if (
+      isRecord(fileData) &&
+      typeof fileData.fileUri === 'string' &&
+      fileData.fileUri.trim() &&
+      typeof fileData.mimeType === 'string' &&
+      fileData.mimeType.trim()
+    ) {
+      return true;
+    }
+
+    const inlineData = part.inlineData;
+    if (
+      isRecord(inlineData) &&
+      typeof inlineData.mimeType === 'string' &&
+      inlineData.mimeType.trim()
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function handleDeleteChat(
   chatId: string,
   dependencies: RuntimeDependencies,
@@ -355,11 +604,18 @@ async function handleListChats(dependencies: RuntimeDependencies): Promise<ChatL
   const nowMs = dependencies.now().getTime();
   await pruneExpiredSessionsBestEffort(dependencies, nowMs);
   const sessions = await dependencies.repository.listSessions();
-  const summaries: ChatSessionSummary[] = sessions.map((session) => ({
-    chatId: session.id,
-    title: summarizeSessionTitle(session),
-    updatedAt: session.updatedAt,
-  }));
+  const summaries: ChatSessionSummary[] = sessions.map((session) => {
+    const normalizedRootChatId = session.rootChatId?.trim();
+    const includeRootChatId = !!normalizedRootChatId && normalizedRootChatId !== session.id;
+    return {
+      chatId: session.id,
+      title: summarizeSessionTitle(session),
+      updatedAt: session.updatedAt,
+      ...(session.parentChatId ? { parentChatId: session.parentChatId } : {}),
+      ...(includeRootChatId ? { rootChatId: normalizedRootChatId } : {}),
+      ...(session.forkedAt ? { forkedAt: session.forkedAt } : {}),
+    };
+  });
 
   return {
     sessions: summaries,

@@ -23,9 +23,13 @@ export interface AssistantResponseStats {
 
 export interface ChatMessage {
   id: string;
+  interactionId?: string;
+  previousInteractionId?: string;
   role: MessageRole;
   content: string;
   thinkingSummary?: string;
   stats?: AssistantResponseStats;
   attachments?: ChatAttachment[];
+  sourceModel?: string;
+  timestamp?: number;
 }

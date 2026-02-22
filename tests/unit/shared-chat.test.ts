@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   createNewChat,
   deleteChatById,
+  forkChat,
   listChatSessions,
   loadChatMessages,
   loadChatMessagesById,
+  regenerateAssistantMessage,
   sendMessage,
 } from '../../src/shared/chat';
 import type { RuntimeRequest } from '../../src/shared/runtime';
@@ -294,5 +296,89 @@ describe('shared chat client', () => {
       },
     ]);
     expect(runtimeRequests).toEqual([{ type: 'chat/list' }]);
+  });
+
+  it('forks the active chat by interaction id and switches active chat', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        chatId: 'chat-forked',
+      },
+    });
+
+    const chatId = await forkChat('interaction-123');
+
+    expect(chatId).toBe('chat-forked');
+    expect(runtimeRequests).toEqual([
+      {
+        type: 'chat/fork',
+        chatId: 'chat-active',
+        previousInteractionId: 'interaction-123',
+      },
+    ]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-forked');
+  });
+
+  it('rejects fork when no active chat exists', async () => {
+    await expect(forkChat('interaction-123')).rejects.toThrow(/active chat/i);
+    expect(runtimeRequests).toEqual([]);
+  });
+
+  it('regenerates assistant message in active chat and switches to branched chat', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        chatId: 'chat-regen',
+        assistantMessage: {
+          id: 'assistant-regen',
+          role: 'assistant',
+          content: 'regenerated',
+          interactionId: 'interaction-regen',
+        },
+      },
+    });
+
+    const assistant = await regenerateAssistantMessage(
+      'interaction-2',
+      'gemini-3.1-pro-preview',
+      'high',
+      'regen-stream-1',
+    );
+
+    expect(assistant).toMatchObject({
+      id: 'assistant-regen',
+      role: 'assistant',
+      content: 'regenerated',
+      interactionId: 'interaction-regen',
+    });
+    expect(runtimeRequests).toEqual([
+      {
+        type: 'chat/regen',
+        chatId: 'chat-active',
+        previousInteractionId: 'interaction-2',
+        model: 'gemini-3.1-pro-preview',
+        thinkingLevel: 'high',
+        streamRequestId: 'regen-stream-1',
+      },
+    ]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-regen');
+  });
+
+  it('rejects regenerate when no active chat exists', async () => {
+    await expect(
+      regenerateAssistantMessage('interaction-2', 'gemini-3-flash-preview'),
+    ).rejects.toThrow(/active chat/i);
+    expect(runtimeRequests).toEqual([]);
+  });
+
+  it('rejects regenerate when target interaction id is blank', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
+
+    await expect(regenerateAssistantMessage('   ', 'gemini-3-flash-preview')).rejects.toThrow(
+      /target interaction id/i,
+    );
+    expect(runtimeRequests).toEqual([]);
   });
 });

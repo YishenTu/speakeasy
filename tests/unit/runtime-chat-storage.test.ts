@@ -66,6 +66,7 @@ function cloneSession(session: ChatSession): ChatSession {
   return {
     ...session,
     contents: session.contents.map((content) => ({
+      ...(content.id ? { id: content.id } : {}),
       role: content.role,
       parts: content.parts.map((part) => ({ ...part })),
       ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
@@ -79,6 +80,46 @@ function createSession(id: string): ChatSession {
     createdAt: '2025-01-01T00:00:00.000Z',
     updatedAt: '2025-01-01T00:00:00.000Z',
     contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+  };
+}
+
+function createMultiTurnSession(id: string): ChatSession {
+  return {
+    id,
+    rootChatId: id,
+    createdAt: '2025-01-01T00:00:00.000Z',
+    updatedAt: '2025-01-01T00:00:00.000Z',
+    contents: [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [{ text: 'first prompt' }],
+      },
+      {
+        id: 'm1',
+        role: 'model',
+        parts: [{ text: 'first answer' }],
+        metadata: {
+          interactionId: 'interaction-1',
+          sourceModel: 'gemini-3-flash-preview',
+        },
+      },
+      {
+        id: 'u2',
+        role: 'user',
+        parts: [{ text: 'second prompt' }],
+      },
+      {
+        id: 'm2',
+        role: 'model',
+        parts: [{ text: 'second answer' }],
+        metadata: {
+          interactionId: 'interaction-2',
+          sourceModel: 'gemini-3.1-pro-preview',
+        },
+      },
+    ],
+    lastInteractionId: 'interaction-2',
   };
 }
 
@@ -964,7 +1005,7 @@ describe('runtime chat storage handler', () => {
     expect(payload).toMatchObject({
       assistantMessage: { content: 'attachment accepted' },
     });
-    expect(capturedSession?.contents.at(-1)).toEqual({
+    expect(capturedSession?.contents.at(-1)).toMatchObject({
       role: 'user',
       parts: [
         {
@@ -975,6 +1016,7 @@ describe('runtime chat storage handler', () => {
         },
       ],
     });
+    expect(typeof capturedSession?.contents.at(-1)?.id).toBe('string');
   });
 
   it('forwards streaming deltas to the originating tab frame when stream request id is provided', async () => {
@@ -1140,5 +1182,154 @@ describe('runtime chat storage handler', () => {
     });
 
     await expect(handler({ type: 'app/open-options' })).rejects.toThrow(/options unavailable/i);
+  });
+
+  it('forks a chat from a selected user prompt and preserves lineage metadata', async () => {
+    repository.sessions.set('chat-base', createMultiTurnSession('chat-base'));
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const payload = await handler({
+      type: 'chat/fork',
+      chatId: 'chat-base',
+      previousInteractionId: 'interaction-1',
+    } as RuntimeRequest);
+
+    const branchedChatId = (payload as { chatId: string }).chatId;
+    expect(branchedChatId).toBeString();
+    expect(branchedChatId).not.toBe('chat-base');
+
+    const branch = repository.sessions.get(branchedChatId);
+    expect(branch).toBeDefined();
+    expect(branch?.parentChatId).toBe('chat-base');
+    expect(branch?.rootChatId).toBe('chat-base');
+    expect(branch?.forkedFromInteractionId).toBe('interaction-1');
+    expect(branch?.forkedAt).toBe('2025-01-01T00:00:00.000Z');
+    expect(branch?.lastInteractionId).toBe('interaction-1');
+    expect(branch?.contents.map((content) => content.id)).toEqual(['u1', 'm1']);
+  });
+
+  it('rejects fork when the target interaction id is not found', async () => {
+    repository.sessions.set('chat-base', createMultiTurnSession('chat-base'));
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/fork',
+        chatId: 'chat-base',
+        previousInteractionId: 'nonexistent-interaction',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/target assistant message was not found/i);
+  });
+
+  it('regenerates from the target assistant turn in a branched chat with model override', async () => {
+    repository.sessions.set('chat-base', createMultiTurnSession('chat-base'));
+    const settings = createSettings();
+    let capturedModel: string | null = null;
+    let capturedSessionSnapshot: ChatSession | null = null;
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => settings,
+      completeAssistantTurn: async (session, inputSettings) => {
+        capturedModel = inputSettings.model;
+        capturedSessionSnapshot = cloneSession(session);
+        const regenerated: GeminiContent = {
+          id: 'm-regen',
+          role: 'model',
+          parts: [{ text: 'regenerated answer' }],
+          metadata: {
+            interactionId: 'interaction-regen',
+            sourceModel: inputSettings.model,
+          },
+        };
+        session.contents.push(regenerated);
+        session.lastInteractionId = 'interaction-regen';
+        return regenerated;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const payload = await handler({
+      type: 'chat/regen',
+      chatId: 'chat-base',
+      previousInteractionId: 'interaction-2',
+      model: 'gemini-3.1-pro-preview',
+      thinkingLevel: 'high',
+    } as RuntimeRequest);
+
+    const branchedChatId = (payload as { chatId: string }).chatId;
+    expect(branchedChatId).toBeString();
+    expect(branchedChatId).not.toBe('chat-base');
+    expect(payload).toMatchObject({
+      assistantMessage: {
+        role: 'assistant',
+        content: 'regenerated answer',
+      },
+    });
+    expect(capturedModel).toBe('gemini-3.1-pro-preview');
+    expect(capturedSessionSnapshot?.contents.map((content) => content.id)).toEqual([
+      'u1',
+      'm1',
+      'u2',
+    ]);
+    expect(capturedSessionSnapshot?.contents.at(-1)?.role).toBe('user');
+    expect(capturedSessionSnapshot?.lastInteractionId).toBe('interaction-1');
+
+    const branch = repository.sessions.get(branchedChatId);
+    expect(branch).toBeDefined();
+    expect(branch?.parentChatId).toBe('chat-base');
+    expect(branch?.rootChatId).toBe('chat-base');
+    expect(branch?.forkedFromInteractionId).toBe('interaction-2');
+    expect(branch?.lastInteractionId).toBe('interaction-regen');
+    expect(branch?.contents.map((content) => content.id)).toEqual(['u1', 'm1', 'u2', 'm-regen']);
+  });
+
+  it('rejects regenerate when target interaction id is missing', async () => {
+    repository.sessions.set('chat-base', createMultiTurnSession('chat-base'));
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('completeAssistantTurn should not be called');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/regen',
+        chatId: 'chat-base',
+        model: 'gemini-3-flash-preview',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/target interaction id/i);
   });
 });

@@ -2,24 +2,28 @@ import {
   type ChatMessage,
   createNewChat,
   deleteChatById,
+  forkChat,
   getActiveChatId,
   listChatSessions,
   loadChatMessages,
   loadChatMessagesById,
+  regenerateAssistantMessage,
   sendMessage,
 } from '../shared/chat';
 import type { ChatSessionSummary } from '../shared/runtime';
 import { isRecord } from '../shared/utils';
+import { createDeleteSessionConfirmation } from './delete-confirmation';
 import { queryRequiredElement } from './dom';
-import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 import { createInputToolbar } from './input-toolbar';
 import {
+  type MessageRenderOptions,
   appendMessage,
   removeMessageById,
   renderAll,
   replaceMessageById,
   toErrorMessage,
 } from './messages';
+import { buildOptimisticUserMessage, findLatestAssistantInteractionId } from './optimistic-message';
 import { requestOpenSettings } from './runtime';
 import { runWithSuccessCommit } from './success-commit';
 import { getChatPanelTemplate } from './template';
@@ -131,14 +135,16 @@ function mountChatPanel(): void {
   const filePreviews = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-file-previews');
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
   const toolbar = createInputToolbar(shadowRoot);
+  const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
   if (resizeHandles.length === 0) {
     throw new Error('Missing resize zones in chat panel template.');
   }
 
-  input.addEventListener('input', () => {
+  const resizeComposerInput = (): void => {
     input.style.height = 'auto';
     input.style.height = `${input.scrollHeight}px`;
-  });
+  };
+  input.addEventListener('input', resizeComposerInput);
 
   let isPanelOpen = false;
   let isBusy = false;
@@ -150,9 +156,18 @@ function mountChatPanel(): void {
   let stagedFiles: StagedFile[] = [];
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
+  let lastAssistantInteractionId: string | undefined;
   let historySessions: ChatSessionSummary[] = [];
   let isHistoryMenuOpen = false;
   const activeStreamDrafts = new Map<string, ActiveStreamDraft>();
+  const messageRenderOptions: MessageRenderOptions = {
+    onAssistantAction: (action, message) => {
+      void handleMessageAction(action, message);
+    },
+    onUserAction: (action, message) => {
+      void handleMessageAction(action, message);
+    },
+  };
 
   applyPanelLayout(shell, panelLayout);
   historyToggleButton.setAttribute('aria-expanded', 'false');
@@ -350,25 +365,8 @@ function mountChatPanel(): void {
         content: message,
       },
       messageList,
+      messageRenderOptions,
     );
-  }
-
-  function buildOptimisticUserMessage(text: string, files: StagedFile[]): ChatMessage {
-    const attachments = files.map((staged) => {
-      const isImage = staged.mimeType.toLowerCase().startsWith('image/');
-      return {
-        name: staged.name,
-        mimeType: staged.mimeType,
-        ...(isImage ? { previewUrl: URL.createObjectURL(staged.file) } : {}),
-      };
-    });
-
-    return {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: text,
-      ...(attachments.length > 0 ? { attachments } : {}),
-    };
   }
 
   function applyStreamDelta(requestId: string, textDelta?: string, thinkingDelta?: string): void {
@@ -393,6 +391,7 @@ function mountChatPanel(): void {
         ...(draft.thinkingSummary ? { thinkingSummary: draft.thinkingSummary } : {}),
       },
       messageList,
+      messageRenderOptions,
     );
   }
 
@@ -408,6 +407,11 @@ function mountChatPanel(): void {
       hour: '2-digit',
       minute: '2-digit',
     });
+  }
+
+  function formatHistoryMeta(session: ChatSessionSummary): string {
+    const timestamp = formatHistoryTimestamp(session.updatedAt);
+    return session.parentChatId ? `Branch · ${timestamp}` : timestamp;
   }
 
   function setHistoryMenuOpen(nextOpen: boolean): void {
@@ -449,7 +453,7 @@ function mountChatPanel(): void {
 
       const meta = document.createElement('span');
       meta.className = 'history-item-meta';
-      meta.textContent = formatHistoryTimestamp(session.updatedAt);
+      meta.textContent = formatHistoryMeta(session);
 
       openButton.append(title, meta);
       openButton.addEventListener('click', async () => {
@@ -470,6 +474,7 @@ function mountChatPanel(): void {
               content: toErrorMessage(error),
             },
             messageList,
+            messageRenderOptions,
           );
         } finally {
           setBusyState(false);
@@ -490,8 +495,7 @@ function mountChatPanel(): void {
           return;
         }
 
-        const confirmTitle = sanitizeSessionTitleForConfirmation(session.title);
-        if (!window.confirm(`Delete "${confirmTitle}"?`)) {
+        if (!(await deleteSessionConfirmation.confirm(session.title))) {
           return;
         }
 
@@ -501,7 +505,7 @@ function mountChatPanel(): void {
           if (deleted && activeChatId === session.chatId) {
             activeChatId = (await getActiveChatId()) ?? null;
             clearStagedFiles(true);
-            renderAll([], messageList);
+            renderMessages([]);
           }
           await refreshHistoryDropdown();
           if (historySessions.length === 0) {
@@ -516,6 +520,7 @@ function mountChatPanel(): void {
               content: toErrorMessage(error),
             },
             messageList,
+            messageRenderOptions,
           );
         } finally {
           setBusyState(false);
@@ -537,8 +542,68 @@ function mountChatPanel(): void {
   async function loadChatFromHistory(chatId: string): Promise<void> {
     const payload = await loadChatMessagesById(chatId);
     activeChatId = payload.chatId;
-    renderAll(payload.messages, messageList);
+    renderMessages(payload.messages);
     await refreshHistoryDropdown();
+  }
+
+  async function reloadActiveChat(): Promise<void> {
+    const payload = await loadChatMessages();
+    activeChatId = payload.chatId;
+    renderMessages(payload.messages);
+    await refreshHistoryDropdown();
+  }
+
+  function renderMessages(messages: ChatMessage[]): void {
+    renderAll(messages, messageList, messageRenderOptions);
+    lastAssistantInteractionId = findLatestAssistantInteractionId(messages);
+  }
+
+  async function handleMessageAction(
+    action: 'regen' | 'fork',
+    message: ChatMessage,
+  ): Promise<void> {
+    if (isBusy) {
+      return;
+    }
+
+    const previousInteractionId = message.previousInteractionId?.trim();
+    const interactionId = message.interactionId?.trim();
+
+    setBusyState(true);
+    try {
+      if (action === 'fork') {
+        if (message.role !== 'user' || !previousInteractionId) {
+          return;
+        }
+        await forkChat(previousInteractionId);
+        clearStagedFiles(true);
+        input.value = message.content;
+        resizeComposerInput();
+      } else {
+        if (message.role !== 'assistant' || !interactionId) {
+          return;
+        }
+        const selectedModel = toolbar.selectedModel();
+        const selectedThinking = toolbar.selectedThinkingLevel();
+        await regenerateAssistantMessage(interactionId, selectedModel, selectedThinking);
+      }
+
+      await reloadActiveChat();
+      setHistoryMenuOpen(false);
+      input.focus();
+    } catch (error: unknown) {
+      appendMessage(
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: toErrorMessage(error),
+        },
+        messageList,
+        messageRenderOptions,
+      );
+    } finally {
+      setBusyState(false);
+    }
   }
 
   function startInteractionLock(): void {
@@ -660,7 +725,7 @@ function mountChatPanel(): void {
   });
 
   settingsButton.addEventListener('click', () => {
-    void openSettings(messageList);
+    void openSettings(messageList, messageRenderOptions);
   });
 
   newChatButton.addEventListener('click', async () => {
@@ -673,7 +738,7 @@ function mountChatPanel(): void {
       const chatId = await createNewChat();
       activeChatId = chatId;
       clearStagedFiles(true);
-      renderAll([], messageList);
+      renderMessages([]);
       await refreshHistoryDropdown();
       setHistoryMenuOpen(false);
       input.focus();
@@ -685,6 +750,7 @@ function mountChatPanel(): void {
           content: toErrorMessage(error),
         },
         messageList,
+        messageRenderOptions,
       );
     } finally {
       setBusyState(false);
@@ -713,6 +779,7 @@ function mountChatPanel(): void {
           content: toErrorMessage(error),
         },
         messageList,
+        messageRenderOptions,
       );
     } finally {
       setBusyState(false);
@@ -756,10 +823,14 @@ function mountChatPanel(): void {
         stagedSnapshot.map((staged) => staged.file),
       );
       streamRequestId = crypto.randomUUID();
-      const optimisticUserMessage = buildOptimisticUserMessage(userText, stagedSnapshot);
+      const optimisticUserMessage = buildOptimisticUserMessage(
+        userText,
+        stagedSnapshot,
+        lastAssistantInteractionId,
+      );
       optimisticUserMessageId = optimisticUserMessage.id;
       assistantPlaceholderId = crypto.randomUUID();
-      appendMessage(optimisticUserMessage, messageList);
+      appendMessage(optimisticUserMessage, messageList, messageRenderOptions);
       appendMessage(
         {
           id: assistantPlaceholderId,
@@ -767,6 +838,7 @@ function mountChatPanel(): void {
           content: '',
         },
         messageList,
+        messageRenderOptions,
       );
 
       input.value = '';
@@ -787,7 +859,18 @@ function mountChatPanel(): void {
         streamRequestId,
       );
       activeStreamDrafts.delete(streamRequestId);
-      replaceMessageById(assistantPlaceholderId, assistantMessage, messageList);
+      replaceMessageById(
+        assistantPlaceholderId,
+        assistantMessage,
+        messageList,
+        messageRenderOptions,
+      );
+      if (assistantMessage.role === 'assistant') {
+        const interactionId = assistantMessage.interactionId?.trim();
+        if (interactionId) {
+          lastAssistantInteractionId = interactionId;
+        }
+      }
       activeChatId = (await getActiveChatId()) ?? null;
       await refreshHistoryDropdown();
     } catch (error: unknown) {
@@ -807,6 +890,7 @@ function mountChatPanel(): void {
           content: toErrorMessage(error),
         },
         messageList,
+        messageRenderOptions,
       );
     } finally {
       setBusyState(false);
@@ -896,7 +980,7 @@ function mountChatPanel(): void {
         async () => {
           const history = await loadChatMessages();
           activeChatId = history.chatId;
-          renderAll(history.messages, messageList);
+          renderMessages(history.messages);
           await refreshHistoryDropdown();
         },
         () => {
@@ -904,7 +988,7 @@ function mountChatPanel(): void {
         },
       );
     } catch (error: unknown) {
-      renderAll(
+      renderMessages(
         [
           {
             id: crypto.randomUUID(),
@@ -912,7 +996,6 @@ function mountChatPanel(): void {
             content: toErrorMessage(error),
           },
         ],
-        messageList,
       );
       hasLoadedHistory = false;
       activeChatId = null;
@@ -1115,7 +1198,10 @@ function formatByteSize(bytes: number): string {
   return `${bytes} B`;
 }
 
-async function openSettings(messageList: HTMLOListElement): Promise<void> {
+async function openSettings(
+  messageList: HTMLOListElement,
+  options: MessageRenderOptions = {},
+): Promise<void> {
   const error = await requestOpenSettings();
   if (!error) {
     return;
@@ -1128,5 +1214,6 @@ async function openSettings(messageList: HTMLOListElement): Promise<void> {
       content: error,
     },
     messageList,
+    options,
   );
 }

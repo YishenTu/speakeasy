@@ -199,7 +199,11 @@ export async function completeAssistantTurn(
 
     session.lastInteractionId = interaction.id;
 
-    const candidateContent = extractAssistantContent(interaction);
+    const candidateContent = withAssistantInteractionMetadata(
+      extractAssistantContent(interaction),
+      interaction.id,
+      settings.model,
+    );
     session.contents.push(candidateContent);
     latestAssistantContent = candidateContent;
 
@@ -225,6 +229,7 @@ export async function completeAssistantTurn(
 
     const executedCalls = await executeFunctionCalls(functionCalls);
     session.contents.push({
+      id: crypto.randomUUID(),
       role: 'user',
       parts: executedCalls.map((call) => buildFunctionResponsePart(call.call, call.response)),
     });
@@ -320,6 +325,7 @@ export function normalizeContent(value: unknown): GeminiContent {
     throw new Error('Gemini content must be a JSON object.');
   }
 
+  const rawId = typeof value.id === 'string' ? value.id.trim() : '';
   const role = value.role === 'user' || value.role === 'model' ? value.role : 'model';
   const rawParts = Array.isArray(value.parts) ? value.parts : [];
 
@@ -337,6 +343,7 @@ export function normalizeContent(value: unknown): GeminiContent {
   const metadata = normalizeContentMetadata(value.metadata);
 
   return {
+    ...(rawId ? { id: rawId } : {}),
     role,
     parts,
     ...(metadata ? { metadata } : {}),
@@ -349,11 +356,28 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   }
 
   const responseStats = normalizeAssistantResponseStats(value.responseStats);
-  if (!responseStats) {
+  const interactionId =
+    typeof value.interactionId === 'string'
+      ? value.interactionId.trim()
+      : typeof value.interaction_id === 'string'
+        ? value.interaction_id.trim()
+        : '';
+  const sourceModel =
+    typeof value.sourceModel === 'string'
+      ? value.sourceModel.trim()
+      : typeof value.source_model === 'string'
+        ? value.source_model.trim()
+        : '';
+
+  if (!responseStats && !interactionId && !sourceModel) {
     return undefined;
   }
 
-  return { responseStats };
+  return {
+    ...(responseStats ? { responseStats } : {}),
+    ...(interactionId ? { interactionId } : {}),
+    ...(sourceModel ? { sourceModel } : {}),
+  };
 }
 
 function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats | undefined {
@@ -876,6 +900,24 @@ function withAssistantResponseStats(
   };
 }
 
+function withAssistantInteractionMetadata(
+  content: GeminiContent,
+  interactionId: string,
+  model: string,
+): GeminiContent {
+  const normalizedInteractionId = interactionId.trim();
+  const normalizedModel = model.trim();
+  return {
+    ...content,
+    metadata: {
+      ...(content.metadata ?? {}),
+      ...(normalizedInteractionId ? { interactionId: normalizedInteractionId } : {}),
+      ...(normalizedModel ? { sourceModel: normalizedModel } : {}),
+      createdAt: content.metadata?.createdAt ?? new Date().toISOString(),
+    },
+  };
+}
+
 function toRoundedDurationMs(value: number): number {
   if (!Number.isFinite(value)) {
     return 0;
@@ -1094,6 +1136,7 @@ function extractAssistantContent(interaction: GeminiInteraction): GeminiContent 
   }
 
   return {
+    id: crypto.randomUUID(),
     role: 'model',
     parts,
   };

@@ -11,6 +11,10 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface PersistedChatSessionRecord {
   id: string;
+  parentChatId?: string;
+  rootChatId?: string;
+  forkedFromInteractionId?: string;
+  forkedAt?: string;
   title?: string;
   createdAt: string;
   updatedAt: string;
@@ -275,6 +279,11 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
     throw new Error('Cannot persist chat session without an id.');
   }
 
+  const parentChatId = normalizeOptionalSessionId(session.parentChatId);
+  const rootChatId = normalizeOptionalSessionId(session.rootChatId) || id;
+  const forkedFromInteractionId = normalizeOptionalSessionId(session.forkedFromInteractionId);
+  const forkedAt =
+    typeof session.forkedAt === 'string' && session.forkedAt.trim() ? session.forkedAt : undefined;
   const title = session.title?.trim() || undefined;
 
   const createdAt =
@@ -290,6 +299,7 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
   const expiresAtMs = nowMs + SESSION_TTL_MS;
 
   const contents = session.contents.map((content) => ({
+    id: ensurePersistedContentId(content),
     role: content.role === 'user' ? 'user' : 'model',
     parts: content.parts.map((part) => ({ ...part })),
     ...(content.metadata ? { metadata: structuredClone(content.metadata) } : {}),
@@ -300,6 +310,10 @@ function toPersistedSessionRecord(session: ChatSession, nowMs: number): Persiste
 
   return {
     id,
+    ...(parentChatId ? { parentChatId } : {}),
+    ...(rootChatId ? { rootChatId } : {}),
+    ...(forkedFromInteractionId ? { forkedFromInteractionId } : {}),
+    ...(forkedAt ? { forkedAt } : {}),
     ...(title ? { title } : {}),
     createdAt,
     updatedAt,
@@ -344,15 +358,51 @@ function parsePersistedSessionRecord(rawValue: unknown): ChatSession | null {
   const trimmedLastInteractionId =
     typeof rawValue.lastInteractionId === 'string' ? rawValue.lastInteractionId.trim() : '';
   const lastInteractionId = trimmedLastInteractionId || undefined;
+  const parentChatId =
+    typeof rawValue.parentChatId === 'string' ? rawValue.parentChatId.trim() : '';
+  const rootChatId = typeof rawValue.rootChatId === 'string' ? rawValue.rootChatId.trim() : '';
+  const rawForkedFromInteractionId =
+    typeof rawValue.forkedFromInteractionId === 'string'
+      ? rawValue.forkedFromInteractionId.trim()
+      : '';
+  const legacyForkedFromContentId =
+    typeof rawValue.forkedFromContentId === 'string' ? rawValue.forkedFromContentId.trim() : '';
+  const forkedFromInteractionId = rawForkedFromInteractionId || legacyForkedFromContentId;
+  const forkedAt = typeof rawValue.forkedAt === 'string' ? rawValue.forkedAt.trim() : '';
   const trimmedTitle = typeof rawValue.title === 'string' ? rawValue.title.trim() : '';
   const title = trimmedTitle || undefined;
 
   return {
     id,
+    ...(parentChatId ? { parentChatId } : {}),
+    ...(rootChatId ? { rootChatId } : {}),
+    ...(forkedFromInteractionId ? { forkedFromInteractionId } : {}),
+    ...(forkedAt ? { forkedAt } : {}),
     ...(title ? { title } : {}),
     createdAt,
     updatedAt,
     contents,
     ...(lastInteractionId ? { lastInteractionId } : {}),
   };
+}
+
+function ensurePersistedContentId(content: GeminiContent): string {
+  const existing = typeof content.id === 'string' ? content.id.trim() : '';
+  if (existing) {
+    content.id = existing;
+    return existing;
+  }
+
+  const generated = crypto.randomUUID();
+  content.id = generated;
+  return generated;
+}
+
+function normalizeOptionalSessionId(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  return normalized || undefined;
 }

@@ -127,6 +127,52 @@ describe('chat repository', () => {
     expect(stored?.lastInteractionId).toBe('interaction-abc');
   });
 
+  it('backfills missing content ids during persistence round-trip', async () => {
+    const repository = createChatRepository();
+    const session = createSession();
+    session.contents = [
+      {
+        role: 'user',
+        parts: [{ text: 'hello' }],
+      },
+      {
+        role: 'model',
+        parts: [{ text: 'world' }],
+      },
+    ];
+
+    await repository.upsertSession(session, Date.UTC(2025, 0, 1));
+    const stored = await repository.getSession(session.id);
+    expect(stored).toBeDefined();
+    expect(stored?.contents).toHaveLength(2);
+    for (const content of stored?.contents ?? []) {
+      expect(typeof content.id).toBe('string');
+      expect((content.id ?? '').length).toBeGreaterThan(0);
+    }
+  });
+
+  it('round-trips branch lineage fields', async () => {
+    const repository = createChatRepository();
+    const session = createSession();
+    session.parentChatId = 'chat-parent';
+    session.rootChatId = 'chat-root';
+    session.forkedFromInteractionId = 'interaction-123';
+    session.forkedAt = '2025-01-01T01:02:03.000Z';
+    session.contents.push({
+      id: 'user-1',
+      role: 'user',
+      parts: [{ text: 'hello' }],
+    });
+
+    await repository.upsertSession(session, Date.UTC(2025, 0, 1));
+    const stored = await repository.getSession(session.id);
+    expect(stored).toBeDefined();
+    expect(stored?.parentChatId).toBe('chat-parent');
+    expect(stored?.rootChatId).toBe('chat-root');
+    expect(stored?.forkedFromInteractionId).toBe('interaction-123');
+    expect(stored?.forkedAt).toBe('2025-01-01T01:02:03.000Z');
+  });
+
   it('round-trips persisted session titles', async () => {
     const repository = createChatRepository();
     const session = createSession();

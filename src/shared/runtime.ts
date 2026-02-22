@@ -18,6 +18,19 @@ export type RuntimeRequest =
       attachments?: FileDataAttachmentPayload[];
     }
   | {
+      type: 'chat/regen';
+      chatId: string;
+      model: string;
+      previousInteractionId: string;
+      thinkingLevel?: string;
+      streamRequestId?: string;
+    }
+  | {
+      type: 'chat/fork';
+      chatId: string;
+      previousInteractionId: string;
+    }
+  | {
       type: 'chat/load';
       chatId?: string;
     }
@@ -52,6 +65,15 @@ export interface ChatSendPayload {
   assistantMessage: ChatMessage;
 }
 
+export interface ChatRegenPayload {
+  chatId: string;
+  assistantMessage: ChatMessage;
+}
+
+export interface ChatForkPayload {
+  chatId: string;
+}
+
 export interface ChatLoadPayload {
   chatId: string | null;
   messages: ChatMessage[];
@@ -70,6 +92,9 @@ export interface ChatSessionSummary {
   chatId: string;
   title: string;
   updatedAt: string;
+  parentChatId?: string;
+  rootChatId?: string;
+  forkedAt?: string;
 }
 
 export interface ChatListPayload {
