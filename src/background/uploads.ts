@@ -1,17 +1,14 @@
-import { GoogleGenAI } from '@google/genai';
-import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
 import type {
   ChatUploadFailurePayload,
   ChatUploadFilesPayload,
   FileDataAttachmentPayload,
   UploadFilePayload,
 } from '../shared/runtime';
+import { getGeminiClient } from './gemini-client';
 import { toErrorMessage } from './utils';
 
-const MAX_GEMINI_CLIENT_CACHE_SIZE = 2;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 30_000;
 const FILE_STATE_POLL_INTERVAL_MS = 100;
-const geminiClients = new Map<string, GoogleGenAI>();
 
 type UploadResult = {
   uri?: string;
@@ -37,7 +34,7 @@ interface UploadDependencies {
   getGeminiClient: (apiKey: string) => UploadFileClient;
 }
 
-export interface BackgroundUploadOptions {
+interface BackgroundUploadOptions {
   uploadTimeoutMs?: number;
 }
 
@@ -106,19 +103,6 @@ export async function uploadFilesToGemini(
     attachments,
     failures,
   };
-}
-
-function getGeminiClient(apiKey: string): GoogleGenAI {
-  return getOrCreateBoundedCacheValue({
-    cache: geminiClients,
-    key: apiKey,
-    maxSize: MAX_GEMINI_CLIENT_CACHE_SIZE,
-    create: () =>
-      new GoogleGenAI({
-        apiKey,
-        apiVersion: 'v1beta',
-      }),
-  });
 }
 
 function normalizeUploadTimeoutMs(value: number | undefined): number {
