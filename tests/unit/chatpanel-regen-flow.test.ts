@@ -255,7 +255,9 @@ describe('chatpanel regenerate flow', () => {
           }
           if (request.type === 'chat/delete') {
             deleteRequests.push(request);
-            const deleted = listSessionsPayload.some((session) => session.chatId === request.chatId);
+            const deleted = listSessionsPayload.some(
+              (session) => session.chatId === request.chatId,
+            );
             if (deleted) {
               listSessionsPayload = listSessionsPayload.filter(
                 (session) => session.chatId !== request.chatId,
@@ -785,7 +787,9 @@ describe('chatpanel regenerate flow', () => {
     await flushMicrotasks();
 
     const shadowRoot = getChatpanelShadowRoot();
-    const historyControl = shadowRoot.querySelector('#speakeasy-history-control') as HTMLElement | null;
+    const historyControl = shadowRoot.querySelector(
+      '#speakeasy-history-control',
+    ) as HTMLElement | null;
     const historyToggleButton = shadowRoot.querySelector(
       '#speakeasy-history-toggle',
     ) as HTMLButtonElement | null;
@@ -797,7 +801,13 @@ describe('chatpanel regenerate flow', () => {
     expect(fileInput).not.toBeNull();
     expect(filePreviewContainer).not.toBeNull();
     expect(messageList).not.toBeNull();
-    if (!historyControl || !historyToggleButton || !fileInput || !filePreviewContainer || !messageList) {
+    if (
+      !historyControl ||
+      !historyToggleButton ||
+      !fileInput ||
+      !filePreviewContainer ||
+      !messageList
+    ) {
       throw new Error(
         'Expected history controls, file input, file preview container, and message list elements.',
       );
