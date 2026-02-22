@@ -1259,6 +1259,104 @@ describe('completeAssistantTurn', () => {
     ]);
   });
 
+  it('retries function_result turns for broader 4xx tool-error phrasings', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-1',
+      outputs: [
+        {
+          type: 'function_call',
+          id: 'tool-call-1',
+          name: 'get_extension_info',
+          arguments: {},
+        },
+      ],
+    });
+    enqueueGeminiHttpResponse(400, {
+      error: {
+        message: 'Function result payload is invalid for this request.',
+      },
+    });
+    enqueueGeminiResponses({
+      id: 'interaction-2',
+      outputs: [{ type: 'text', text: 'Recovered after broader retry' }],
+    });
+
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+    const session = createSession('tool call retry with broader error');
+
+    const assistantContent = await completeAssistantTurn(session, settings);
+    expect(assistantContent.parts).toEqual([{ text: 'Recovered after broader retry' }]);
+    expect(fetchRequestBodies).toHaveLength(3);
+    expect(fetchRequestBodies[1]?.tools).toBeUndefined();
+    expect(fetchRequestBodies[2]?.tools).toEqual([
+      {
+        type: 'function',
+        name: 'get_current_time',
+        description: 'Get the current time, optionally in a specific IANA time zone.',
+        parameters: {
+          type: 'object',
+          properties: {
+            timeZone: {
+              type: 'string',
+              description:
+                'Optional IANA time zone identifier, such as America/New_York or Asia/Tokyo.',
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        name: 'get_extension_info',
+        description: 'Get extension metadata such as version and manifest name.',
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        type: 'function',
+        name: 'generate_uuid',
+        description: 'Generate a random UUID.',
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    ]);
+  });
+
+  it('does not retry function_result turns on 5xx failures', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-1',
+      outputs: [
+        {
+          type: 'function_call',
+          id: 'tool-call-1',
+          name: 'get_extension_info',
+          arguments: {},
+        },
+      ],
+    });
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      enqueueGeminiHttpResponse(500, {
+        error: {
+          message: 'Tools are required on this function_result request.',
+        },
+      });
+    }
+
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+    const session = createSession('tool call 5xx');
+
+    await expect(completeAssistantTurn(session, settings)).rejects.toThrow();
+    expect(fetchRequestBodies.length).toBeGreaterThanOrEqual(2);
+    for (const body of fetchRequestBodies.slice(1)) {
+      expect(body?.tools).toBeUndefined();
+    }
+  });
+
   it('throws when Gemini returns function calls without call ids', async () => {
     enqueueGeminiResponses({
       id: 'interaction-1',

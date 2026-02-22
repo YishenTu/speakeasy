@@ -4,7 +4,7 @@ import type { ChatBranchNode, ChatSession, GeminiContent } from './types';
 import { isRecord } from './utils';
 
 export const CHAT_DB_NAME = 'speakeasy-chat';
-export const CHAT_DB_VERSION = 2;
+const CHAT_DB_VERSION = 2;
 export const CHAT_SESSION_STORE_NAME = 'sessions';
 export const CHAT_SESSION_BY_EXPIRES_AT_INDEX = 'byExpiresAtMs';
 export const CHAT_SESSION_BY_UPDATED_AT_INDEX = 'byUpdatedAtMs';
