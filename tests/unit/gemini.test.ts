@@ -348,6 +348,27 @@ describe('normalizeContent', () => {
     });
     expect(withoutStats.metadata).toBeUndefined();
   });
+
+  it('keeps createdAt metadata in both camelCase and snake_case forms', () => {
+    const createdAt = '2026-02-22T18:20:00.000Z';
+    const camelCaseMetadata = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        createdAt,
+      },
+    });
+    expect(camelCaseMetadata.metadata?.createdAt).toBe(createdAt);
+
+    const snakeCaseMetadata = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        created_at: createdAt,
+      },
+    });
+    expect(snakeCaseMetadata.metadata?.createdAt).toBe(createdAt);
+  });
 });
 
 describe('InvalidPreviousInteractionIdError', () => {

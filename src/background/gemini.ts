@@ -368,8 +368,14 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
       : typeof value.source_model === 'string'
         ? value.source_model.trim()
         : '';
+  const createdAt =
+    typeof value.createdAt === 'string'
+      ? value.createdAt.trim()
+      : typeof value.created_at === 'string'
+        ? value.created_at.trim()
+        : '';
 
-  if (!responseStats && !interactionId && !sourceModel) {
+  if (!responseStats && !interactionId && !sourceModel && !createdAt) {
     return undefined;
   }
 
@@ -377,6 +383,7 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
     ...(responseStats ? { responseStats } : {}),
     ...(interactionId ? { interactionId } : {}),
     ...(sourceModel ? { sourceModel } : {}),
+    ...(createdAt ? { createdAt } : {}),
   };
 }
 

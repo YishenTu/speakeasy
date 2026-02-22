@@ -811,21 +811,45 @@ describe('chatpanel messages', () => {
   it('renders a timestamp in the assistant action bar when present', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
     const ts = new Date('2026-02-22T14:30:00Z').getTime();
+    const originalToLocaleTimeString = Date.prototype.toLocaleTimeString;
+    const formatCalls: Array<{
+      locales: Intl.LocalesArgument | undefined;
+      options: Intl.DateTimeFormatOptions | undefined;
+    }> = [];
 
-    appendMessage(
-      {
-        id: 'assistant-ts',
-        role: 'assistant',
-        content: 'Timestamped response',
-        timestamp: ts,
-      },
-      messageList,
-    );
+    Date.prototype.toLocaleTimeString = (function (
+      this: Date,
+      locales?: Intl.LocalesArgument,
+      options?: Intl.DateTimeFormatOptions,
+    ): string {
+      formatCalls.push({ locales, options });
+      return '14:30';
+    }) as typeof Date.prototype.toLocaleTimeString;
+
+    try {
+      appendMessage(
+        {
+          id: 'assistant-ts',
+          role: 'assistant',
+          content: 'Timestamped response',
+          timestamp: ts,
+        },
+        messageList,
+      );
+    } finally {
+      Date.prototype.toLocaleTimeString = originalToLocaleTimeString;
+    }
 
     const timeEl = messageList.querySelector('.message-timestamp');
     const row = messageList.querySelector('li[data-message-id="assistant-ts"]');
+    const formatCall = formatCalls.at(0);
     expect(timeEl).not.toBeNull();
-    expect(timeEl?.textContent).toBeTruthy();
+    expect(timeEl?.textContent).toBe('14:30');
+    expect(formatCall?.options).toMatchObject({
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
     expect(row?.classList.contains('row-with-actions')).toBe(true);
   });
 
