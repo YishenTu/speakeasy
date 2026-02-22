@@ -37,7 +37,7 @@ import {
   sanitizeGeneratedSessionTitle,
 } from './gemini/title';
 import type { ChatSession, GeminiContent } from './types';
-import { isRecord } from './utils';
+import { isRecord, toErrorMessage } from './utils';
 
 export { InvalidPreviousInteractionIdError, isInvalidPreviousInteractionIdError };
 export type { GeminiStreamDelta };
@@ -83,16 +83,14 @@ export async function completeAssistantTurn(
     : undefined;
 
   for (let roundTrip = 0; roundTrip < settings.maxToolRoundTrips; roundTrip += 1) {
-    const interaction = streamDeltaHandler
-      ? await callGeminiInteractionStream({
-          settings,
-          request: requestPlan.request,
-          onStreamDelta: streamDeltaHandler,
-        })
-      : await callGeminiInteraction({
-          settings,
-          request: requestPlan.request,
-        });
+    const interaction = await callGeminiInteractionWithFunctionResultRetry({
+      settings,
+      requestPlan,
+      pendingInput,
+      functionDeclarations,
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      ...(streamDeltaHandler ? { onStreamDelta: streamDeltaHandler } : {}),
+    });
     accumulateUsageTotals(usageTotals, interaction.usage);
 
     session.lastInteractionId = interaction.id;
@@ -105,24 +103,25 @@ export async function completeAssistantTurn(
     session.contents.push(candidateContent);
     latestAssistantContent = candidateContent;
 
-    const functionCalls = extractFunctionCalls(candidateContent.parts);
-    if (functionCalls.length === 0) {
-      const completedAtMs = getMonotonicNowMs();
-      const finalContent = withAssistantResponseStats(
-        candidateContent,
-        buildAssistantResponseStats({
-          usageTotals,
-          requestStartedAtMs,
-          firstStreamTokenAtMs,
-          completedAtMs,
-        }),
-      );
+    if (!functionCallingEnabled) {
+      const finalContent = finalizeAssistantContent(candidateContent, {
+        usageTotals,
+        requestStartedAtMs,
+        firstStreamTokenAtMs,
+      });
       session.contents[session.contents.length - 1] = finalContent;
       return finalContent;
     }
 
-    if (!functionCallingEnabled) {
-      throw new Error('Gemini requested function calls, but function-calling tools are disabled.');
+    const functionCalls = extractFunctionCalls(candidateContent.parts);
+    if (functionCalls.length === 0) {
+      const finalContent = finalizeAssistantContent(candidateContent, {
+        usageTotals,
+        requestStartedAtMs,
+        firstStreamTokenAtMs,
+      });
+      session.contents[session.contents.length - 1] = finalContent;
+      return finalContent;
     }
 
     const executedCalls = await executeFunctionCalls(functionCalls);
@@ -142,16 +141,11 @@ export async function completeAssistantTurn(
   }
 
   if (latestAssistantContent) {
-    const completedAtMs = getMonotonicNowMs();
-    const finalContent = withAssistantResponseStats(
-      latestAssistantContent,
-      buildAssistantResponseStats({
-        usageTotals,
-        requestStartedAtMs,
-        firstStreamTokenAtMs,
-        completedAtMs,
-      }),
-    );
+    const finalContent = finalizeAssistantContent(latestAssistantContent, {
+      usageTotals,
+      requestStartedAtMs,
+      firstStreamTokenAtMs,
+    });
     for (let index = session.contents.length - 1; index >= 0; index -= 1) {
       if (session.contents[index]?.role === 'model') {
         session.contents[index] = finalContent;
@@ -162,6 +156,117 @@ export async function completeAssistantTurn(
   }
 
   throw new Error('Gemini did not produce a final response before the tool round-trip limit.');
+}
+
+function finalizeAssistantContent(
+  content: GeminiContent,
+  input: {
+    usageTotals: ReturnType<typeof createEmptyUsageTotals>;
+    requestStartedAtMs: number;
+    firstStreamTokenAtMs: number | null;
+  },
+): GeminiContent {
+  const completedAtMs = getMonotonicNowMs();
+  return withAssistantResponseStats(
+    content,
+    buildAssistantResponseStats({
+      usageTotals: input.usageTotals,
+      requestStartedAtMs: input.requestStartedAtMs,
+      firstStreamTokenAtMs: input.firstStreamTokenAtMs,
+      completedAtMs,
+    }),
+  );
+}
+
+async function callGeminiInteractionWithFunctionResultRetry(input: {
+  settings: GeminiSettings;
+  requestPlan: ReturnType<typeof composeGeminiInteractionRequest>;
+  pendingInput: Array<Record<string, unknown>>;
+  functionDeclarations: Array<Record<string, unknown>>;
+  thinkingLevel?: string;
+  onStreamDelta?: (delta: GeminiStreamDelta) => void;
+}): Promise<Awaited<ReturnType<typeof callGeminiInteraction>>> {
+  try {
+    return await callGeminiInteractionWithOptionalStreaming({
+      settings: input.settings,
+      request: input.requestPlan.request,
+      ...(input.onStreamDelta ? { onStreamDelta: input.onStreamDelta } : {}),
+    });
+  } catch (error: unknown) {
+    if (
+      !shouldRetryFunctionResultTurnWithTools({
+        error,
+        requestPlan: input.requestPlan,
+        pendingInput: input.pendingInput,
+      })
+    ) {
+      throw error;
+    }
+
+    const retryRequestPlan = composeGeminiInteractionRequest({
+      settings: input.settings,
+      input: input.pendingInput,
+      functionDeclarations: input.functionDeclarations,
+      includeToolsForFunctionResult: true,
+      ...(input.requestPlan.request.previous_interaction_id
+        ? { previousInteractionId: input.requestPlan.request.previous_interaction_id }
+        : {}),
+      ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
+    });
+
+    return callGeminiInteractionWithOptionalStreaming({
+      settings: input.settings,
+      request: retryRequestPlan.request,
+      ...(input.onStreamDelta ? { onStreamDelta: input.onStreamDelta } : {}),
+    });
+  }
+}
+
+async function callGeminiInteractionWithOptionalStreaming(input: {
+  settings: GeminiSettings;
+  request: unknown;
+  onStreamDelta?: (delta: GeminiStreamDelta) => void;
+}): Promise<Awaited<ReturnType<typeof callGeminiInteraction>>> {
+  if (input.onStreamDelta) {
+    return callGeminiInteractionStream({
+      settings: input.settings,
+      request: input.request,
+      onStreamDelta: input.onStreamDelta,
+    });
+  }
+
+  return callGeminiInteraction({
+    settings: input.settings,
+    request: input.request,
+  });
+}
+
+function shouldRetryFunctionResultTurnWithTools(input: {
+  error: unknown;
+  requestPlan: ReturnType<typeof composeGeminiInteractionRequest>;
+  pendingInput: Array<Record<string, unknown>>;
+}): boolean {
+  if (!input.requestPlan.functionCallingEnabled) {
+    return false;
+  }
+
+  if (
+    Array.isArray(input.requestPlan.request.tools) &&
+    input.requestPlan.request.tools.length > 0
+  ) {
+    return false;
+  }
+
+  if (!isFunctionResultOnlyInput(input.pendingInput)) {
+    return false;
+  }
+
+  const message = toErrorMessage(input.error).toLowerCase();
+  return message.includes('tools are required') && message.includes('function_result');
+}
+
+function isFunctionResultOnlyInput(input: Array<Record<string, unknown>>): boolean {
+  return input.length > 0 && input.every((part) => part.type === 'function_result');
 }
 
 export async function generateSessionTitle(

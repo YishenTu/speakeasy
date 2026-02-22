@@ -3,6 +3,7 @@ import type { GeminiContent } from '../types';
 import {
   inferAttachmentNameFromMimeType,
   inferFileNameFromUri,
+  normalizeFunctionCallArgs,
   readPartRecord,
   readStringField,
 } from './common';
@@ -41,6 +42,18 @@ export function renderContentForChat(content: GeminiContent): string {
             : 'text';
         blocks.push(`\`\`\`${language}\n${code}\n\`\`\``);
       }
+      continue;
+    }
+
+    const functionCall = readPartRecord(part, 'functionCall', 'function_call');
+    if (functionCall) {
+      const name = typeof functionCall.name === 'string' ? functionCall.name.trim() : '';
+      if (!name) {
+        continue;
+      }
+
+      const args = JSON.stringify(normalizeFunctionCallArgs(functionCall.args));
+      blocks.push(`Tool call requested: ${name} ${args}`);
     }
   }
 
