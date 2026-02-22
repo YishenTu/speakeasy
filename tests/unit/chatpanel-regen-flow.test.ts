@@ -63,6 +63,7 @@ describe('chatpanel regenerate flow', () => {
   let forkRequest: Extract<RuntimeRequest, { type: 'chat/fork' }> | null;
   let switchBranchRequest: Extract<RuntimeRequest, { type: 'chat/switch-branch' }> | null;
   let uploadRequests: Extract<RuntimeRequest, { type: 'chat/upload-files' }>[];
+  let deleteRequests: Extract<RuntimeRequest, { type: 'chat/delete' }>[];
   let deferredUploadResponsesByFileName: Map<string, Deferred<UploadFilesRuntimeResponse>>;
   let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
   let loadMessageSnapshots: string[];
@@ -103,6 +104,7 @@ describe('chatpanel regenerate flow', () => {
     forkRequest = null;
     switchBranchRequest = null;
     uploadRequests = [];
+    deleteRequests = [];
     deferredUploadResponsesByFileName = new Map();
     loadRequests = [];
     loadMessageSnapshots = [];
@@ -248,6 +250,22 @@ describe('chatpanel regenerate flow', () => {
                   fileUri: `https://example.invalid/files/${index + 1}`,
                 })),
                 failures: [],
+              },
+            });
+          }
+          if (request.type === 'chat/delete') {
+            deleteRequests.push(request);
+            const deleted = listSessionsPayload.some((session) => session.chatId === request.chatId);
+            if (deleted) {
+              listSessionsPayload = listSessionsPayload.filter(
+                (session) => session.chatId !== request.chatId,
+              );
+            }
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                deleted,
+                chatId: null,
               },
             });
           }
@@ -759,6 +777,75 @@ describe('chatpanel regenerate flow', () => {
 
     expect(loadRequests.length).toBeGreaterThan(previousLoadCount);
     expect(loadRequests.at(-1)?.chatId).toBe('chat-other');
+  });
+
+  it('deletes the active session after confirmation and resets staged files and messages', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const historyControl = shadowRoot.querySelector('#speakeasy-history-control') as HTMLElement | null;
+    const historyToggleButton = shadowRoot.querySelector(
+      '#speakeasy-history-toggle',
+    ) as HTMLButtonElement | null;
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(historyControl).not.toBeNull();
+    expect(historyToggleButton).not.toBeNull();
+    expect(fileInput).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!historyControl || !historyToggleButton || !fileInput || !filePreviewContainer || !messageList) {
+      throw new Error(
+        'Expected history controls, file input, file preview container, and message list elements.',
+      );
+    }
+
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['staged-note'], 'staged-note.txt', { type: 'text/plain' })],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(20);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
+    expect(messageList.querySelectorAll('li[data-message-id]')).toHaveLength(2);
+
+    historyToggleButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const sessionDeleteButton = shadowRoot.querySelector(
+      '.history-item-delete',
+    ) as HTMLButtonElement | null;
+    const deleteConfirmOverlay = shadowRoot.querySelector(
+      '#speakeasy-delete-confirm-overlay',
+    ) as HTMLElement | null;
+    const deleteConfirmAcceptButton = shadowRoot.querySelector(
+      '#speakeasy-delete-confirm-accept',
+    ) as HTMLButtonElement | null;
+    expect(sessionDeleteButton).not.toBeNull();
+    expect(deleteConfirmOverlay).not.toBeNull();
+    expect(deleteConfirmAcceptButton).not.toBeNull();
+    if (!sessionDeleteButton || !deleteConfirmOverlay || !deleteConfirmAcceptButton) {
+      throw new Error('Expected delete controls and confirmation overlay elements.');
+    }
+
+    sessionDeleteButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(10);
+    expect(deleteConfirmOverlay.hidden).toBe(false);
+    expect(deleteRequests).toHaveLength(0);
+
+    deleteConfirmAcceptButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(30);
+
+    expect(deleteRequests).toHaveLength(1);
+    expect(deleteRequests[0]?.chatId).toBe('chat-seed');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
+    expect(messageList.querySelectorAll('li[data-message-id]')).toHaveLength(0);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(0);
+    expect(historyToggleButton.getAttribute('aria-expanded')).toBe('false');
+    expect(historyControl.classList.contains('open')).toBe(false);
   });
 
   it('clears drag interaction lock when the panel closes during an active drag', async () => {
