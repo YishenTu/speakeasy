@@ -198,16 +198,54 @@ export async function completeAssistantTurn(
     : undefined;
 
   for (let roundTrip = 0; roundTrip < settings.maxToolRoundTrips; roundTrip += 1) {
-    const interaction = streamDeltaHandler
-      ? await callGeminiInteractionStream({
-          settings,
-          request: requestPlan.request,
-          onStreamDelta: streamDeltaHandler,
-        })
-      : await callGeminiInteraction({
-          settings,
-          request: requestPlan.request,
-        });
+    let interaction: GeminiInteraction;
+    try {
+      interaction = streamDeltaHandler
+        ? await callGeminiInteractionStream({
+            settings,
+            request: requestPlan.request,
+            onStreamDelta: streamDeltaHandler,
+          })
+        : await callGeminiInteraction({
+            settings,
+            request: requestPlan.request,
+          });
+    } catch (error: unknown) {
+      const canRetryFunctionResultWithTools =
+        functionCallingEnabled &&
+        isFunctionResultOnlyInteractionInput(pendingInput) &&
+        requestPlan.request.tools === undefined &&
+        isToolRelatedClientError(error);
+      if (!canRetryFunctionResultWithTools) {
+        throw error;
+      }
+
+      // Canary check on 2026-02-22 showed both variants currently work:
+      // function_result follow-ups can succeed with or without tools.
+      // Keep this targeted retry for forward compatibility if the API expects tools.
+      const fallbackRequestInput: Parameters<typeof composeGeminiInteractionRequest>[0] = {
+        settings,
+        input: pendingInput,
+        functionDeclarations,
+        includeToolsForFunctionResult: true,
+        ...thinkingOpts,
+      };
+      if (session.lastInteractionId) {
+        fallbackRequestInput.previousInteractionId = session.lastInteractionId;
+      }
+      requestPlan = composeGeminiInteractionRequest(fallbackRequestInput);
+
+      interaction = streamDeltaHandler
+        ? await callGeminiInteractionStream({
+            settings,
+            request: requestPlan.request,
+            onStreamDelta: streamDeltaHandler,
+          })
+        : await callGeminiInteraction({
+            settings,
+            request: requestPlan.request,
+          });
+    }
     accumulateUsageTotals(usageTotals, interaction.usage);
 
     session.lastInteractionId = interaction.id;
@@ -219,6 +257,21 @@ export async function completeAssistantTurn(
     );
     session.contents.push(candidateContent);
     latestAssistantContent = candidateContent;
+
+    if (!functionCallingEnabled) {
+      const completedAtMs = getMonotonicNowMs();
+      const finalContent = withAssistantResponseStats(
+        candidateContent,
+        buildAssistantResponseStats({
+          usageTotals,
+          requestStartedAtMs,
+          firstStreamTokenAtMs,
+          completedAtMs,
+        }),
+      );
+      session.contents[session.contents.length - 1] = finalContent;
+      return finalContent;
+    }
 
     const functionCalls = extractFunctionCalls(candidateContent.parts);
     if (functionCalls.length === 0) {
@@ -234,10 +287,6 @@ export async function completeAssistantTurn(
       );
       session.contents[session.contents.length - 1] = finalContent;
       return finalContent;
-    }
-
-    if (!functionCallingEnabled) {
-      throw new Error('Gemini requested function calls, but function-calling tools are disabled.');
     }
 
     const executedCalls = await executeFunctionCalls(functionCalls);
@@ -666,6 +715,24 @@ export function renderContentForChat(content: GeminiContent): string {
     const text = typeof part.text === 'string' ? part.text.trim() : '';
     if (text) {
       blocks.push(text);
+      continue;
+    }
+
+    const functionCall = readPartRecord(part, 'functionCall', 'function_call');
+    if (functionCall) {
+      const name = readStringField(functionCall, 'name');
+      if (!name) {
+        continue;
+      }
+
+      const rawArgs =
+        Object.prototype.hasOwnProperty.call(functionCall, 'args') &&
+        functionCall.args !== undefined
+          ? functionCall.args
+          : functionCall.arguments;
+      const args = normalizeFunctionCallArgs(rawArgs);
+      const argsSuffix = Object.keys(args).length > 0 ? ` ${JSON.stringify(args)}` : '';
+      blocks.push(`Tool call requested: ${name}${argsSuffix}`);
       continue;
     }
 
@@ -1673,6 +1740,54 @@ function buildFunctionResultInput(call: ExecutedFunctionCall): Record<string, un
   }
 
   return result;
+}
+
+function isFunctionResultOnlyInteractionInput(input: Array<Record<string, unknown>>): boolean {
+  if (input.length === 0) {
+    return false;
+  }
+
+  return input.every((item) => item.type === 'function_result');
+}
+
+function isToolRelatedClientError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  const statusCode = readErrorStatusCode(error, message);
+  if (statusCode === null || statusCode < 400 || statusCode >= 500) {
+    return false;
+  }
+
+  return (
+    message.includes('tool') ||
+    message.includes('function_result') ||
+    message.includes('function result')
+  );
+}
+
+function readErrorStatusCode(error: unknown, lowerCasedMessage: string): number | null {
+  if (isRecord(error)) {
+    const statusField = error.status;
+    if (typeof statusField === 'number' && Number.isFinite(statusField)) {
+      return Math.trunc(statusField);
+    }
+
+    const codeField = error.code;
+    if (typeof codeField === 'number' && Number.isFinite(codeField)) {
+      return Math.trunc(codeField);
+    }
+  }
+
+  const prefixedStatusMatch = lowerCasedMessage.match(/^\s*(\d{3})\b/);
+  if (prefixedStatusMatch?.[1]) {
+    return Number.parseInt(prefixedStatusMatch[1], 10);
+  }
+
+  const jsonStatusMatch = lowerCasedMessage.match(/"code"\s*:\s*(\d{3})/);
+  if (jsonStatusMatch?.[1]) {
+    return Number.parseInt(jsonStatusMatch[1], 10);
+  }
+
+  return null;
 }
 
 function buildInteractionInputFromContent(content: GeminiContent): Array<Record<string, unknown>> {

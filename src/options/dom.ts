@@ -5,6 +5,7 @@ export interface OptionsDom {
   apiKeyInput: HTMLInputElement;
   modelInput: HTMLInputElement;
   systemInstructionInput: HTMLTextAreaElement;
+  storeInteractionsInput: HTMLInputElement;
   maxToolRoundTripsInput: HTMLInputElement;
   toolGoogleSearch: HTMLInputElement;
   toolGoogleMaps: HTMLInputElement;
@@ -29,6 +30,7 @@ export function getOptionsDom(): OptionsDom {
     apiKeyInput: queryRequiredElement<HTMLInputElement>('#api-key'),
     modelInput: queryRequiredElement<HTMLInputElement>('#model'),
     systemInstructionInput: queryRequiredElement<HTMLTextAreaElement>('#system-instruction'),
+    storeInteractionsInput: queryRequiredElement<HTMLInputElement>('#store-interactions'),
     maxToolRoundTripsInput: queryRequiredElement<HTMLInputElement>('#max-tool-round-trips'),
     toolGoogleSearch: queryRequiredElement<HTMLInputElement>('#tool-google-search'),
     toolGoogleMaps: queryRequiredElement<HTMLInputElement>('#tool-google-maps'),

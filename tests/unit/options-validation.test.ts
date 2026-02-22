@@ -67,6 +67,29 @@ describe('validateSettings', () => {
     );
   });
 
+  it('rejects combining MCP servers with built-in tools', () => {
+    const settings = createValidSettings();
+    settings.model = 'gemini-2.5-flash';
+    settings.tools.mcpServers = true;
+    settings.tools.googleSearch = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    expect(validateSettings(settings)).toBe(
+      'MCP servers cannot be combined with built-in tools or local function calling in the Interactions API yet. Choose one mode.',
+    );
+  });
+
+  it('rejects remote MCP on Gemini 3 models', () => {
+    const settings = createValidSettings();
+    settings.model = 'gemini-3-flash-preview';
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    expect(validateSettings(settings)).toBe(
+      'Remote MCP is not supported on Gemini 3 models yet. Use a Gemini 2.5 model for MCP server tools.',
+    );
+  });
+
   it('requires both or neither map coordinates', () => {
     const onlyLatitude = createValidSettings();
     onlyLatitude.mapsLatitude = 37.422;
@@ -77,21 +100,18 @@ describe('validateSettings', () => {
     );
   });
 
-  it('rejects computer use while backend integration is unavailable', () => {
+  it('allows computer use to pass through when explicitly enabled', () => {
     const settings = createValidSettings();
     settings.tools.computerUse = true;
 
-    expect(validateSettings(settings)).toBe(
-      'Computer Use needs a dedicated action/screenshot loop and is not yet wired.',
-    );
+    expect(validateSettings(settings)).toBeNull();
   });
 
   it('accepts valid settings', () => {
     const settings = createValidSettings();
     settings.tools.fileSearch = true;
     settings.fileSearchStoreNames = ['fileSearchStores/project'];
-    settings.tools.mcpServers = true;
-    settings.mcpServerUrls = ['https://mcp.example.com/sse'];
+    settings.tools.computerUse = true;
     settings.mapsLatitude = 37.422;
     settings.mapsLongitude = -122.084;
 

@@ -14,6 +14,7 @@ describe('defaultGeminiSettings', () => {
       apiKey: '',
       model: 'gemini-3-flash-preview',
       systemInstruction: '',
+      storeInteractions: true,
       maxToolRoundTrips: 6,
       tools: {
         googleSearch: true,
@@ -44,6 +45,7 @@ describe('normalizeGeminiSettings', () => {
       apiKey: 123,
       model: '   ',
       systemInstruction: null,
+      storeInteractions: 'yes',
       maxToolRoundTrips: '7',
       tools: {
         googleSearch: 'yes',
@@ -65,6 +67,7 @@ describe('normalizeGeminiSettings', () => {
     expect(normalized.apiKey).toBe('');
     expect(normalized.model).toBe('gemini-3-flash-preview');
     expect(normalized.systemInstruction).toBe('');
+    expect(normalized.storeInteractions).toBe(true);
     expect(normalized.maxToolRoundTrips).toBe(6);
     expect(normalized.tools).toEqual({
       googleSearch: true,
@@ -84,6 +87,7 @@ describe('normalizeGeminiSettings', () => {
   });
 
   it('clamps and coerces numeric boundaries', () => {
+    expect(normalizeGeminiSettings({ storeInteractions: false }).storeInteractions).toBe(false);
     expect(normalizeGeminiSettings({ maxToolRoundTrips: 0 }).maxToolRoundTrips).toBe(1);
     expect(normalizeGeminiSettings({ maxToolRoundTrips: 200 }).maxToolRoundTrips).toBe(20);
     expect(normalizeGeminiSettings({ maxToolRoundTrips: 4.9 }).maxToolRoundTrips).toBe(4);

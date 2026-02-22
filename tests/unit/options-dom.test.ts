@@ -52,6 +52,7 @@ function buildOptionsFixtureHtml(): string {
         <input id="api-key" />
         <input id="model" />
         <textarea id="system-instruction"></textarea>
+        <input id="store-interactions" type="checkbox" />
         <input id="max-tool-round-trips" />
         <input id="tool-google-search" type="checkbox" />
         <input id="tool-google-maps" type="checkbox" />

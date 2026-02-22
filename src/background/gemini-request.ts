@@ -9,7 +9,7 @@ export interface GeminiRequestToolSelection {
 export interface GeminiInteractionRequest {
   model: string;
   input: string | Array<Record<string, unknown>>;
-  store: true;
+  store: boolean;
   previous_interaction_id?: string;
   system_instruction?: string;
   tools?: Array<Record<string, unknown>>;
@@ -25,6 +25,7 @@ interface ComposeGeminiInteractionRequestInput {
   functionDeclarations: Array<Record<string, unknown>>;
   thinkingLevel?: string;
   previousInteractionId?: string;
+  includeToolsForFunctionResult?: boolean;
 }
 
 export function composeGeminiInteractionRequest(
@@ -34,7 +35,7 @@ export function composeGeminiInteractionRequest(
   const request: GeminiInteractionRequest = {
     model: input.settings.model,
     input: input.input,
-    store: true,
+    store: input.settings.storeInteractions,
   };
 
   if (input.previousInteractionId) {
@@ -45,7 +46,10 @@ export function composeGeminiInteractionRequest(
     request.system_instruction = input.settings.systemInstruction;
   }
 
-  if (selection.tools.length > 0) {
+  if (
+    selection.tools.length > 0 &&
+    (input.includeToolsForFunctionResult || !isFunctionResultOnlyInput(input.input))
+  ) {
     request.tools = selection.tools;
   }
 
@@ -117,8 +121,29 @@ export function buildGeminiRequestToolSelection(
     );
   }
 
+  if (settings.tools.computerUse) {
+    const computerUseTool: Record<string, unknown> = {
+      type: 'computer_use',
+      environment: 'browser',
+    };
+    if (settings.computerUseExcludedActions.length > 0) {
+      computerUseTool.excludedPredefinedFunctions = [...settings.computerUseExcludedActions];
+    }
+    tools.push(computerUseTool);
+  }
+
   return {
     tools,
     functionCallingEnabled: settings.tools.functionCalling,
   };
+}
+
+function isFunctionResultOnlyInput(input: string | Array<Record<string, unknown>>): boolean {
+  if (!Array.isArray(input) || input.length === 0) {
+    return false;
+  }
+
+  return input.every(
+    (item) => !!item && typeof item === 'object' && item.type === 'function_result',
+  );
 }

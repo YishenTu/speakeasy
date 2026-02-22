@@ -5,6 +5,7 @@ export function applySettingsToForm(dom: OptionsDom, settings: GeminiSettings): 
   dom.apiKeyInput.value = settings.apiKey;
   dom.modelInput.value = settings.customModels[0] ?? '';
   dom.systemInstructionInput.value = settings.systemInstruction;
+  dom.storeInteractionsInput.checked = settings.storeInteractions;
   dom.maxToolRoundTripsInput.value = String(settings.maxToolRoundTrips);
 
   dom.toolGoogleSearch.checked = settings.tools.googleSearch;
@@ -31,6 +32,7 @@ export function readFormState(dom: OptionsDom): Partial<GeminiSettings> {
     model: customModel || 'gemini-3-flash-preview',
     customModels: customModel ? [customModel] : [],
     systemInstruction: dom.systemInstructionInput.value.trim(),
+    storeInteractions: dom.storeInteractionsInput.checked,
     maxToolRoundTrips: Number(dom.maxToolRoundTripsInput.value),
     tools: {
       googleSearch: dom.toolGoogleSearch.checked,

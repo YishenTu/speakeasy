@@ -19,6 +19,7 @@ function createOptionsDomStub(): OptionsDom {
     apiKeyInput: createInput(),
     modelInput: createInput(),
     systemInstructionInput: createTextArea(),
+    storeInteractionsInput: createInput('', false),
     maxToolRoundTripsInput: createInput(),
     toolGoogleSearch: createInput('', false),
     toolGoogleMaps: createInput('', false),
@@ -44,6 +45,7 @@ describe('options form state', () => {
     settings.model = 'gemini-2.5-pro';
     settings.customModels = ['gemini-2.5-pro'];
     settings.systemInstruction = 'Be direct.';
+    settings.storeInteractions = false;
     settings.maxToolRoundTrips = 9;
     settings.tools.googleSearch = false;
     settings.tools.googleMaps = true;
@@ -64,6 +66,7 @@ describe('options form state', () => {
     expect(dom.apiKeyInput.value).toBe('api-key');
     expect(dom.modelInput.value).toBe('gemini-2.5-pro');
     expect(dom.systemInstructionInput.value).toBe('Be direct.');
+    expect(dom.storeInteractionsInput.checked).toBe(false);
     expect(dom.maxToolRoundTripsInput.value).toBe('9');
     expect(dom.toolGoogleSearch.checked).toBe(false);
     expect(dom.toolGoogleMaps.checked).toBe(true);
@@ -97,6 +100,7 @@ describe('options form state', () => {
     dom.apiKeyInput.value = '  key-123  ';
     dom.modelInput.value = '  gemini-2.5-flash  ';
     dom.systemInstructionInput.value = '  Use tools when needed. ';
+    dom.storeInteractionsInput.checked = true;
     dom.maxToolRoundTripsInput.value = '7';
     dom.toolGoogleSearch.checked = true;
     dom.toolGoogleMaps.checked = false;
@@ -119,6 +123,7 @@ describe('options form state', () => {
       model: 'gemini-2.5-flash',
       customModels: ['gemini-2.5-flash'],
       systemInstruction: 'Use tools when needed.',
+      storeInteractions: true,
       maxToolRoundTrips: 7,
       tools: {
         googleSearch: true,

@@ -177,13 +177,75 @@ describe('buildGeminiRequestToolSelection', () => {
     );
   });
 
-  it('rejects computer use tool when backend loop is not available', () => {
+  it('rejects combining mcp servers with built-in tools', () => {
+    const settings = createSettingsForToolTests();
+    settings.model = 'gemini-2.5-flash';
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+    settings.tools.googleSearch = true;
+
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
+      /mcp servers cannot be combined/i,
+    );
+  });
+
+  it('rejects mcp server usage on gemini 3 models', () => {
+    const settings = createSettingsForToolTests();
+    settings.model = 'gemini-3-flash-preview';
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
+      /remote mcp is not supported on gemini 3/i,
+    );
+  });
+
+  it('builds a computer_use tool payload with excluded actions', () => {
+    const settings = createSettingsForToolTests();
+    settings.model = 'gemini-2.5-computer-use-preview-10-2025';
+    settings.tools.computerUse = true;
+    settings.computerUseExcludedActions = ['drag_and_drop', 'scroll_down'];
+
+    const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
+    expect(selection.tools).toContainEqual({
+      type: 'computer_use',
+      environment: 'browser',
+      excludedPredefinedFunctions: ['drag_and_drop', 'scroll_down'],
+    });
+    expect(selection.functionCallingEnabled).toBe(false);
+  });
+
+  it('omits excludedPredefinedFunctions when no actions are excluded', () => {
+    const settings = createSettingsForToolTests();
+    settings.model = 'gemini-2.5-computer-use-preview-10-2025';
+    settings.tools.computerUse = true;
+
+    const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
+    expect(selection.tools).toContainEqual({
+      type: 'computer_use',
+      environment: 'browser',
+    });
+  });
+
+  it('accepts computer use with default model configuration', () => {
     const settings = createSettingsForToolTests();
     settings.tools.computerUse = true;
 
-    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
-      /not yet wired/i,
-    );
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).not.toThrow();
+  });
+
+  it('uses snake_case mcp server names', () => {
+    const settings = createSettingsForToolTests();
+    settings.model = 'gemini-2.5-flash';
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
+    expect(selection.tools).toContainEqual({
+      type: 'mcp_server',
+      name: 'mcp_server_1',
+      url: 'https://mcp.example.com/stream',
+    });
   });
 
   it('rejects google maps because interactions tooling does not expose it yet', () => {
@@ -239,6 +301,23 @@ describe('renderContentForChat', () => {
 
     expect(renderContentForChat(content)).toBe('Final answer');
     expect(renderThinkingSummaryForChat(content)).toBe('Plan: inspect constraints first.');
+  });
+
+  it('renders function call outputs as readable tool-call lines', () => {
+    const content: GeminiContent = {
+      role: 'model',
+      parts: [
+        {
+          functionCall: {
+            id: 'call-1',
+            name: 'click',
+            args: { x: 120, y: 240 },
+          },
+        },
+      ],
+    };
+
+    expect(renderContentForChat(content)).toBe('Tool call requested: click {"x":120,"y":240}');
   });
 });
 
@@ -499,6 +578,41 @@ describe('composeGeminiInteractionRequest', () => {
     });
     expect(plan.request.previous_interaction_id).toBe('int-1');
     expect(plan.request.store).toBe(true);
+  });
+
+  it('uses the store flag from settings', () => {
+    const settings = createSettingsForToolTests();
+    settings.storeInteractions = false;
+
+    const plan = composeGeminiInteractionRequest({
+      settings,
+      input: [{ type: 'text', text: 'hello' }],
+      functionDeclarations: FUNCTION_DECLARATIONS,
+    });
+
+    expect(plan.request.store).toBe(false);
+  });
+
+  it('omits tools on function_result turns by default', () => {
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+
+    const plan = composeGeminiInteractionRequest({
+      settings,
+      input: [
+        {
+          type: 'function_result',
+          call_id: 'call-1',
+          name: 'get_current_time',
+          result: { iso: '2026-02-22T00:00:00.000Z' },
+        },
+      ],
+      functionDeclarations: FUNCTION_DECLARATIONS,
+      previousInteractionId: 'int-1',
+    });
+
+    expect(plan.request.tools).toBeUndefined();
+    expect(plan.tools).toHaveLength(1);
   });
 });
 
@@ -1062,7 +1176,87 @@ describe('completeAssistantTurn', () => {
         },
       },
     ]);
+    expect(fetchRequestBodies[1]?.tools).toBeUndefined();
     expect(session.lastInteractionId).toBe('interaction-2');
+  });
+
+  it('retries function_result turns with tools when the first follow-up request fails', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-1',
+      outputs: [
+        {
+          type: 'function_call',
+          id: 'tool-call-1',
+          name: 'get_extension_info',
+          arguments: {},
+        },
+      ],
+    });
+    enqueueGeminiHttpResponse(400, {
+      error: {
+        message: 'Tools are required on this function_result request.',
+      },
+    });
+    enqueueGeminiResponses({
+      id: 'interaction-2',
+      outputs: [{ type: 'text', text: 'Recovered after retry' }],
+    });
+
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+    const session = createSession('tool call retry');
+
+    const assistantContent = await completeAssistantTurn(session, settings);
+    expect(assistantContent.parts).toEqual([{ text: 'Recovered after retry' }]);
+    expect(fetchRequestBodies).toHaveLength(3);
+    expect(fetchRequestBodies[1]?.input).toEqual([
+      {
+        type: 'function_result',
+        call_id: 'tool-call-1',
+        name: 'get_extension_info',
+        result: {
+          name: 'Speakeasy',
+          version: '1.2.3',
+          description: 'Test extension',
+        },
+      },
+    ]);
+    expect(fetchRequestBodies[1]?.tools).toBeUndefined();
+    expect(fetchRequestBodies[2]?.tools).toEqual([
+      {
+        type: 'function',
+        name: 'get_current_time',
+        description: 'Get the current time, optionally in a specific IANA time zone.',
+        parameters: {
+          type: 'object',
+          properties: {
+            timeZone: {
+              type: 'string',
+              description:
+                'Optional IANA time zone identifier, such as America/New_York or Asia/Tokyo.',
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        name: 'get_extension_info',
+        description: 'Get extension metadata such as version and manifest name.',
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        type: 'function',
+        name: 'generate_uuid',
+        description: 'Generate a random UUID.',
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+    ]);
   });
 
   it('throws when Gemini returns function calls without call ids', async () => {
@@ -1150,7 +1344,7 @@ describe('completeAssistantTurn', () => {
     expect(toolResponse?.functionResponse?.response?.error).toBeString();
   });
 
-  it('throws if Gemini requests tool calls while function-calling is disabled', async () => {
+  it('returns function-call outputs as final assistant content when local function-calling is disabled', async () => {
     enqueueGeminiResponses({
       id: 'interaction-1',
       outputs: [
@@ -1166,7 +1360,18 @@ describe('completeAssistantTurn', () => {
     const settings = createSettingsForToolTests();
     const session = createSession();
 
-    await expect(completeAssistantTurn(session, settings)).rejects.toThrow(/tools are disabled/i);
+    const content = await completeAssistantTurn(session, settings);
+    expect(content.parts).toEqual([
+      {
+        functionCall: {
+          id: 'call-1',
+          name: 'generate_uuid',
+          args: {},
+        },
+      },
+    ]);
+    expect(session.lastInteractionId).toBe('interaction-1');
+    expect(session.contents).toHaveLength(2);
   });
 
   it('throws when Gemini returns no outputs', async () => {

@@ -72,15 +72,13 @@ describe('Gemini interactions request contract', () => {
     expect(plan.functionCallingEnabled).toBe(true);
   });
 
-  it('builds native tool list config with file search and mcp servers', () => {
+  it('builds native built-in tool list config', () => {
     const settings = createBaseSettings();
     settings.tools.googleSearch = true;
     settings.tools.codeExecution = true;
     settings.tools.urlContext = true;
     settings.tools.fileSearch = true;
-    settings.tools.mcpServers = true;
     settings.fileSearchStoreNames = ['fileSearchStores/project'];
-    settings.mcpServerUrls = ['https://mcp.example.com/sse'];
 
     const plan = composeGeminiInteractionRequest({
       settings,
@@ -96,10 +94,26 @@ describe('Gemini interactions request contract', () => {
         type: 'file_search',
         file_search_store_names: ['fileSearchStores/project'],
       },
+    ]);
+  });
+
+  it('builds mcp tool list in interactions format', () => {
+    const settings = createBaseSettings();
+    settings.model = 'gemini-2.5-flash';
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    const plan = composeGeminiInteractionRequest({
+      settings,
+      input: [{ type: 'text', text: 'query remote mcp' }],
+      functionDeclarations: FUNCTION_DECLARATIONS,
+    });
+
+    expect(plan.request.tools).toEqual([
       {
         type: 'mcp_server',
         name: 'mcp_server_1',
-        url: 'https://mcp.example.com/sse',
+        url: 'https://mcp.example.com/stream',
       },
     ]);
   });
@@ -150,5 +164,40 @@ describe('Gemini interactions request contract', () => {
     expect(plan.request.generation_config).toEqual({
       thinking_summaries: 'auto',
     });
+  });
+
+  it('omits tools for function_result follow-up turns by default', () => {
+    const settings = createBaseSettings();
+    settings.tools.functionCalling = true;
+
+    const plan = composeGeminiInteractionRequest({
+      settings,
+      input: [
+        {
+          type: 'function_result',
+          call_id: 'call-1',
+          name: 'get_current_time',
+          result: {
+            iso: '2026-02-22T00:00:00.000Z',
+          },
+        },
+      ],
+      functionDeclarations: FUNCTION_DECLARATIONS,
+      previousInteractionId: 'int-1',
+    });
+
+    expect(plan.request.tools).toBeUndefined();
+    expect(plan.tools).toHaveLength(1);
+  });
+
+  it('uses the configured store flag', () => {
+    const settings = createBaseSettings();
+    settings.storeInteractions = false;
+    const plan = composeGeminiInteractionRequest({
+      settings,
+      input: [{ type: 'text', text: 'hello' }],
+      functionDeclarations: FUNCTION_DECLARATIONS,
+    });
+    expect(plan.request.store).toBe(false);
   });
 });

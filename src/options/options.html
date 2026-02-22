@@ -44,6 +44,12 @@
             placeholder="You are a concise assistant..."></textarea>
         </label>
 
+        <label class="settings-tool-option">
+          <input id="store-interactions" type="checkbox"
+            class="settings-checkbox" />
+          Store interactions on Gemini servers
+        </label>
+
         <label class="settings-field">
           <span class="settings-label">Max tool round trips</span>
           <input id="max-tool-round-trips" name="maxToolRoundTrips" type="number" min="1" max="20"
@@ -92,10 +98,10 @@
                 class="settings-checkbox" />
               Function Calling <span class="text-white/40 text-xs ml-1">(local tools)</span>
             </label>
-            <label class="settings-tool-option-disabled col-span-1 sm:col-span-2">
-              <input disabled id="tool-computer-use" type="checkbox"
-                class="settings-checkbox-disabled" />
-              Computer Use <span class="text-xs ml-1">(not supported yet in this extension runtime)</span>
+            <label class="settings-tool-option col-span-1 sm:col-span-2">
+              <input id="tool-computer-use" type="checkbox"
+                class="settings-checkbox" />
+              Computer Use <span class="text-xs ml-1">(experimental)</span>
             </label>
           </div>
         </fieldset>
@@ -105,7 +111,7 @@
               class="settings-optional">(comma-separated)</span></span>
           <input id="file-search-store-names" name="fileSearchStoreNames" type="text"
             class="settings-input"
-            placeholder="my-docs-store, support-kb-store" />
+            placeholder="fileSearchStores/my-docs-store, fileSearchStores/support-kb-store" />
         </label>
 
         <label class="settings-field">

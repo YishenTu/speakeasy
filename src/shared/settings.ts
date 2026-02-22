@@ -13,6 +13,7 @@ export interface GeminiSettings {
   apiKey: string;
   model: string;
   systemInstruction: string;
+  storeInteractions: boolean;
   maxToolRoundTrips: number;
   tools: GeminiToolSettings;
   fileSearchStoreNames: string[];
@@ -31,6 +32,7 @@ const DEFAULT_SETTINGS: GeminiSettings = {
   apiKey: '',
   model: 'gemini-3-flash-preview',
   systemInstruction: '',
+  storeInteractions: true,
   maxToolRoundTrips: 6,
   tools: {
     googleSearch: true,
@@ -129,6 +131,10 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
     apiKey: toStringOrEmpty(settings.apiKey).trim(),
     model: toStringOrEmpty(settings.model).trim() || DEFAULT_SETTINGS.model,
     systemInstruction: toStringOrEmpty(settings.systemInstruction).trim(),
+    storeInteractions: toBooleanOrDefault(
+      settings.storeInteractions,
+      DEFAULT_SETTINGS.storeInteractions,
+    ),
     maxToolRoundTrips: clampInteger(
       settings.maxToolRoundTrips,
       1,
