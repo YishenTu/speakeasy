@@ -7,3 +7,112 @@
     @apply m-0 font-sans antialiased;
   }
 }
+
+@layer components {
+  .settings-page {
+    @apply min-h-screen bg-surface-900 text-white/90 tracking-wide;
+  }
+
+  .settings-layout {
+    @apply mx-auto max-w-3xl px-6 py-10;
+  }
+
+  .settings-heading {
+    @apply text-xl font-medium tracking-wide;
+  }
+
+  .settings-description {
+    @apply mt-2 text-xs uppercase tracking-widest text-white/40;
+  }
+
+  .settings-card {
+    @apply mt-8 border border-white/10 bg-black/20 p-6 shadow-2xl backdrop-blur-md;
+  }
+
+  .settings-section-heading {
+    @apply border-b border-white/5 pb-3 text-xs font-semibold uppercase tracking-widest text-white/50;
+  }
+
+  .settings-form {
+    @apply mt-5 space-y-6;
+  }
+
+  .settings-field {
+    @apply block;
+  }
+
+  .settings-label {
+    @apply mb-1.5 block text-xs uppercase tracking-wider text-white/70;
+  }
+
+  .settings-optional {
+    @apply lowercase text-white/30;
+  }
+
+  .settings-input {
+    @apply w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 transition-colors focus:border-white/40 focus:bg-black/60 focus:outline-none;
+  }
+
+  .settings-tools {
+    @apply space-y-3 pt-3;
+  }
+
+  .settings-tool-grid {
+    @apply grid grid-cols-1 gap-3 sm:grid-cols-2;
+  }
+
+  .settings-tool-option {
+    @apply flex cursor-pointer items-center gap-3 text-sm text-white/80 transition-colors hover:text-white;
+  }
+
+  .settings-tool-option-disabled {
+    @apply flex cursor-not-allowed items-center gap-3 text-sm text-white/40;
+  }
+
+  .settings-checkbox {
+    @apply relative h-4 w-4 appearance-none border border-white/20 bg-black/40 transition-all focus:outline-none focus:ring-1 focus:ring-white/30 checked:border-white checked:bg-white;
+  }
+
+  .settings-checkbox::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 12px 12px;
+  }
+
+  .settings-checkbox:checked::before {
+    opacity: 1;
+  }
+
+  .settings-checkbox-disabled {
+    @apply h-4 w-4 appearance-none border border-white/10 bg-black/20 focus:outline-none;
+  }
+
+  .settings-grid-two {
+    @apply grid grid-cols-1 gap-4 sm:grid-cols-2;
+  }
+
+  .settings-footer {
+    @apply mt-8 flex items-center justify-between border-t border-white/10 pt-6;
+  }
+
+  .settings-version-label {
+    @apply text-xs uppercase tracking-widest text-white/40;
+  }
+
+  .settings-version-value {
+    @apply ml-1 font-medium text-white/70;
+  }
+
+  .settings-save-button {
+    @apply bg-white/90 px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-black transition-colors hover:bg-white focus:outline-none;
+  }
+
+  .settings-status {
+    @apply text-xs tracking-wider text-white/50;
+  }
+}

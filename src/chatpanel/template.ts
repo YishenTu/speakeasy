@@ -3,6 +3,25 @@ export function getChatPanelTemplate(): string {
     <style>
       :host {
         all: initial;
+        --sp-color-shell: #f8fafc;
+        --sp-color-text-primary: rgba(255, 255, 255, 0.95);
+        --sp-color-text-default: rgba(255, 255, 255, 0.85);
+        --sp-color-text-secondary: rgba(255, 255, 255, 0.66);
+        --sp-color-text-muted: rgba(255, 255, 255, 0.5);
+        --sp-color-text-dim: rgba(255, 255, 255, 0.42);
+        --sp-color-border-base: rgba(255, 255, 255, 0.1);
+        --sp-color-border-focus: rgba(255, 255, 255, 0.55);
+        --sp-color-surface-panel: rgba(0, 0, 0, 0.85);
+        --sp-color-surface-overlay: rgba(18, 18, 18, 0.94);
+        --sp-color-surface-subtle: rgba(255, 255, 255, 0.04);
+        --sp-color-surface-hover: rgba(255, 255, 255, 0.08);
+        --sp-radius-panel: 8px;
+        --sp-radius-md: 6px;
+        --sp-radius-sm: 4px;
+        --sp-font-size-xs: 11px;
+        --sp-font-size-sm: 12px;
+        --sp-transition-fast: 120ms ease;
+        --sp-transition-medium: 150ms ease;
       }
 
       .shell {
@@ -13,7 +32,7 @@ export function getChatPanelTemplate(): string {
         height: min(620px, calc(100vh - 96px));
         z-index: 2147483647;
         font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
-        color: #f8fafc;
+        color: var(--sp-color-shell);
         box-sizing: border-box;
       }
 
@@ -25,12 +44,12 @@ export function getChatPanelTemplate(): string {
         width: 100%;
         height: 100%;
         position: relative;
-        border-radius: 8px;
+        border-radius: var(--sp-radius-panel);
         overflow: hidden;
         display: grid;
         grid-template-rows: auto minmax(0, 1fr) auto;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        background: rgba(0, 0, 0, 0.85);
+        border: 1px solid var(--sp-color-border-base);
+        background: var(--sp-color-surface-panel);
         backdrop-filter: blur(24px);
         -webkit-backdrop-filter: blur(24px);
         box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
@@ -54,12 +73,12 @@ export function getChatPanelTemplate(): string {
         font-weight: 500;
         letter-spacing: 0.04em;
         text-transform: uppercase;
-        color: rgba(255, 255, 255, 0.85);
+        color: var(--sp-color-text-default);
         display: flex;
         align-items: center;
         gap: 8px;
       }
-      
+
       .brand-logo {
         width: 18px;
         height: 18px;
@@ -79,8 +98,8 @@ export function getChatPanelTemplate(): string {
       .icon-btn {
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.66);
-        border-radius: 8px;
+        color: var(--sp-color-text-secondary);
+        border-radius: var(--sp-radius-panel);
         width: 28px;
         height: 28px;
         padding: 0;
@@ -88,7 +107,10 @@ export function getChatPanelTemplate(): string {
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+        transition:
+          color var(--sp-transition-fast),
+          border-color var(--sp-transition-fast),
+          background var(--sp-transition-fast);
       }
 
       .icon-btn svg {
@@ -109,7 +131,7 @@ export function getChatPanelTemplate(): string {
 
       .icon-btn:hover,
       .control-wrap.open .icon-btn {
-        color: rgba(255, 255, 255, 0.95);
+        color: var(--sp-color-text-primary);
       }
 
       .icon-btn:disabled {
@@ -127,8 +149,8 @@ export function getChatPanelTemplate(): string {
         overflow: auto;
         z-index: 16;
         border: 1px solid rgba(255, 255, 255, 0.14);
-        border-radius: 8px;
-        background: rgba(18, 18, 18, 0.94);
+        border-radius: var(--sp-radius-panel);
+        background: var(--sp-color-surface-overlay);
         backdrop-filter: blur(14px);
         -webkit-backdrop-filter: blur(14px);
         padding: 4px;
@@ -156,13 +178,13 @@ export function getChatPanelTemplate(): string {
         justify-content: space-between;
         gap: 8px;
         padding: 8px;
-        border-radius: 6px;
+        border-radius: var(--sp-radius-md);
         cursor: pointer;
-        font-size: 11px;
+        font-size: var(--sp-font-size-xs);
       }
 
       .history-item-main:hover {
-        background: rgba(255, 255, 255, 0.08);
+        background: var(--sp-color-surface-hover);
       }
 
       .history-item-main:disabled {
@@ -177,7 +199,7 @@ export function getChatPanelTemplate(): string {
       }
 
       .history-item-meta {
-        color: rgba(255, 255, 255, 0.5);
+        color: var(--sp-color-text-muted);
         flex-shrink: 0;
       }
 
@@ -187,9 +209,9 @@ export function getChatPanelTemplate(): string {
 
       .history-item-delete {
         border: 1px solid rgba(255, 255, 255, 0.16);
-        background: rgba(255, 255, 255, 0.04);
+        background: var(--sp-color-surface-subtle);
         color: rgba(255, 255, 255, 0.58);
-        border-radius: 6px;
+        border-radius: var(--sp-radius-md);
         width: 22px;
         height: 22px;
         padding: 0;
@@ -214,8 +236,8 @@ export function getChatPanelTemplate(): string {
 
       .history-empty {
         padding: 8px;
-        color: rgba(255, 255, 255, 0.5);
-        font-size: 11px;
+        color: var(--sp-color-text-muted);
+        font-size: var(--sp-font-size-xs);
       }
 
       .messages {
@@ -234,7 +256,7 @@ export function getChatPanelTemplate(): string {
       }
 
       .messages::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.1);
+        background: var(--sp-color-border-base);
         border-radius: 0;
       }
 
@@ -269,8 +291,8 @@ export function getChatPanelTemplate(): string {
 
       .bubble-user {
         background: rgba(255, 255, 255, 0.12);
-        color: rgba(255, 255, 255, 0.95);
-        border-radius: 8px;
+        color: var(--sp-color-text-primary);
+        border-radius: var(--sp-radius-panel);
       }
 
       .bubble-assistant {
@@ -278,7 +300,7 @@ export function getChatPanelTemplate(): string {
         max-width: calc(100% + 28px);
         box-sizing: border-box;
         background: transparent;
-        color: rgba(255, 255, 255, 0.85);
+        color: var(--sp-color-text-default);
         margin: 0 -14px;
       }
 
@@ -390,9 +412,9 @@ export function getChatPanelTemplate(): string {
 
       .message-text code {
         font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, monospace;
-        font-size: 12px;
+        font-size: var(--sp-font-size-sm);
         background: rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
+        border-radius: var(--sp-radius-sm);
         padding: 1px 4px;
       }
 
@@ -418,7 +440,7 @@ export function getChatPanelTemplate(): string {
         cursor: pointer;
         user-select: none;
         line-height: 1.5;
-        transition: color 120ms ease;
+        transition: color var(--sp-transition-fast);
       }
 
       .message-text pre .code-lang:hover {
@@ -575,7 +597,7 @@ export function getChatPanelTemplate(): string {
 
       .thinking-disclosure-label {
         cursor: pointer;
-        font-size: 11px;
+        font-size: var(--sp-font-size-xs);
         font-weight: 600;
         color: rgba(255, 255, 255, 0.82);
         user-select: none;
@@ -594,7 +616,7 @@ export function getChatPanelTemplate(): string {
         margin: 8px 0 6px;
         padding: 0 0 0 10px;
         border-left: 1px solid rgba(255, 255, 255, 0.22);
-        font-size: 12px;
+        font-size: var(--sp-font-size-sm);
         line-height: 1.45;
         color: rgba(255, 255, 255, 0.68);
       }
@@ -628,7 +650,7 @@ export function getChatPanelTemplate(): string {
       }
 
       .thinking-summary p {
-        font-size: 12px;
+        font-size: var(--sp-font-size-sm);
         white-space: pre-wrap;
       }
 
@@ -639,9 +661,9 @@ export function getChatPanelTemplate(): string {
         position: static;
       }
 
-      .message-stats-trigger {
+      .message-stats-trigger,
+      .message-action-btn {
         cursor: pointer;
-        list-style: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -650,17 +672,23 @@ export function getChatPanelTemplate(): string {
         padding: 0;
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.42);
-        user-select: none;
-        transition: color 120ms ease;
+        color: var(--sp-color-text-dim);
+        transition: color var(--sp-transition-fast);
       }
 
-      .message-stats-trigger:hover {
+      .message-stats-trigger {
+        list-style: none;
+        user-select: none;
+      }
+
+      .message-stats-trigger:hover,
+      .message-action-btn:hover {
         color: rgba(255, 255, 255, 0.9);
       }
 
-      .message-stats-trigger:focus-visible {
-        outline: 1px solid rgba(255, 255, 255, 0.55);
+      .message-stats-trigger:focus-visible,
+      .message-action-btn:focus-visible {
+        outline: 1px solid var(--sp-color-border-focus);
         outline-offset: 1px;
       }
 
@@ -693,8 +721,8 @@ export function getChatPanelTemplate(): string {
         width: auto;
         box-sizing: border-box;
         border: 1px solid rgba(255, 255, 255, 0.12);
-        background: rgba(255, 255, 255, 0.04);
-        border-radius: 6px;
+        background: var(--sp-color-surface-subtle);
+        border-radius: var(--sp-radius-md);
         padding: 8px 10px;
       }
 
@@ -702,7 +730,7 @@ export function getChatPanelTemplate(): string {
         display: flex;
         justify-content: space-between;
         gap: 16px;
-        font-size: 11px;
+        font-size: var(--sp-font-size-xs);
         line-height: 1.35;
       }
 
@@ -726,7 +754,13 @@ export function getChatPanelTemplate(): string {
         opacity: 0;
         transform: translateY(1px);
         pointer-events: none;
-        transition: opacity 120ms ease, transform 120ms ease;
+        transition: opacity var(--sp-transition-fast), transform var(--sp-transition-fast);
+      }
+
+      .message-copy-icon {
+        width: 22px;
+        height: 22px;
+        display: block;
       }
 
       .row-assistant:hover .message-actions,
@@ -734,35 +768,6 @@ export function getChatPanelTemplate(): string {
         opacity: 1;
         transform: translateY(0);
         pointer-events: auto;
-      }
-
-      .message-action-btn {
-        cursor: pointer;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 30px;
-        height: 30px;
-        padding: 0;
-        border: none;
-        background: transparent;
-        color: rgba(255, 255, 255, 0.42);
-        transition: color 120ms ease;
-      }
-
-      .message-action-btn:hover {
-        color: rgba(255, 255, 255, 0.9);
-      }
-
-      .message-action-btn:focus-visible {
-        outline: 1px solid rgba(255, 255, 255, 0.55);
-        outline-offset: 1px;
-      }
-
-      .message-copy-icon {
-        width: 22px;
-        height: 22px;
-        display: block;
       }
 
       .message-copy-btn.is-copied {
@@ -798,10 +803,10 @@ export function getChatPanelTemplate(): string {
         display: inline-flex;
         max-width: 100%;
         width: fit-content;
-        font-size: 11px;
+        font-size: var(--sp-font-size-xs);
         color: rgba(255, 255, 255, 0.78);
         border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 6px;
+        border-radius: var(--sp-radius-md);
         padding: 6px 8px;
         background: rgba(255, 255, 255, 0.05);
         word-break: break-word;
@@ -817,10 +822,10 @@ export function getChatPanelTemplate(): string {
         display: flex;
         flex-direction: column;
         background: transparent;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
+        border: 1px solid var(--sp-color-border-base);
+        border-radius: var(--sp-radius-panel);
         padding: 0 4px;
-        transition: border-color 150ms ease, background 150ms ease;
+        transition: border-color var(--sp-transition-medium), background var(--sp-transition-medium);
       }
 
       .composer-row {
@@ -829,20 +834,24 @@ export function getChatPanelTemplate(): string {
         gap: 2px;
       }
 
-      .attach-btn {
+      .attach-btn,
+      .dropup-trigger {
         border: none;
         background: transparent;
         color: rgba(255, 255, 255, 0.35);
         padding: 0;
+        border-radius: 0;
+        cursor: pointer;
+        transition: color var(--sp-transition-fast);
+      }
+
+      .attach-btn {
         width: auto;
         min-width: 0;
         height: auto;
-        border-radius: 0;
-        cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        transition: color 120ms ease;
       }
 
       .attach-btn:hover {
@@ -875,7 +884,7 @@ export function getChatPanelTemplate(): string {
         border: 1px solid rgba(255, 255, 255, 0.15);
         border-radius: 999px;
         padding: 4px 6px 4px 10px;
-        font-size: 11px;
+        font-size: var(--sp-font-size-xs);
         color: rgba(255, 255, 255, 0.9);
         background: rgba(255, 255, 255, 0.06);
         display: inline-flex;
@@ -927,16 +936,9 @@ export function getChatPanelTemplate(): string {
       }
 
       .dropup-trigger {
-        border: none;
-        background: transparent;
-        color: rgba(255, 255, 255, 0.35);
         font-family: inherit;
-        font-size: 11px;
-        padding: 0;
-        border-radius: 0;
-        cursor: pointer;
+        font-size: var(--sp-font-size-xs);
         outline: none;
-        transition: color 120ms ease;
       }
 
       .dropup-trigger:hover,
@@ -951,8 +953,8 @@ export function getChatPanelTemplate(): string {
         left: 0;
         min-width: 100%;
         background: rgba(24, 24, 24, 0.95);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 4px;
+        border: 1px solid var(--sp-color-border-base);
+        border-radius: var(--sp-radius-sm);
         padding: 2px 0;
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
@@ -969,7 +971,7 @@ export function getChatPanelTemplate(): string {
         background: transparent;
         color: rgba(255, 255, 255, 0.6);
         font-family: inherit;
-        font-size: 11px;
+        font-size: var(--sp-font-size-xs);
         padding: 5px 12px;
         cursor: pointer;
         text-align: left;
@@ -1006,7 +1008,7 @@ export function getChatPanelTemplate(): string {
         min-width: 0;
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.95);
+        color: var(--sp-color-text-primary);
         padding: 10px 12px;
         font-size: 13px;
         resize: none;

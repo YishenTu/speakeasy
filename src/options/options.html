@@ -9,157 +9,150 @@
   <link rel="stylesheet" href="ui.css" />
 </head>
 
-<body class="min-h-screen bg-[#101010] text-white/90 font-sans tracking-wide">
-  <main class="mx-auto max-w-3xl px-6 py-10">
-    <h1 class="text-xl font-medium tracking-wide">Speakeasy Settings</h1>
-    <p class="mt-2 text-xs text-white/40 uppercase tracking-widest">
+<body class="settings-page">
+  <main class="settings-layout">
+    <h1 class="settings-heading">Speakeasy Settings</h1>
+    <p class="settings-description">
       Configure Gemini access, model behavior, and native tool usage.
     </p>
 
-    <section class="mt-8 border border-white/10 bg-black/20 p-6 shadow-2xl backdrop-blur-md">
-      <h2 class="text-xs font-semibold uppercase tracking-widest text-white/50 border-b border-white/5 pb-3">Provider
+    <section class="settings-card">
+      <h2 class="settings-section-heading">Provider
         Configuration</h2>
 
-      <form id="settings-form" class="mt-5 space-y-6">
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Gemini API key</span>
+      <form id="settings-form" class="settings-form">
+        <label class="settings-field">
+          <span class="settings-label">Gemini API key</span>
           <input id="api-key" name="apiKey" type="password" autocomplete="off"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            class="settings-input"
             placeholder="AI... or your Gemini API key" required />
         </label>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Custom model <span
-              class="text-white/30 lowercase">(optional)</span></span>
+        <label class="settings-field">
+          <span class="settings-label">Custom model <span
+              class="settings-optional">(optional)</span></span>
           <input id="model" name="model" type="text"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            class="settings-input"
             placeholder="gemini-3-pro-preview (appears in chat selector)" />
         </label>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">System instruction <span
-              class="text-white/30 lowercase">(optional)</span></span>
+        <label class="settings-field">
+          <span class="settings-label">System instruction <span
+              class="settings-optional">(optional)</span></span>
           <textarea id="system-instruction" name="systemInstruction" rows="4"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors resize-y"
+            class="settings-input resize-y"
             placeholder="You are a concise assistant..."></textarea>
         </label>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Max tool round trips</span>
+        <label class="settings-field">
+          <span class="settings-label">Max tool round trips</span>
           <input id="max-tool-round-trips" name="maxToolRoundTrips" type="number" min="1" max="20"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            class="settings-input"
             required />
         </label>
 
-        <fieldset class="space-y-3 pt-3">
+        <fieldset class="settings-tools">
           <legend
-            class="text-xs font-semibold uppercase tracking-widest text-white/50 border-b border-white/5 pb-3 w-full mb-4">
+            class="settings-section-heading w-full mb-4">
             Tools & Execution</legend>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+          <div class="settings-tool-grid">
+            <label class="settings-tool-option">
               <input id="tool-google-search" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               Google Search
             </label>
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+            <label class="settings-tool-option">
               <input id="tool-google-maps" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               Google Maps
             </label>
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+            <label class="settings-tool-option">
               <input id="tool-code-execution" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               Code Execution
             </label>
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+            <label class="settings-tool-option">
               <input id="tool-url-context" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               URL Context
             </label>
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+            <label class="settings-tool-option">
               <input id="tool-file-search" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               File Search
             </label>
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group">
+            <label class="settings-tool-option">
               <input id="tool-mcp-servers" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               MCP Servers
             </label>
-            <label
-              class="flex items-center gap-3 text-sm text-white/80 hover:text-white transition-colors cursor-pointer group col-span-1 sm:col-span-2">
+            <label class="settings-tool-option col-span-1 sm:col-span-2">
               <input id="tool-function-calling" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/20 bg-black/40 checked:bg-white checked:border-white focus:outline-none focus:ring-1 focus:ring-white/30 transition-all relative before:content-[''] before:absolute before:inset-0 before:bg-[url('data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMjQgMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwb2x5bGluZSBwb2ludHM9IjIwIDYgOSAxNyA0IDEyIj48L3BvbHlsaW5lPjwvc3ZnPg==')] before:opacity-0 checked:before:opacity-100 before:bg-no-repeat before:bg-center before:bg-[length:12px_12px]" />
+                class="settings-checkbox" />
               Function Calling <span class="text-white/40 text-xs ml-1">(local tools)</span>
             </label>
-            <label class="flex items-center gap-3 text-sm text-white/40 cursor-not-allowed col-span-1 sm:col-span-2">
+            <label class="settings-tool-option-disabled col-span-1 sm:col-span-2">
               <input disabled id="tool-computer-use" type="checkbox"
-                class="h-4 w-4 appearance-none border border-white/10 bg-black/20 focus:outline-none" />
+                class="settings-checkbox-disabled" />
               Computer Use <span class="text-xs ml-1">(not supported yet in this extension runtime)</span>
             </label>
           </div>
         </fieldset>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">File Search store names <span
-              class="text-white/30 lowercase">(comma-separated)</span></span>
+        <label class="settings-field">
+          <span class="settings-label">File Search store names <span
+              class="settings-optional">(comma-separated)</span></span>
           <input id="file-search-store-names" name="fileSearchStoreNames" type="text"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            class="settings-input"
             placeholder="my-docs-store, support-kb-store" />
         </label>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">MCP server URLs <span
-              class="text-white/30 lowercase">(comma-separated)</span></span>
+        <label class="settings-field">
+          <span class="settings-label">MCP server URLs <span
+              class="settings-optional">(comma-separated)</span></span>
           <input id="mcp-server-urls" name="mcpServerUrls" type="text"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            class="settings-input"
             placeholder="https://example.com/mcp" />
         </label>
 
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <label class="block">
-            <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Maps latitude <span
-                class="text-white/30 lowercase">(optional)</span></span>
+        <div class="settings-grid-two">
+          <label class="settings-field">
+            <span class="settings-label">Maps latitude <span
+                class="settings-optional">(optional)</span></span>
             <input id="maps-latitude" name="mapsLatitude" type="number" step="any"
-              class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+              class="settings-input"
               placeholder="37.4220" />
           </label>
 
-          <label class="block">
-            <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">Maps longitude <span
-                class="text-white/30 lowercase">(optional)</span></span>
+          <label class="settings-field">
+            <span class="settings-label">Maps longitude <span
+                class="settings-optional">(optional)</span></span>
             <input id="maps-longitude" name="mapsLongitude" type="number" step="any"
-              class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+              class="settings-input"
               placeholder="-122.0841" />
           </label>
         </div>
 
-        <label class="block">
-          <span class="mb-1.5 block text-xs uppercase tracking-wider text-white/70">
-            Computer Use excluded actions <span class="text-white/30 lowercase">(comma-separated, optional)</span>
+        <label class="settings-field">
+          <span class="settings-label">
+            Computer Use excluded actions <span class="settings-optional">(comma-separated, optional)</span>
           </span>
           <input id="computer-use-excluded-actions" name="computerUseExcludedActions" type="text"
-            class="w-full border border-white/10 bg-black/40 px-3 py-2 text-sm text-white/90 placeholder:text-white/20 focus:border-white/40 focus:bg-black/60 focus:outline-none transition-colors"
+            class="settings-input"
             placeholder="scroll_down, drag_and_drop" />
         </label>
 
-        <div class="mt-8 flex items-center justify-between border-t border-white/10 pt-6">
-          <p class="text-xs uppercase tracking-widest text-white/40">Version <span id="version"
-              class="font-medium text-white/70 ml-1"></span></p>
+        <div class="settings-footer">
+          <p class="settings-version-label">Version <span id="version"
+              class="settings-version-value"></span></p>
           <button type="submit"
-            class="bg-white/90 px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-black transition-colors hover:bg-white focus:outline-none">
+            class="settings-save-button">
             Save Details
           </button>
         </div>
 
-        <p id="save-status" class="text-xs tracking-wider text-white/50" role="status" aria-live="polite"></p>
+        <p id="save-status" class="settings-status" role="status" aria-live="polite"></p>
       </form>
     </section>
   </main>

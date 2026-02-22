@@ -30,6 +30,20 @@ Respect boundaries from `.dependency-cruiser.cjs`: `shared` <- (`background` | `
 - Use kebab-case files (for example `form-state.ts`) and `*.test.ts` for tests.
 - Keep comments focused on intent/constraints, not restating code.
 
+## Styling Conventions
+- Treat `options` and `chatpanel` as separate styling systems:
+  - `options` uses Tailwind output from `src/styles/tailwind.css` -> `dist/ui.css`.
+  - `chatpanel` uses Shadow DOM-local CSS inside `src/chatpanel/template.ts`.
+- For `options` styles:
+  - Prefer semantic component classes in `@layer components` (for example `settings-*`) over repeating long utility strings in `options.html`.
+  - Keep one-off layout tweaks inline only when they are truly local and non-reusable.
+  - Reuse tokens from `tailwind.config.js` (colors, fonts) instead of hardcoded ad-hoc values.
+- For `chatpanel` styles:
+  - Keep class names stable because runtime code queries and toggles them (`classList`, selectors in `messages.ts`, `chatpanel.ts`, `input-toolbar.ts`).
+  - Prefer consolidating repeated values with `:host` CSS variables (prefix `--sp-`) and shared selector blocks for repeated control patterns.
+  - Do not move chatpanel styles into `tailwind.css`; Shadow DOM styles are intentionally self-contained.
+- When refactoring styles, preserve behavior and visual parity unless a visual change is explicitly requested.
+
 ## Testing Guidelines
 - Framework: `bun:test`.
 - TDD is mandatory for all behavior changes and bug fixes.
