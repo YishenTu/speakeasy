@@ -1184,6 +1184,128 @@ describe('runtime chat storage handler', () => {
     await expect(handler({ type: 'app/open-options' })).rejects.toThrow(/options unavailable/i);
   });
 
+  it('rejects fork when chat id or target interaction id is blank', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/fork',
+        chatId: '   ',
+        previousInteractionId: 'interaction-1',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/requires both a chat id and a target interaction id/i);
+
+    await expect(
+      handler({
+        type: 'chat/fork',
+        chatId: 'chat-base',
+        previousInteractionId: '   ',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/requires both a chat id and a target interaction id/i);
+  });
+
+  it('rejects fork when the source chat does not exist', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('not used');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/fork',
+        chatId: 'missing-chat',
+        previousInteractionId: 'interaction-1',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/chat that does not exist/i);
+  });
+
+  it('forwards stream deltas without frame options when only sender tab is available', async () => {
+    repository.sessions.set('chat-stream-tab-only', createSession('chat-stream-tab-only'));
+    const sentEvents: Array<{ tabId: number; payload: unknown }> = [];
+    const originalChrome = (globalThis as { chrome?: unknown }).chrome;
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        lastError: undefined,
+      },
+      tabs: {
+        sendMessage: (
+          tabId: number,
+          payload: unknown,
+          callback?: (response?: unknown) => void,
+        ) => {
+          sentEvents.push({ tabId, payload });
+          callback?.();
+        },
+      },
+    };
+
+    try {
+      const handler = createRuntimeRequestHandler({
+        repository,
+        bootstrapChatStorage: async () => {},
+        readGeminiSettings: async () => createSettings(),
+        completeAssistantTurn: async (session, _settings, _thinkingLevel, onStreamDelta) => {
+          onStreamDelta?.({});
+          onStreamDelta?.({ textDelta: 'tab-only-stream' });
+          const assistantContent: GeminiContent = {
+            role: 'model',
+            parts: [{ text: 'Done' }],
+          };
+          session.contents.push(assistantContent);
+          return assistantContent;
+        },
+        openOptionsPage: async () => {},
+        now: () => new Date('2025-01-01T00:00:00.000Z'),
+        generateSessionTitle: async () => '',
+      });
+
+      await handler(
+        {
+          type: 'chat/send',
+          chatId: 'chat-stream-tab-only',
+          text: 'stream this',
+          model: 'gemini-3-flash-preview',
+          streamRequestId: 'stream-tab-only',
+        },
+        {
+          sender: {
+            tab: { id: 123 } as chrome.tabs.Tab,
+          },
+        },
+      );
+
+      expect(sentEvents).toEqual([
+        {
+          tabId: 123,
+          payload: {
+            type: 'chat/stream-delta',
+            requestId: 'stream-tab-only',
+            textDelta: 'tab-only-stream',
+          },
+        },
+      ]);
+    } finally {
+      (globalThis as { chrome?: unknown }).chrome = originalChrome;
+    }
+  });
+
   it('forks a chat from a selected user prompt and preserves lineage metadata', async () => {
     repository.sessions.set('chat-base', createMultiTurnSession('chat-base'));
 
@@ -1331,5 +1453,92 @@ describe('runtime chat storage handler', () => {
         model: 'gemini-3-flash-preview',
       } as RuntimeRequest),
     ).rejects.toThrow(/target interaction id/i);
+  });
+
+  it('rejects regenerate when chat does not exist', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('completeAssistantTurn should not be called');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/regen',
+        chatId: 'missing-chat',
+        previousInteractionId: 'interaction-1',
+        model: 'gemini-3-flash-preview',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/chat that does not exist/i);
+  });
+
+  it('rejects regenerate when target assistant interaction is not found', async () => {
+    repository.sessions.set('chat-base', createMultiTurnSession('chat-base'));
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('completeAssistantTurn should not be called');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/regen',
+        chatId: 'chat-base',
+        previousInteractionId: 'missing-interaction',
+        model: 'gemini-3-flash-preview',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/target assistant message was not found/i);
+  });
+
+  it('rejects regenerate when no originating user prompt exists', async () => {
+    repository.sessions.set('chat-assistant-only', {
+      id: 'chat-assistant-only',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      contents: [
+        {
+          id: 'assistant-1',
+          role: 'model',
+          parts: [{ text: 'assistant answer without prompt' }],
+          metadata: {
+            interactionId: 'interaction-1',
+          },
+        },
+      ],
+      lastInteractionId: 'interaction-1',
+    });
+
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => createSettings(),
+      completeAssistantTurn: async () => {
+        throw new Error('completeAssistantTurn should not be called');
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    await expect(
+      handler({
+        type: 'chat/regen',
+        chatId: 'chat-assistant-only',
+        previousInteractionId: 'interaction-1',
+        model: 'gemini-3-flash-preview',
+      } as RuntimeRequest),
+    ).rejects.toThrow(/no originating user prompt was found/i);
   });
 });

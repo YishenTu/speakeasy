@@ -568,6 +568,8 @@ function mountChatPanel(): void {
 
     const previousInteractionId = message.previousInteractionId?.trim();
     const interactionId = message.interactionId?.trim();
+    let regenPlaceholderMessageId: string | undefined;
+    let regenStreamRequestId: string | undefined;
 
     setBusyState(true);
     try {
@@ -585,13 +587,52 @@ function mountChatPanel(): void {
         }
         const selectedModel = toolbar.selectedModel();
         const selectedThinking = toolbar.selectedThinkingLevel();
-        await regenerateAssistantMessage(interactionId, selectedModel, selectedThinking);
+        regenPlaceholderMessageId = message.id;
+        replaceMessageById(
+          regenPlaceholderMessageId,
+          {
+            id: regenPlaceholderMessageId,
+            role: 'assistant',
+            content: '',
+          },
+          messageList,
+          messageRenderOptions,
+        );
+
+        regenStreamRequestId = crypto.randomUUID();
+        activeStreamDrafts.set(regenStreamRequestId, {
+          assistantMessageId: regenPlaceholderMessageId,
+          text: '',
+          thinkingSummary: '',
+        });
+
+        const assistantMessage = await regenerateAssistantMessage(
+          interactionId,
+          selectedModel,
+          selectedThinking,
+          regenStreamRequestId,
+        );
+        activeStreamDrafts.delete(regenStreamRequestId);
+        regenStreamRequestId = undefined;
+        replaceMessageById(
+          regenPlaceholderMessageId,
+          assistantMessage,
+          messageList,
+          messageRenderOptions,
+        );
+        regenPlaceholderMessageId = undefined;
       }
 
       await reloadActiveChat();
       setHistoryMenuOpen(false);
       input.focus();
     } catch (error: unknown) {
+      if (regenStreamRequestId) {
+        activeStreamDrafts.delete(regenStreamRequestId);
+      }
+      if (regenPlaceholderMessageId) {
+        replaceMessageById(regenPlaceholderMessageId, message, messageList, messageRenderOptions);
+      }
       appendMessage(
         {
           id: crypto.randomUUID(),
@@ -988,15 +1029,13 @@ function mountChatPanel(): void {
         },
       );
     } catch (error: unknown) {
-      renderMessages(
-        [
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: toErrorMessage(error),
-          },
-        ],
-      );
+      renderMessages([
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: toErrorMessage(error),
+        },
+      ]);
       hasLoadedHistory = false;
       activeChatId = null;
       historySessions = [];

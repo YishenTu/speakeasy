@@ -83,6 +83,14 @@ describe('chat repository', () => {
     expect(await repository.getSession(session.id)).toBeNull();
   });
 
+  it('returns null or false for blank and unknown chat ids', async () => {
+    const repository = createChatRepository();
+
+    await expect(repository.getSession('   ')).resolves.toBeNull();
+    await expect(repository.deleteSession('   ')).resolves.toBe(false);
+    await expect(repository.deleteSession('missing-chat-id')).resolves.toBe(false);
+  });
+
   it('lists sessions in descending updated order', async () => {
     const repository = createChatRepository();
     const older = createSession();
@@ -267,6 +275,68 @@ describe('chat repository', () => {
       ).toBe(true);
     } finally {
       console.warn = originalWarn;
+    }
+  });
+
+  it('rejects when IndexedDB is unavailable in the runtime', async () => {
+    const originalIndexedDb = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
+    (globalThis as { indexedDB?: IDBFactory }).indexedDB = undefined;
+
+    try {
+      const repository = createChatRepository();
+      await expect(repository.listSessions()).rejects.toThrow(/indexeddb is not available/i);
+    } finally {
+      (globalThis as { indexedDB?: IDBFactory }).indexedDB = originalIndexedDb;
+    }
+  });
+
+  it('rejects when open requests are blocked', async () => {
+    const repository = createChatRepository();
+    const idbFactory = indexedDB as unknown as { open: typeof indexedDB.open };
+    const originalOpen = idbFactory.open;
+    idbFactory.open = function () {
+      const request = {} as IDBOpenDBRequest;
+      queueMicrotask(() => {
+        request.onblocked?.(new Event('blocked'));
+      });
+      return request;
+    } as typeof indexedDB.open;
+
+    try {
+      await expect(repository.listSessions()).rejects.toThrow(/open request was blocked/i);
+    } finally {
+      idbFactory.open = originalOpen;
+    }
+  });
+
+  it('reopens the database after versionchange closes the active connection', async () => {
+    const repository = createChatRepository();
+    const idbFactory = indexedDB as unknown as { open: typeof indexedDB.open };
+    const originalOpen = idbFactory.open;
+    let openCallCount = 0;
+    let latestRequest: IDBOpenDBRequest | null = null;
+
+    idbFactory.open = function (...args: Parameters<IDBFactory['open']>) {
+      openCallCount += 1;
+      const request = originalOpen.apply(this, args);
+      latestRequest = request;
+      return request;
+    } as typeof indexedDB.open;
+
+    try {
+      await expect(repository.listSessions()).resolves.toEqual([]);
+      expect(openCallCount).toBe(1);
+      const database = latestRequest?.result;
+      if (!database) {
+        throw new Error('Expected an opened IndexedDB database.');
+      }
+
+      database.onversionchange?.(new Event('versionchange'));
+
+      await expect(repository.listSessions()).resolves.toEqual([]);
+      expect(openCallCount).toBe(2);
+    } finally {
+      idbFactory.open = originalOpen;
     }
   });
 
