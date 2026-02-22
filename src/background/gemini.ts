@@ -261,12 +261,51 @@ function shouldRetryFunctionResultTurnWithTools(input: {
     return false;
   }
 
-  const message = toErrorMessage(input.error).toLowerCase();
-  return message.includes('tools are required') && message.includes('function_result');
+  return isToolRelatedClientError(input.error);
 }
 
 function isFunctionResultOnlyInput(input: Array<Record<string, unknown>>): boolean {
   return input.length > 0 && input.every((part) => part.type === 'function_result');
+}
+
+function isToolRelatedClientError(error: unknown): boolean {
+  const message = toErrorMessage(error).toLowerCase();
+  const statusCode = readErrorStatusCode(error, message);
+  if (statusCode === null || statusCode < 400 || statusCode >= 500) {
+    return false;
+  }
+
+  return (
+    message.includes('tool') ||
+    message.includes('function_result') ||
+    message.includes('function result')
+  );
+}
+
+function readErrorStatusCode(error: unknown, lowerCasedMessage: string): number | null {
+  if (isRecord(error)) {
+    const statusField = error.status;
+    if (typeof statusField === 'number' && Number.isFinite(statusField)) {
+      return Math.trunc(statusField);
+    }
+
+    const codeField = error.code;
+    if (typeof codeField === 'number' && Number.isFinite(codeField)) {
+      return Math.trunc(codeField);
+    }
+  }
+
+  const prefixedStatusMatch = lowerCasedMessage.match(/^\s*(\d{3})\b/);
+  if (prefixedStatusMatch?.[1]) {
+    return Number.parseInt(prefixedStatusMatch[1], 10);
+  }
+
+  const jsonStatusMatch = lowerCasedMessage.match(/"code"\s*:\s*(\d{3})/);
+  if (jsonStatusMatch?.[1]) {
+    return Number.parseInt(jsonStatusMatch[1], 10);
+  }
+
+  return null;
 }
 
 export async function generateSessionTitle(
