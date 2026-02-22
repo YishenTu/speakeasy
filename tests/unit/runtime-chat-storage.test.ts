@@ -620,8 +620,9 @@ describe('runtime chat storage handler', () => {
     expect(repository.sessions.get(chatId)?.title).toBe('Titled conversation');
   });
 
-  it('does not generate titles for attachment-only first sends', async () => {
+  it('generates titles for attachment-only first sends', async () => {
     let titleCalls = 0;
+    let resolveTitleGeneration: (() => void) | undefined;
     const handler = createRuntimeRequestHandler({
       repository,
       bootstrapChatStorage: async () => {},
@@ -636,13 +637,22 @@ describe('runtime chat storage handler', () => {
       },
       openOptionsPage: async () => {},
       now: () => new Date('2025-01-01T00:00:00.000Z'),
-      generateSessionTitle: async () => {
+      generateSessionTitle: async (_apiKey, _firstQuery, attachments) => {
         titleCalls += 1;
-        return 'Should not be used';
+        expect(attachments).toHaveLength(1);
+        expect(attachments?.[0]).toMatchObject({
+          name: 'img',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/image.png',
+        });
+        await new Promise<void>((resolve) => {
+          resolveTitleGeneration = resolve;
+        });
+        return 'Image upload chat';
       },
     });
 
-    await handler({
+    const sendPayload = await handler({
       type: 'chat/send',
       text: '   ',
       model: 'gemini-3-flash-preview',
@@ -655,7 +665,27 @@ describe('runtime chat storage handler', () => {
       ],
     });
 
-    expect(titleCalls).toBe(0);
+    const chatId = (sendPayload as { chatId: string }).chatId;
+    expect(titleCalls).toBe(1);
+    expect(repository.sessions.get(chatId)?.title).toBeUndefined();
+
+    if (!resolveTitleGeneration) {
+      throw new Error('expected title generation to be scheduled');
+    }
+    resolveTitleGeneration();
+    await Promise.resolve();
+
+    const payload = await handler({ type: 'chat/list' });
+    expect(payload).toEqual({
+      sessions: [
+        {
+          chatId,
+          title: 'Image upload chat',
+          updatedAt: '2025-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    expect(repository.sessions.get(chatId)?.title).toBe('Image upload chat');
   });
 
   it('does not generate a title for non-first sends on existing chats', async () => {

@@ -46,7 +46,11 @@ interface RuntimeDependencies {
     thinkingLevel?: string,
     onStreamDelta?: (delta: GeminiStreamDelta) => void,
   ) => Promise<GeminiContent>;
-  generateSessionTitle: (apiKey: string, firstUserQuery: string) => Promise<string>;
+  generateSessionTitle: (
+    apiKey: string,
+    firstUserQuery: string,
+    attachments?: FileDataAttachmentPayload[],
+  ) => Promise<string>;
   openOptionsPage: () => Promise<void>;
   now: () => Date;
 }
@@ -59,6 +63,7 @@ interface PendingSessionTitleGeneration {
   chatId: string;
   apiKey: string;
   firstUserQuery: string;
+  attachments?: FileDataAttachmentPayload[];
 }
 
 interface SendMessageResult {
@@ -262,7 +267,9 @@ async function handleSendMessage(
   const persistedSession = chatId ? await dependencies.repository.getSession(chatId) : null;
   const baseSession = persistedSession ?? createSession();
   const shouldGenerateTitle =
-    baseSession.contents.length === 0 && !baseSession.title && normalizedText.length > 0;
+    baseSession.contents.length === 0 &&
+    !baseSession.title &&
+    (normalizedText.length > 0 || normalizedAttachments.length > 0);
   const workingSession: ChatSession = structuredClone(baseSession);
 
   const userParts = [
@@ -326,6 +333,7 @@ async function handleSendMessage(
       chatId: workingSession.id,
       apiKey: settings.apiKey,
       firstUserQuery: normalizedText,
+      ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
     },
   };
 }
@@ -367,6 +375,7 @@ async function generateAndPersistSessionTitle(
     const generatedTitle = await dependencies.generateSessionTitle(
       pending.apiKey,
       pending.firstUserQuery,
+      pending.attachments,
     );
     if (!generatedTitle) {
       return;
