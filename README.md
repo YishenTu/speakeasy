@@ -101,7 +101,7 @@ bun run test:gemini:canary
 
 - Native tools exposed in settings: Google Search, Code Execution, URL Context, Google Maps, File Search, MCP Servers.
 - Function calling (local tool execution loop) is supported in a separate mode.
-- Function calling and native tools are blocked together in `generateContent`.
+- Function calling and native tools are blocked together in `interactions.create`.
 - File Search requires one or more configured `fileSearchStores/...` names.
 - Computer Use is listed but intentionally blocked in this runtime (requires separate action/screenshot loop).
 

@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { getOrCreateBoundedCacheValue } from '../shared/bounded-cache';
 import type { AssistantResponseStats, ChatAttachment } from '../shared/messages';
+import type { FileDataAttachmentPayload } from '../shared/runtime';
 import type { GeminiSettings } from '../shared/settings';
 import { composeGeminiInteractionRequest } from './gemini-request';
 import type { ChatSession, GeminiContent, GeminiFunctionCall, GeminiPart } from './types';
@@ -58,6 +59,14 @@ interface ExecutedFunctionCall {
   call: GeminiFunctionCall;
   response: Record<string, unknown>;
   isError?: boolean;
+}
+
+interface StreamedFunctionCallDelta {
+  order: number;
+  id?: string;
+  name: string;
+  argumentsObject?: Record<string, unknown>;
+  argumentChunks: string[];
 }
 
 export class InvalidPreviousInteractionIdError extends Error {
@@ -255,22 +264,31 @@ export async function completeAssistantTurn(
 export async function generateSessionTitle(
   apiKey: string,
   firstUserQuery: string,
+  attachments?: FileDataAttachmentPayload[],
 ): Promise<string> {
   const normalizedApiKey = apiKey.trim();
   const normalizedQuery = firstUserQuery.trim();
-  if (!normalizedApiKey || !normalizedQuery) {
+  const normalizedAttachments = attachments?.filter((a) => a.fileUri?.trim() && a.mimeType?.trim());
+  const hasAttachments = normalizedAttachments && normalizedAttachments.length > 0;
+  if (!normalizedApiKey || (!normalizedQuery && !hasAttachments)) {
     return '';
   }
+
+  const input: Record<string, unknown>[] = [
+    {
+      type: 'text',
+      text: buildSessionTitlePrompt(normalizedQuery),
+    },
+    ...(normalizedAttachments ?? []).map((a) => ({
+      type: 'file',
+      file: { fileUri: a.fileUri.trim(), mimeType: a.mimeType.trim() },
+    })),
+  ];
 
   const client = getGeminiClient(normalizedApiKey);
   const response = (await client.interactions.create({
     model: SESSION_TITLE_MODEL,
-    input: [
-      {
-        type: 'text',
-        text: buildSessionTitlePrompt(normalizedQuery),
-      },
-    ],
+    input,
     store: false,
   } as unknown as SDKCreateInteractionRequest)) as unknown;
 
@@ -529,12 +547,17 @@ export function extractAttachments(content: GeminiContent): ChatAttachment[] {
 }
 
 function buildSessionTitlePrompt(firstUserQuery: string): string {
-  return [
+  const lines = [
     'Generate a concise session title for a chat history dropdown.',
     'Return only the title text with no quotes or markdown.',
     'Keep the title between 3 and 8 words and under 60 characters.',
-    `User query: ${firstUserQuery}`,
-  ].join('\n');
+  ];
+  if (firstUserQuery) {
+    lines.push(`User query: ${firstUserQuery}`);
+  } else {
+    lines.push('The user sent the attached file(s) with no text. Base the title on the content.');
+  }
+  return lines.join('\n');
 }
 
 function sanitizeGeneratedSessionTitle(rawTitle: string): string {
@@ -595,6 +618,7 @@ async function callGeminiInteractionStream(input: {
   let completedInteraction: GeminiInteraction | null = null;
   const streamedTextChunks: string[] = [];
   const streamedThoughtChunks: string[] = [];
+  const streamedFunctionCallDeltas = new Map<string, StreamedFunctionCallDelta>();
   for await (const rawEvent of stream) {
     if (!isRecord(rawEvent)) {
       continue;
@@ -602,6 +626,7 @@ async function callGeminiInteractionStream(input: {
 
     switch (readStringField(rawEvent, 'event_type')) {
       case 'content.delta': {
+        collectStreamedFunctionCallDelta(rawEvent, streamedFunctionCallDeltas);
         const delta = extractStreamDelta(rawEvent);
         if (delta) {
           input.onStreamDelta(delta);
@@ -648,6 +673,7 @@ async function callGeminiInteractionStream(input: {
   return applyStreamOutputFallback(completedInteraction, {
     text: streamedTextChunks.join(''),
     thoughtSummary: streamedThoughtChunks.join(''),
+    functionCalls: buildStreamedFunctionCallOutputs(streamedFunctionCallDeltas),
   });
 }
 
@@ -868,13 +894,16 @@ function getMonotonicNowMs(): number {
 
 function applyStreamOutputFallback(
   interaction: GeminiInteraction,
-  fallback: { text: string; thoughtSummary: string },
+  fallback: { text: string; thoughtSummary: string; functionCalls: Array<Record<string, unknown>> },
 ): GeminiInteraction {
   if (Array.isArray(interaction.outputs) && interaction.outputs.length > 0) {
     return interaction;
   }
 
   const fallbackOutputs: Array<Record<string, unknown>> = [];
+  if (fallback.functionCalls.length > 0) {
+    fallbackOutputs.push(...fallback.functionCalls);
+  }
   if (fallback.thoughtSummary.trim()) {
     fallbackOutputs.push({
       type: 'thought',
@@ -902,6 +931,72 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   return !!value && typeof (value as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function';
 }
 
+function collectStreamedFunctionCallDelta(
+  event: Record<string, unknown>,
+  functionCallDeltas: Map<string, StreamedFunctionCallDelta>,
+): void {
+  const delta = isRecord(event.delta) ? event.delta : null;
+  if (!delta || readStringField(delta, 'type') !== 'function_call') {
+    return;
+  }
+
+  const name = readStringField(delta, 'name');
+  if (!name) {
+    return;
+  }
+
+  const id = readStringField(delta, 'id');
+  const streamIndex = readStreamContentIndex(event);
+  const key = id || (streamIndex === null ? `name:${name}` : `index:${streamIndex}`);
+
+  const existing = functionCallDeltas.get(key);
+  const callDelta: StreamedFunctionCallDelta = existing ?? {
+    order: functionCallDeltas.size,
+    name,
+    argumentChunks: [],
+  };
+
+  callDelta.name = name;
+  if (id) {
+    callDelta.id = id;
+  }
+
+  const callArguments = delta.arguments;
+  if (isRecord(callArguments)) {
+    callDelta.argumentsObject = { ...callArguments };
+    callDelta.argumentChunks = [];
+  } else if (typeof callArguments === 'string') {
+    callDelta.argumentChunks.push(callArguments);
+  }
+
+  functionCallDeltas.set(key, callDelta);
+}
+
+function buildStreamedFunctionCallOutputs(
+  functionCallDeltas: Map<string, StreamedFunctionCallDelta>,
+): Array<Record<string, unknown>> {
+  return [...functionCallDeltas.values()]
+    .sort((left, right) => left.order - right.order)
+    .map((callDelta) => ({
+      type: 'function_call',
+      ...(callDelta.id ? { id: callDelta.id } : {}),
+      name: callDelta.name,
+      arguments:
+        callDelta.argumentsObject !== undefined
+          ? normalizeFunctionCallArgs(callDelta.argumentsObject)
+          : normalizeFunctionCallArgs(callDelta.argumentChunks.join('')),
+    }));
+}
+
+function readStreamContentIndex(event: Record<string, unknown>): number | null {
+  const index = event.index;
+  if (typeof index !== 'number' || !Number.isFinite(index) || index < 0) {
+    return null;
+  }
+
+  return Math.trunc(index);
+}
+
 function extractStreamDelta(event: Record<string, unknown>): GeminiStreamDelta | null {
   const delta = isRecord(event.delta) ? event.delta : null;
   if (!delta) {
@@ -914,6 +1009,16 @@ function extractStreamDelta(event: Record<string, unknown>): GeminiStreamDelta |
   }
 
   if (deltaType === 'thought_summary') {
+    const content = isRecord(delta.content) ? delta.content : null;
+    return content?.text ? { thinkingDelta: content.text as string } : null;
+  }
+
+  if (deltaType === 'thought') {
+    const thought = readStringField(delta, 'thought');
+    if (thought) {
+      return { thinkingDelta: thought };
+    }
+
     const content = isRecord(delta.content) ? delta.content : null;
     return content?.text ? { thinkingDelta: content.text as string } : null;
   }

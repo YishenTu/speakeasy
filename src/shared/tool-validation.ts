@@ -17,5 +17,15 @@ export function validateGeminiToolConfiguration(settings: GeminiSettings): strin
     return 'Google Maps is not supported by the Interactions API in this extension yet.';
   }
 
+  const usesNativeTools =
+    settings.tools.googleSearch ||
+    settings.tools.codeExecution ||
+    settings.tools.urlContext ||
+    settings.tools.fileSearch ||
+    settings.tools.mcpServers;
+  if (settings.tools.functionCalling && usesNativeTools) {
+    return 'Function Calling cannot be combined with native tools in the Interactions API. Choose one mode.';
+  }
+
   return null;
 }

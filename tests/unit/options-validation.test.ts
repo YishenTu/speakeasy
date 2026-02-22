@@ -57,6 +57,16 @@ describe('validateSettings', () => {
     );
   });
 
+  it('rejects mixing function calling with native tools', () => {
+    const settings = createValidSettings();
+    settings.tools.functionCalling = true;
+    settings.tools.googleSearch = true;
+
+    expect(validateSettings(settings)).toBe(
+      'Function Calling cannot be combined with native tools in the Interactions API. Choose one mode.',
+    );
+  });
+
   it('requires both or neither map coordinates', () => {
     const onlyLatitude = createValidSettings();
     onlyLatitude.mapsLatitude = 37.422;

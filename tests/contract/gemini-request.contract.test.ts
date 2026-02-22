@@ -104,24 +104,18 @@ describe('Gemini interactions request contract', () => {
     ]);
   });
 
-  it('allows mixing function calling and native tools in interactions', () => {
+  it('rejects mixing function calling and native tools in interactions', () => {
     const settings = createBaseSettings();
     settings.tools.functionCalling = true;
     settings.tools.googleSearch = true;
 
-    const plan = composeGeminiInteractionRequest({
-      settings,
-      input: [{ type: 'text', text: 'hello' }],
-      functionDeclarations: FUNCTION_DECLARATIONS,
-    });
-
-    expect(plan.request.tools).toEqual([
-      {
-        type: 'function',
-        ...FUNCTION_DECLARATIONS[0],
-      },
-      { type: 'google_search' },
-    ]);
+    expect(() =>
+      composeGeminiInteractionRequest({
+        settings,
+        input: [{ type: 'text', text: 'hello' }],
+        functionDeclarations: FUNCTION_DECLARATIONS,
+      }),
+    ).toThrow(/function calling.*native tools/i);
   });
 
   it('includes previous interaction id, system instruction, and thinking config', () => {

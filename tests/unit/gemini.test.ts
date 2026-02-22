@@ -151,20 +151,14 @@ afterEach(() => {
 });
 
 describe('buildGeminiRequestToolSelection', () => {
-  it('allows mixing local function tools with native interactions tools', () => {
+  it('rejects mixing local function tools with native interactions tools', () => {
     const settings = createSettingsForToolTests();
     settings.tools.functionCalling = true;
     settings.tools.googleSearch = true;
 
-    const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
-    expect(selection.tools).toEqual([
-      {
-        type: 'function',
-        ...FUNCTION_DECLARATIONS[0],
-      },
-      { type: 'google_search' },
-    ]);
-    expect(selection.functionCallingEnabled).toBe(true);
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
+      /function calling.*native tools/i,
+    );
   });
 
   it('guards file search and mcp server configuration requirements', () => {
@@ -424,10 +418,59 @@ describe('generateSessionTitle', () => {
     expect(title).toBe('');
   });
 
-  it('returns empty title without calling Gemini for blank prompts', async () => {
+  it('returns empty title without calling Gemini for blank prompts and no attachments', async () => {
     const title = await generateSessionTitle('test-title-key-3', '   ');
     expect(title).toBe('');
     expect(fetchRequestBodies).toHaveLength(0);
+  });
+
+  it('generates title from attachments when text is blank', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-title-attach',
+      outputs: [{ type: 'text', text: 'Sunset beach photo' }],
+    });
+
+    const title = await generateSessionTitle('test-title-key-attach', '', [
+      { name: 'sunset.jpg', mimeType: 'image/jpeg', fileUri: 'https://example.invalid/sunset.jpg' },
+    ]);
+
+    expect(title).toBe('Sunset beach photo');
+    expect(fetchRequestBodies).toHaveLength(1);
+
+    const requestInput = fetchRequestBodies[0]?.input;
+    expect(Array.isArray(requestInput)).toBe(true);
+    const items = Array.isArray(requestInput) ? requestInput : [];
+    const textItem = items.find((i: Record<string, unknown>) => i.type === 'text');
+    expect(textItem).toBeDefined();
+    const prompt = textItem && typeof textItem.text === 'string' ? textItem.text : '';
+    expect(prompt).toContain('Generate a concise session title');
+
+    const fileItem = items.find((i: Record<string, unknown>) => i.type === 'file');
+    expect(fileItem).toMatchObject({
+      type: 'file',
+      file: {
+        fileUri: 'https://example.invalid/sunset.jpg',
+        mimeType: 'image/jpeg',
+      },
+    });
+  });
+
+  it('includes both text and attachments in title generation input', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-title-both',
+      outputs: [{ type: 'text', text: 'Sunset analysis request' }],
+    });
+
+    const title = await generateSessionTitle('test-title-key-both', 'Describe this image', [
+      { name: 'sunset.jpg', mimeType: 'image/jpeg', fileUri: 'https://example.invalid/sunset.jpg' },
+    ]);
+
+    expect(title).toBe('Sunset analysis request');
+    const requestInput = fetchRequestBodies[0]?.input;
+    const items = Array.isArray(requestInput) ? requestInput : [];
+    expect(items.length).toBe(2);
+    expect(items[0]).toMatchObject({ type: 'text' });
+    expect(items[1]).toMatchObject({ type: 'file' });
   });
 
   it('truncates long generated titles to label length', async () => {
@@ -564,6 +607,77 @@ describe('completeAssistantTurn', () => {
     expect(renderContentForChat(content)).toBe('Partial answer.');
     expect(renderThinkingSummaryForChat(content)).toBe('Checked constraints first.');
     expect(session.lastInteractionId).toBe('interaction-stream-no-outputs');
+  });
+
+  it('reconstructs streamed function calls from deltas and continues the tool loop', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        delta: {
+          type: 'function_call',
+          id: 'tool-call-stream-1',
+          name: 'get_extension_info',
+          arguments: '{"ignored":',
+        },
+      },
+      {
+        event_type: 'content.delta',
+        delta: {
+          type: 'function_call',
+          id: 'tool-call-stream-1',
+          name: 'get_extension_info',
+          arguments: 'true}',
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-tools-1',
+        },
+      },
+    );
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        delta: { type: 'text', text: 'Done after streamed tool call.' },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-tools-2',
+        },
+      },
+    );
+
+    const settings = createSettingsForToolTests();
+    settings.tools.functionCalling = true;
+    const session = createSession('call tool through stream');
+
+    const content = await completeAssistantTurn(session, settings, undefined, () => {});
+
+    expect(content.parts).toEqual([{ text: 'Done after streamed tool call.' }]);
+    expect(fetchRequestBodies).toHaveLength(2);
+    expect(fetchRequestBodies[0]).toMatchObject({
+      stream: true,
+      input: [{ type: 'text', text: 'call tool through stream' }],
+    });
+    expect(fetchRequestBodies[1]).toMatchObject({
+      stream: true,
+      previous_interaction_id: 'interaction-stream-tools-1',
+      input: [
+        {
+          type: 'function_result',
+          call_id: 'tool-call-stream-1',
+          name: 'get_extension_info',
+          result: {
+            name: 'Speakeasy',
+            version: '1.2.3',
+            description: 'Test extension',
+          },
+        },
+      ],
+    });
+    expect(session.lastInteractionId).toBe('interaction-stream-tools-2');
   });
 
   it('attaches response stats from non-stream interaction usage', async () => {
