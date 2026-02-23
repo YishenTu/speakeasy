@@ -1,3 +1,4 @@
+import { encodeArrayBufferToBase64 } from './base64';
 import type { ChatMessage } from './messages';
 import type {
   ChatDeletePayload,
@@ -11,9 +12,9 @@ import type {
   ChatSwitchBranchPayload,
   ChatUploadFilesPayload,
   FileDataAttachmentPayload,
-  RuntimeRequest,
   UploadFileTransportPayload,
 } from './runtime';
+import { sendRuntimeRequest } from './runtime-client';
 import { ACTIVE_CHAT_STORAGE_KEY } from './settings';
 
 export type { ChatMessage, MessageRole } from './messages';
@@ -30,23 +31,6 @@ async function writeActiveChatId(chatId: string): Promise<void> {
 
 async function clearActiveChatId(): Promise<void> {
   await chrome.storage.local.remove(ACTIVE_CHAT_STORAGE_KEY);
-}
-
-async function sendRuntimeRequest<TPayload>(request: RuntimeRequest): Promise<TPayload> {
-  const response = (await chrome.runtime.sendMessage(request)) as
-    | { ok: true; payload: TPayload }
-    | { ok: false; error: string }
-    | undefined;
-
-  if (!response) {
-    throw new Error('Background service did not return a response.');
-  }
-
-  if (!response.ok) {
-    throw new Error(response.error || 'Background service failed to handle the request.');
-  }
-
-  return response.payload;
 }
 
 export async function loadChatMessages(): Promise<ChatLoadPayload> {
@@ -234,19 +218,4 @@ export async function uploadChatFiles(
       ? { uploadTimeoutMs: options.uploadTimeoutMs }
       : {}),
   });
-}
-
-function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const end = Math.min(bytes.length, offset + chunkSize);
-    for (let index = offset; index < end; index += 1) {
-      binary += String.fromCharCode(bytes[index] ?? 0);
-    }
-  }
-
-  return btoa(binary);
 }

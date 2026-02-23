@@ -5,7 +5,7 @@ import {
   renderAll,
   replaceMessageById,
   toErrorMessage,
-} from '../../src/chatpanel/messages';
+} from '../../src/chatpanel/message-renderer';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
 
 describe('chatpanel messages', () => {

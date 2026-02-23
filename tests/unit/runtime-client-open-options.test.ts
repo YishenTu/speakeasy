@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { requestOpenSettings } from '../../src/chatpanel/runtime';
+import { requestOpenOptionsPage } from '../../src/shared/runtime-client';
 
-describe('chatpanel runtime', () => {
+describe('shared runtime client', () => {
   afterEach(() => {
     (globalThis as { chrome?: unknown }).chrome = undefined;
   });
@@ -16,7 +16,7 @@ describe('chatpanel runtime', () => {
       },
     };
 
-    await expect(requestOpenSettings()).resolves.toBeNull();
+    await expect(requestOpenOptionsPage()).resolves.toBeNull();
   });
 
   it('returns runtime error when options request fails', async () => {
@@ -29,7 +29,7 @@ describe('chatpanel runtime', () => {
       },
     };
 
-    await expect(requestOpenSettings()).resolves.toBe('settings unavailable');
+    await expect(requestOpenOptionsPage()).resolves.toBe('settings unavailable');
   });
 
   it('returns fallback error when runtime response is missing', async () => {
@@ -39,6 +39,6 @@ describe('chatpanel runtime', () => {
       },
     };
 
-    await expect(requestOpenSettings()).resolves.toBe('Unable to open settings.');
+    await expect(requestOpenOptionsPage()).resolves.toBe('Unable to open settings.');
   });
 });

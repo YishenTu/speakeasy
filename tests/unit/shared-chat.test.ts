@@ -13,6 +13,10 @@ import {
 } from '../../src/shared/chat';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 import { ACTIVE_CHAT_STORAGE_KEY } from '../../src/shared/settings';
+import {
+  createChromeRuntimeSendMessageMock,
+  createChromeStorageLocalMock,
+} from './helpers/chrome-mock';
 
 const storageState: Record<string, unknown> = {};
 const runtimeRequests: RuntimeRequest[] = [];
@@ -34,31 +38,14 @@ function installChromeMock(): void {
   (globalThis as { chrome?: unknown }).chrome = {
     storage: {
       local: {
-        get: async (query?: string) => {
-          if (typeof query === 'string') {
-            return { [query]: storageState[query] };
-          }
-          return { ...storageState };
-        },
-        set: async (items: Record<string, unknown>) => {
-          Object.assign(storageState, items);
-        },
-        remove: async (keys: string | string[]) => {
-          if (typeof keys === 'string') {
-            delete storageState[keys];
-            return;
-          }
-          for (const key of keys) {
-            delete storageState[key];
-          }
-        },
+        ...createChromeStorageLocalMock(storageState),
       },
     },
     runtime: {
-      sendMessage: async (request: RuntimeRequest) => {
+      ...createChromeRuntimeSendMessageMock((request: RuntimeRequest) => {
         runtimeRequests.push(request);
         return runtimeResponses.shift();
-      },
+      }),
     },
   };
 }

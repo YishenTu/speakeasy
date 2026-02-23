@@ -4,6 +4,7 @@ import {
   estimateBase64DecodedByteLength,
   parseImageDataUrl,
 } from '../../shared/attachment-preview';
+import { decodeBase64ToArrayBuffer } from '../../shared/base64';
 import type {
   ChatUploadFailurePayload,
   FileDataAttachmentPayload,
@@ -166,22 +167,4 @@ export function normalizeUploadFileBytes(value: unknown): ArrayBuffer | null {
   }
 
   return null;
-}
-
-export function decodeBase64ToArrayBuffer(encoded: string): ArrayBuffer | null {
-  const normalized = encoded.trim();
-  if (!normalized) {
-    return null;
-  }
-
-  try {
-    const binary = atob(normalized);
-    const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index);
-    }
-    return bytes.buffer;
-  } catch {
-    return null;
-  }
 }

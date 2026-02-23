@@ -1,4 +1,5 @@
 import type { ChatMessage } from './messages';
+import { isRecord } from './utils';
 
 export interface FileDataAttachmentPayload {
   name: string;
@@ -76,6 +77,27 @@ export type RuntimeRequest =
   | {
       type: 'app/open-options';
     };
+
+const RUNTIME_REQUEST_TYPE_LOOKUP: Record<RuntimeRequest['type'], true> = {
+  'chat/send': true,
+  'chat/regen': true,
+  'chat/fork': true,
+  'chat/switch-branch': true,
+  'chat/load': true,
+  'chat/new': true,
+  'chat/delete': true,
+  'chat/list': true,
+  'chat/upload-files': true,
+  'app/open-options': true,
+};
+
+export function isRuntimeRequestType(value: unknown): value is RuntimeRequest['type'] {
+  return typeof value === 'string' && value in RUNTIME_REQUEST_TYPE_LOOKUP;
+}
+
+export function isRuntimeRequest(value: unknown): value is RuntimeRequest {
+  return isRecord(value) && isRuntimeRequestType(value.type);
+}
 
 export interface RuntimeSuccess<TPayload> {
   ok: true;

@@ -7,7 +7,7 @@ import {
   loadChatMessagesById,
 } from '../shared/chat';
 import type { ChatSessionSummary } from '../shared/runtime';
-import { toErrorMessage } from './messages';
+import { toErrorMessage } from './message-renderer';
 
 export interface HistoryDropdownController {
   setOpen(open: boolean): void;

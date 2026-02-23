@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { GEMINI_SETTINGS_STORAGE_KEY } from '../../src/shared/settings';
+import { createChromeStorageLocalMock } from './helpers/chrome-mock';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
 
 describe('options page bootstrap', () => {
@@ -85,19 +86,20 @@ describe('options page bootstrap', () => {
   });
 
   function installChromeOptionsMock(): void {
+    const storageState: Record<string, unknown> = {
+      [GEMINI_SETTINGS_STORAGE_KEY]: storedSettings,
+    };
+
     (globalThis as { chrome?: unknown }).chrome = {
       runtime: {
         getManifest: () => ({ version: '9.9.9' }),
       },
       storage: {
-        local: {
-          get: async () => ({
-            [GEMINI_SETTINGS_STORAGE_KEY]: storedSettings,
-          }),
-          set: async (items: Record<string, unknown>) => {
+        local: createChromeStorageLocalMock(storageState, {
+          onSet: async (items) => {
             savedItems.push(items);
           },
-        },
+        }),
       },
     };
   }

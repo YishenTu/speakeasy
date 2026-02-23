@@ -1,7 +1,7 @@
 import type { ChatMessage } from '../shared/chat';
 import type { FileDataAttachmentPayload } from '../shared/runtime';
 import type { AttachmentManager } from './attachment-manager';
-import { toErrorMessage } from './messages';
+import { toErrorMessage } from './message-renderer';
 import { buildOptimisticUserMessage } from './optimistic-message';
 
 type ActiveStreamDraft = {

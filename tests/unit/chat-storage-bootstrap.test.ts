@@ -9,6 +9,7 @@ import {
   CHAT_STORAGE_SCHEMA_VERSION_STORAGE_KEY,
   GEMINI_SETTINGS_STORAGE_KEY,
 } from '../../src/shared/settings';
+import { createChromeStorageLocalMock } from './helpers/chrome-mock';
 
 const storageState: Record<string, unknown> = {};
 
@@ -21,43 +22,7 @@ function clearStorage(): void {
 function installChromeStorageMock(): void {
   (globalThis as { chrome?: unknown }).chrome = {
     storage: {
-      local: {
-        get: async (query?: string | string[] | Record<string, unknown>) => {
-          if (typeof query === 'string') {
-            return { [query]: storageState[query] };
-          }
-
-          if (Array.isArray(query)) {
-            const result: Record<string, unknown> = {};
-            for (const key of query) {
-              result[key] = storageState[key];
-            }
-            return result;
-          }
-
-          if (query && typeof query === 'object') {
-            const result: Record<string, unknown> = {};
-            for (const key of Object.keys(query)) {
-              result[key] = storageState[key] ?? query[key];
-            }
-            return result;
-          }
-
-          return { ...storageState };
-        },
-        set: async (items: Record<string, unknown>) => {
-          Object.assign(storageState, items);
-        },
-        remove: async (keys: string | string[]) => {
-          if (typeof keys === 'string') {
-            delete storageState[keys];
-            return;
-          }
-          for (const key of keys) {
-            delete storageState[key];
-          }
-        },
-      },
+      local: createChromeStorageLocalMock(storageState),
     },
   };
 }

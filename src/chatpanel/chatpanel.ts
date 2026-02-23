@@ -7,6 +7,7 @@ import {
   sendMessage,
   switchAssistantBranch,
 } from '../shared/chat';
+import { requestOpenOptionsPage } from '../shared/runtime-client';
 import { isRecord } from '../shared/utils';
 import {
   createAttachmentManager,
@@ -26,10 +27,9 @@ import {
   renderAll,
   replaceMessageById,
   toErrorMessage,
-} from './messages';
+} from './message-renderer';
 import { findLatestAssistantInteractionId } from './optimistic-message';
 import { createPanelLayoutController } from './panel-layout';
-import { requestOpenSettings } from './runtime';
 import { getChatPanelTemplate } from './template';
 
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
@@ -559,7 +559,7 @@ async function openSettings(
   messageList: HTMLOListElement,
   options: MessageRenderOptions = {},
 ): Promise<void> {
-  const error = await requestOpenSettings();
+  const error = await requestOpenOptionsPage();
   if (!error) {
     return;
   }

@@ -1,19 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { createInputToolbar } from '../../src/chatpanel/input-toolbar';
 import { GEMINI_SETTINGS_STORAGE_KEY } from '../../src/shared/settings';
+import {
+  type ChromeStorageChange,
+  createChromeStorageLocalMock,
+  createChromeStorageOnChangedMock,
+} from './helpers/chrome-mock';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
-
-interface ChromeStorageChange {
-  newValue?: unknown;
-}
 
 describe('chatpanel input toolbar', () => {
   let dom: InstalledDomEnvironment | null = null;
-  let onChangedListener: ((changes: Record<string, ChromeStorageChange>) => void) | null = null;
+  let emitChanged: ((changes: Record<string, ChromeStorageChange>) => void) | null = null;
 
   beforeEach(() => {
     dom = installDomTestEnvironment();
-    onChangedListener = null;
+    emitChanged = null;
   });
 
   afterEach(() => {
@@ -67,7 +68,7 @@ describe('chatpanel input toolbar', () => {
 
     expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-alpha"]')).not.toBeNull();
 
-    onChangedListener?.({
+    emitChanged?.({
       [GEMINI_SETTINGS_STORAGE_KEY]: {
         newValue: { customModels: ['gemini-3.2-beta'] },
       },
@@ -223,7 +224,7 @@ describe('chatpanel input toolbar', () => {
 
     expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-alpha"]')).not.toBeNull();
 
-    onChangedListener?.({
+    emitChanged?.({
       unrelatedStorageKey: {
         newValue: {
           customModels: ['gemini-3.2-beta'],
@@ -236,17 +237,17 @@ describe('chatpanel input toolbar', () => {
     expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-beta"]')).toBeNull();
   });
 
-  function installChromeStorageMock(initialValue: unknown): void {
+  function installChromeStorageMock(initialValue: Record<string, unknown>): void {
+    const storageState = { ...initialValue };
+    const onChangedMock = createChromeStorageOnChangedMock();
+    emitChanged = (changes) => {
+      onChangedMock.emitChanged(changes);
+    };
+
     (globalThis as { chrome?: unknown }).chrome = {
       storage: {
-        local: {
-          get: async () => initialValue,
-        },
-        onChanged: {
-          addListener: (listener: (changes: Record<string, ChromeStorageChange>) => void) => {
-            onChangedListener = listener;
-          },
-        },
+        local: createChromeStorageLocalMock(storageState),
+        onChanged: onChangedMock.onChanged,
       },
     };
   }

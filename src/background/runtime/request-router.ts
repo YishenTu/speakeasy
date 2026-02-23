@@ -1,26 +1,5 @@
-import type { RuntimeRequest } from '../../shared/runtime';
-import { assertNever, isRecord } from '../utils';
+import { assertNever } from '../utils';
 import type { RuntimePayload, RuntimeRequestRoutingInput } from './contracts';
-
-export function isRuntimeRequest(value: unknown): value is RuntimeRequest {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  const type = value.type;
-  return (
-    type === 'chat/send' ||
-    type === 'chat/regen' ||
-    type === 'chat/fork' ||
-    type === 'chat/switch-branch' ||
-    type === 'chat/load' ||
-    type === 'chat/new' ||
-    type === 'chat/delete' ||
-    type === 'chat/list' ||
-    type === 'chat/upload-files' ||
-    type === 'app/open-options'
-  );
-}
 
 export async function routeRuntimeRequest(
   input: RuntimeRequestRoutingInput,

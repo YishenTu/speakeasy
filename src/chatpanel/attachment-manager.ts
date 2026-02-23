@@ -3,6 +3,7 @@ import {
   ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
   estimateBase64DecodedByteLength,
 } from '../shared/attachment-preview';
+import { encodeArrayBufferToBase64 } from '../shared/base64';
 import type { FileDataAttachmentPayload } from '../shared/runtime';
 import {
   formatByteSize,
@@ -11,7 +12,7 @@ import {
   isImageMimeType,
   isPdfMimeType,
 } from './media-helpers';
-import { toErrorMessage } from './messages';
+import { toErrorMessage } from './message-renderer';
 import { uploadFilesToGemini } from './uploads';
 
 export const MAX_STAGED_FILES = 5;
@@ -345,21 +346,6 @@ async function toImageDataUrl(file: File, mimeType: string): Promise<string | un
   }
 
   return dataUrl;
-}
-
-function encodeArrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const end = Math.min(bytes.length, offset + chunkSize);
-    for (let index = offset; index < end; index += 1) {
-      binary += String.fromCharCode(bytes[index] ?? 0);
-    }
-  }
-
-  return btoa(binary);
 }
 
 export function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {

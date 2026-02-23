@@ -1,4 +1,4 @@
-import type { RuntimeRequest, RuntimeResponse } from '../shared/runtime';
+import { type RuntimeRequest, type RuntimeResponse, isRuntimeRequest } from '../shared/runtime';
 import {
   GEMINI_SETTINGS_STORAGE_KEY,
   type GeminiSettings,
@@ -26,7 +26,7 @@ import {
 } from './runtime/handlers/chat-crud';
 import { handleSendMessage } from './runtime/handlers/chat-send';
 import { handleUploadFiles } from './runtime/handlers/chat-upload';
-import { isRuntimeRequest, routeRuntimeRequest } from './runtime/request-router';
+import { routeRuntimeRequest } from './runtime/request-router';
 import { generateAndPersistSessionTitle } from './runtime/title-generation';
 import { uploadFilesToGemini as uploadFilesToGeminiInBackground } from './uploads';
 import { toErrorMessage } from './utils';

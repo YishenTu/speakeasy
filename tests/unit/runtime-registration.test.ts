@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { registerBackgroundRuntimeHandlers } from '../../src/background/runtime';
 import type { RuntimeResponse } from '../../src/shared/runtime';
+import { createChromeStorageLocalMock } from './helpers/chrome-mock';
 
 type RuntimeListener = (
   request: unknown,
@@ -37,11 +38,7 @@ describe('background runtime registration', () => {
     (globalThis as { chrome?: unknown }).chrome = {
       runtime,
       storage: {
-        local: {
-          get: async () => ({}),
-          set: async () => {},
-          remove: async () => {},
-        },
+        local: createChromeStorageLocalMock({}),
       },
     };
 
