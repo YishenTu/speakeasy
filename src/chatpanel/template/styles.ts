@@ -319,79 +319,31 @@ export function getChatPanelStyles(): string {
         background: rgba(239, 68, 68, 0.2);
       }
 
-      .image-preview-overlay {
+      .image-preview-view {
         position: absolute;
         inset: 0;
-        z-index: 24;
+        z-index: 30;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: center;
-        padding: 0;
-        background: rgba(5, 5, 5, 0.72);
-      }
-
-      .image-preview-overlay[hidden] {
-        display: none;
-      }
-
-      .image-preview-dialog {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        border-radius: var(--sp-radius-panel);
-        border: none;
-        background: transparent;
         overflow-y: auto;
         overflow-x: hidden;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 10px;
-        padding: 44px 12px 12px;
+        padding: 0;
         box-sizing: border-box;
       }
 
-      .image-preview-close {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 26px;
-        height: 26px;
-        border: none;
-        border-radius: 999px;
-        background: rgba(0, 0, 0, 0.64);
-        color: rgba(255, 255, 255, 0.9);
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 16px;
-        line-height: 1;
-        cursor: pointer;
-      }
-
-      .image-preview-close:hover {
-        background: rgba(0, 0, 0, 0.82);
+      .image-preview-view[hidden] {
+        display: none;
       }
 
       .image-preview-image {
         width: 100%;
         max-width: 100%;
         height: auto;
+        min-height: 100%;
         max-height: none;
+        object-fit: cover;
         display: block;
-        border-radius: 6px;
-      }
-
-      .image-preview-caption {
-        margin: 0;
-        width: 100%;
-        font-size: var(--sp-font-size-xs);
-        color: rgba(255, 255, 255, 0.78);
-        text-align: center;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
 
       .messages {

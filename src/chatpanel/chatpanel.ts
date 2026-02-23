@@ -94,22 +94,13 @@ function mountChatPanel(): void {
     '#speakeasy-tab-mention-empty',
   );
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
-  const imagePreviewOverlay = queryRequiredElement<HTMLElement>(
+  const imagePreviewView = queryRequiredElement<HTMLElement>(
     shadowRoot,
-    '#speakeasy-image-preview-overlay',
-  );
-  const imagePreviewDialog = queryRequiredElement<HTMLElement>(shadowRoot, '.image-preview-dialog');
-  const imagePreviewCloseButton = queryRequiredElement<HTMLButtonElement>(
-    shadowRoot,
-    '#speakeasy-image-preview-close',
+    '#speakeasy-image-preview-view',
   );
   const imagePreviewElement = queryRequiredElement<HTMLImageElement>(
     shadowRoot,
     '#speakeasy-image-preview-image',
-  );
-  const imagePreviewCaption = queryRequiredElement<HTMLElement>(
-    shadowRoot,
-    '#speakeasy-image-preview-caption',
   );
   const toolbar = createInputToolbar(shadowRoot);
   const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
@@ -430,20 +421,6 @@ function mountChatPanel(): void {
     input.focus();
   });
 
-  imagePreviewCloseButton.addEventListener('click', () => {
-    closeImagePreview();
-  });
-
-  imagePreviewOverlay.addEventListener('click', (event) => {
-    if (event.target === imagePreviewOverlay) {
-      closeImagePreview();
-    }
-  });
-
-  imagePreviewDialog.addEventListener('click', (event) => {
-    event.stopPropagation();
-  });
-
   shadowRoot.addEventListener('click', (event) => {
     const target = event.target;
     if (!target || typeof (target as Element).closest !== 'function') {
@@ -453,7 +430,7 @@ function mountChatPanel(): void {
     const image = (target as Element).closest<HTMLImageElement>(
       '[data-speakeasy-preview-image="true"]',
     );
-    if (!image || imagePreviewOverlay.contains(image)) {
+    if (!image || imagePreviewView.contains(image)) {
       return;
     }
 
@@ -664,30 +641,21 @@ function mountChatPanel(): void {
   function openImagePreview(imageUrl: string, imageLabel: string): void {
     imagePreviewElement.src = imageUrl;
     imagePreviewElement.alt = imageLabel || 'Image preview';
-
-    if (imageLabel) {
-      imagePreviewCaption.textContent = imageLabel;
-      imagePreviewCaption.hidden = false;
-    } else {
-      imagePreviewCaption.textContent = '';
-      imagePreviewCaption.hidden = true;
-    }
-
-    imagePreviewOverlay.hidden = false;
+    tabMentionController.close();
+    imagePreviewView.hidden = false;
     isImagePreviewOpen = true;
   }
 
   function closeImagePreview(): void {
-    if (!isImagePreviewOpen && imagePreviewOverlay.hidden) {
+    if (!isImagePreviewOpen && imagePreviewView.hidden) {
       return;
     }
 
-    imagePreviewOverlay.hidden = true;
-    imagePreviewCaption.textContent = '';
-    imagePreviewCaption.hidden = true;
+    imagePreviewView.hidden = true;
     imagePreviewElement.removeAttribute('src');
     imagePreviewElement.alt = '';
     isImagePreviewOpen = false;
+    resizeComposerInput();
   }
 
   async function captureFullPageScreenshotIntoAttachments(): Promise<void> {
@@ -754,8 +722,19 @@ function mountChatPanel(): void {
       }
 
       const existing = localAttachmentPreviewUrls.get(fileUri);
-      if (existing && existing !== previewUrl) {
-        URL.revokeObjectURL(existing);
+      if (existing) {
+        if (existing === previewUrl) {
+          continue;
+        }
+
+        // Keep local blob previews because they preserve original fidelity for in-session rehydration.
+        if (isBlobObjectUrl(existing) && !isBlobObjectUrl(previewUrl)) {
+          continue;
+        }
+
+        if (isBlobObjectUrl(existing)) {
+          URL.revokeObjectURL(existing);
+        }
       }
       localAttachmentPreviewUrls.set(fileUri, previewUrl);
     }
@@ -770,7 +749,7 @@ function mountChatPanel(): void {
 
       let changed = false;
       const nextAttachments = attachments.map((attachment) => {
-        if (attachment.previewUrl || !isImageMimeType(attachment.mimeType)) {
+        if (!isImageMimeType(attachment.mimeType)) {
           return attachment;
         }
         const fileUri = attachment.fileUri?.trim() ?? '';
@@ -780,6 +759,11 @@ function mountChatPanel(): void {
 
         const localPreviewUrl = localAttachmentPreviewUrls.get(fileUri);
         if (!localPreviewUrl) {
+          return attachment;
+        }
+
+        const currentPreviewUrl = attachment.previewUrl?.trim() ?? '';
+        if (currentPreviewUrl === localPreviewUrl) {
           return attachment;
         }
 
@@ -820,10 +804,16 @@ function mountChatPanel(): void {
       if (renderedPreviewUrl && renderedPreviewUrl === previewUrl) {
         continue;
       }
-      URL.revokeObjectURL(previewUrl);
+      if (isBlobObjectUrl(previewUrl)) {
+        URL.revokeObjectURL(previewUrl);
+      }
       localAttachmentPreviewUrls.delete(fileUri);
     }
   }
+}
+
+function isBlobObjectUrl(value: string): boolean {
+  return value.startsWith('blob:');
 }
 
 function waitForNextPaint(): Promise<void> {

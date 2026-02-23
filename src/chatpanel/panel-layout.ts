@@ -59,18 +59,19 @@ export interface PanelLayoutDeps {
 export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutController {
   const { shell, dragHandle, resizeHandles, onLayoutApplied } = deps;
 
-  let panelLayout = createDefaultLayout();
+  let preferredLayout = createDefaultLayout();
+  let renderedLayout = clampPanelLayout(preferredLayout);
   let interactionState: InteractionState | null = null;
   let previousUserSelect = '';
   let hasUserSelectOverride = false;
 
   const syncLayout = (): void => {
-    applyPanelLayout(shell, panelLayout);
+    renderedLayout = clampPanelLayout(preferredLayout);
+    applyPanelLayout(shell, renderedLayout);
     onLayoutApplied();
   };
 
   const onWindowResize = (): void => {
-    panelLayout = clampPanelLayout(panelLayout);
     syncLayout();
   };
 
@@ -88,8 +89,8 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      startLeft: panelLayout.left,
-      startTop: panelLayout.top,
+      startLeft: renderedLayout.left,
+      startTop: renderedLayout.top,
     };
     shell.setPointerCapture(event.pointerId);
     startInteractionLock();
@@ -101,13 +102,18 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
     }
 
     if (interactionState.kind === 'drag') {
-      panelLayout = clampPanelLayout({
-        ...panelLayout,
+      const dragLayout = clampPanelLayout({
+        ...renderedLayout,
         left: interactionState.startLeft + (event.clientX - interactionState.startX),
         top: interactionState.startTop + (event.clientY - interactionState.startY),
       });
+      preferredLayout = {
+        ...preferredLayout,
+        left: dragLayout.left,
+        top: dragLayout.top,
+      };
     } else {
-      panelLayout = calculateResizedLayout(
+      preferredLayout = calculateResizedLayout(
         interactionState,
         event.clientX - interactionState.startX,
         event.clientY - interactionState.startY,
@@ -175,10 +181,10 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        startLeft: panelLayout.left,
-        startTop: panelLayout.top,
-        startWidth: panelLayout.width,
-        startHeight: panelLayout.height,
+        startLeft: renderedLayout.left,
+        startTop: renderedLayout.top,
+        startWidth: renderedLayout.width,
+        startHeight: renderedLayout.height,
         direction: parseResizeDirection(resizeValue),
       };
       shell.setPointerCapture(event.pointerId);
@@ -196,11 +202,10 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
 
   return {
     getLayout(): PanelLayout {
-      return panelLayout;
+      return renderedLayout;
     },
 
     clampAndSync(): void {
-      panelLayout = clampPanelLayout(panelLayout);
       syncLayout();
     },
 

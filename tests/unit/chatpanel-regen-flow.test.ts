@@ -637,7 +637,7 @@ describe('chatpanel regenerate flow', () => {
       '.message-attachment-strip .file-preview-image',
     ) as HTMLImageElement | null;
     expect(streamedPreviewImage).not.toBeNull();
-    expect(streamedPreviewImage?.src.startsWith('data:image/png;base64,')).toBe(true);
+    expect(streamedPreviewImage?.src.startsWith('blob:')).toBe(true);
     const streamedPreviewUrl = streamedPreviewImage?.src ?? '';
 
     currentMessages = [
@@ -679,12 +679,12 @@ describe('chatpanel regenerate flow', () => {
       '.message-attachment-strip .file-preview-image',
     ) as HTMLImageElement | null;
     expect(reconciledPreviewImage).not.toBeNull();
-    expect(reconciledPreviewImage?.src.startsWith('data:image/png;base64,')).toBe(true);
+    expect(reconciledPreviewImage?.src.startsWith('blob:')).toBe(true);
     expect(revokeSpy).not.toHaveBeenCalledWith(streamedPreviewUrl);
     expect(messageList.textContent).toContain('Looks like a test image.');
   });
 
-  it('opens image previews in a chatpanel-scoped overlay for staged and message attachments', async () => {
+  it('shows image previews inline within the chatpanel for staged and message attachments', async () => {
     const testWindow = getTestWindow();
     currentMessages = [
       {
@@ -721,25 +721,25 @@ describe('chatpanel regenerate flow', () => {
 
     const shadowRoot = getChatpanelShadowRoot();
     const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
-    const overlay = shadowRoot.querySelector(
-      '#speakeasy-image-preview-overlay',
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    const previewView = shadowRoot.querySelector(
+      '#speakeasy-image-preview-view',
     ) as HTMLElement | null;
-    const overlayImage = shadowRoot.querySelector(
+    const previewImage = shadowRoot.querySelector(
       '#speakeasy-image-preview-image',
     ) as HTMLImageElement | null;
-    const overlayCaption = shadowRoot.querySelector(
-      '#speakeasy-image-preview-caption',
-    ) as HTMLElement | null;
-    const closeButton = shadowRoot.querySelector(
-      '#speakeasy-image-preview-close',
-    ) as HTMLButtonElement | null;
+    const closeButton = shadowRoot.querySelector('#speakeasy-image-preview-close');
+    const previewCaption = shadowRoot.querySelector('#speakeasy-image-preview-caption');
     expect(fileInput).not.toBeNull();
-    expect(overlay).not.toBeNull();
-    expect(overlayImage).not.toBeNull();
-    expect(overlayCaption).not.toBeNull();
-    expect(closeButton).not.toBeNull();
-    if (!fileInput || !overlay || !overlayImage || !overlayCaption || !closeButton) {
-      throw new Error('Expected image preview overlay controls.');
+    expect(form).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    expect(previewView).not.toBeNull();
+    expect(previewImage).not.toBeNull();
+    expect(closeButton).toBeNull();
+    expect(previewCaption).toBeNull();
+    if (!fileInput || !form || !messageList || !previewView || !previewImage) {
+      throw new Error('Expected inline image preview controls.');
     }
 
     const stagedImageFile = new File(['staged-image'], 'staged-preview.png', { type: 'image/png' });
@@ -757,14 +757,16 @@ describe('chatpanel regenerate flow', () => {
     stagedPreview?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
     await flushMicrotasks();
 
-    expect(overlay.hidden).toBe(false);
-    expect(overlayImage.src.startsWith('blob:')).toBe(true);
-    expect(overlayCaption.hidden).toBe(false);
-    expect(overlayCaption.textContent).toBe('staged-preview.png');
+    expect(previewView.hidden).toBe(false);
+    expect(previewImage.src.startsWith('blob:')).toBe(true);
+    expect(messageList.hidden).toBe(false);
+    expect(form.hidden).toBe(false);
 
-    closeButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    document.dispatchEvent(new testWindow.KeyboardEvent('keydown', { key: 'Escape' }));
     await flushMicrotasks();
-    expect(overlay.hidden).toBe(true);
+    expect(previewView.hidden).toBe(true);
+    expect(messageList.hidden).toBe(false);
+    expect(form.hidden).toBe(false);
     expect(fullPageCaptureRequests).toHaveLength(0);
 
     const persistedPreview = shadowRoot.querySelector(
@@ -774,13 +776,16 @@ describe('chatpanel regenerate flow', () => {
     persistedPreview?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
     await flushMicrotasks();
 
-    expect(overlay.hidden).toBe(false);
-    expect(overlayImage.src).toBe('data:image/png;base64,cGVyc2lzdGVk');
-    expect(overlayCaption.textContent).toBe('persisted.png');
+    expect(previewView.hidden).toBe(false);
+    expect(previewImage.src).toBe('data:image/png;base64,cGVyc2lzdGVk');
+    expect(messageList.hidden).toBe(false);
+    expect(form.hidden).toBe(false);
 
     document.dispatchEvent(new testWindow.KeyboardEvent('keydown', { key: 'Escape' }));
     await flushMicrotasks();
-    expect(overlay.hidden).toBe(true);
+    expect(previewView.hidden).toBe(true);
+    expect(messageList.hidden).toBe(false);
+    expect(form.hidden).toBe(false);
   });
 
   it('lists tabs for @mention and stages selected tab screenshots with keyboard selection', async () => {

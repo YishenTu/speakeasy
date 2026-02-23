@@ -80,13 +80,13 @@ function resolveUploadedPreviewUrl(
     return undefined;
   }
 
+  if (staged) {
+    return URL.createObjectURL(staged.file);
+  }
+
   const previewDataUrl = uploaded.previewDataUrl?.trim();
   if (previewDataUrl) {
     return previewDataUrl;
-  }
-
-  if (staged) {
-    return URL.createObjectURL(staged.file);
   }
 
   return undefined;

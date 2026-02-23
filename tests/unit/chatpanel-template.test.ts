@@ -70,38 +70,39 @@ describe('chatpanel template', () => {
     expect(template).toContain('aria-label="Capture full-page screenshot"');
   });
 
-  it('renders chatpanel-scoped image preview overlay markup', () => {
+  it('renders image preview markup inside the chatpanel container', () => {
     const template = getChatPanelTemplate();
 
-    expect(template).toContain('id="speakeasy-image-preview-overlay"');
+    expect(template).toContain('id="speakeasy-image-preview-view"');
     expect(template).toContain('id="speakeasy-image-preview-image"');
-    expect(template).toContain('id="speakeasy-image-preview-close"');
+    expect(template).not.toContain('id="speakeasy-image-preview-overlay"');
+    expect(template).not.toContain('id="speakeasy-image-preview-close"');
+    expect(template).not.toContain('id="speakeasy-image-preview-caption"');
   });
 
-  it('uses a full-panel image preview container without border', () => {
+  it('renders image preview as the top in-panel layer without overlay background containers', () => {
     const template = getChatPanelTemplate();
 
-    expect(template).toContain('.image-preview-overlay {');
+    expect(template).toContain('.image-preview-view {');
+    expect(template).toContain('position: absolute;');
+    expect(template).toContain('inset: 0;');
+    expect(template).toContain('z-index: 30;');
+    expect(template).not.toContain('.image-preview-overlay {');
+    expect(template).not.toContain('.image-preview-dialog {');
+    expect(template).not.toContain('.image-preview-close {');
+    expect(template).not.toContain('background: rgba(5, 5, 5, 0.72);');
+  });
+
+  it('renders image preview media at full in-panel width and height', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.image-preview-view {');
     expect(template).toContain('padding: 0;');
-    expect(template).toContain('.image-preview-dialog {');
-    expect(template).toMatch(/\.image-preview-dialog\s*{[^}]*background:\s*transparent;/);
-    expect(template).toContain('border: none;');
-    expect(template).not.toContain('background: rgba(15, 15, 15, 0.94);');
-    expect(template).not.toContain('border: 1px solid rgba(255, 255, 255, 0.16);');
-  });
-
-  it('uses width-adaptive image preview with vertical scrolling for long images', () => {
-    const template = getChatPanelTemplate();
-
-    expect(template).toContain('.image-preview-dialog {');
-    expect(template).toContain('justify-content: flex-start;');
     expect(template).toContain('overflow-y: auto;');
     expect(template).toContain('overflow-x: hidden;');
-    expect(template).toContain('.image-preview-image {');
-    expect(template).toContain('width: 100%;');
-    expect(template).toContain('height: auto;');
-    expect(template).toContain('max-height: none;');
-    expect(template).not.toContain('max-height: 100%;');
+    expect(template).toMatch(
+      /\.image-preview-image\s*{[^}]*width:\s*100%;[^}]*height:\s*auto;[^}]*min-height:\s*100%;[^}]*object-fit:\s*cover;[^}]*}/,
+    );
   });
 
   it('uses enlarged input toolbar controls and wider capture-action spacing', () => {
