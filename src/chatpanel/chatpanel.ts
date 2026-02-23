@@ -102,6 +102,10 @@ function mountChatPanel(): void {
     shadowRoot,
     '#speakeasy-image-preview-image',
   );
+  const imagePreviewCloseButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-image-preview-close',
+  );
   const toolbar = createInputToolbar(shadowRoot);
   const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
   if (resizeHandles.length === 0) {
@@ -258,6 +262,9 @@ function mountChatPanel(): void {
       activeChatId = id;
     },
     clearStagedFiles: () => attachmentManager.clearStage(true),
+    cancelQueuedSend: () => {
+      conversationFlow?.cancelQueuedSend();
+    },
     renderMessages,
     appendLocalError,
     focusInput: () => input.focus(),
@@ -488,6 +495,10 @@ function mountChatPanel(): void {
     closePanel();
   });
 
+  imagePreviewCloseButton.addEventListener('click', () => {
+    closeImagePreview();
+  });
+
   settingsButton.addEventListener('click', () => {
     void openSettings(messageList, messageRenderOptions);
   });
@@ -497,6 +508,7 @@ function mountChatPanel(): void {
       return;
     }
 
+    conversationFlow?.cancelQueuedSend();
     setBusyState(true);
     try {
       const chatId = await createNewChat(await ensureChatTabContext());
@@ -623,6 +635,7 @@ function mountChatPanel(): void {
   }
 
   function setBusyState(nextBusy: boolean): void {
+    const wasBusy = isBusy;
     isBusy = nextBusy;
     syncComposerDisabledState();
     if (nextBusy) {
@@ -633,6 +646,9 @@ function mountChatPanel(): void {
     historyToggleButton.disabled = nextBusy;
     form.toggleAttribute('aria-busy', nextBusy);
     historyDropdown.syncMenuState();
+    if (wasBusy && !nextBusy && conversationFlow) {
+      void conversationFlow.onAttachmentStateChange();
+    }
   }
 
   function syncToolbarButtonState(): void {

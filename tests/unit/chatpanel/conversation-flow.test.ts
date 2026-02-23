@@ -352,6 +352,66 @@ describe('conversation flow controller', () => {
     expect(harness.setStagedPreviewsHiddenCalls).toEqual([true, false]);
   });
 
+  test('cancelQueuedSend removes queued optimistic message and restores local draft state', async () => {
+    const harness = createHarness({
+      composerText: 'Upload pending',
+      stagedFiles: [createStagedFile('pending', 'uploading')],
+    });
+
+    await harness.flow.send();
+    const queuedMessageId = harness.appendCalls[0]?.id;
+    expect(queuedMessageId).toBeTruthy();
+
+    harness.flow.cancelQueuedSend();
+
+    expect(harness.sendCalls).toHaveLength(0);
+    expect(harness.removeCalls).toEqual([queuedMessageId as string]);
+    expect(harness.setComposerTextCalls).toEqual(['', 'Upload pending']);
+    expect(harness.setStagedPreviewsHiddenCalls).toEqual([true, false]);
+    expect(harness.getComposerResizeCount()).toBe(2);
+  });
+
+  test('regen action cancels queued send draft before running regeneration', async () => {
+    const harness = createHarness({
+      composerText: 'Upload pending',
+      stagedFiles: [createStagedFile('pending', 'uploading')],
+    });
+
+    await harness.flow.send();
+    const queuedMessageId = harness.appendCalls[0]?.id;
+    expect(queuedMessageId).toBeTruthy();
+
+    await harness.flow.handleMessageAction('regen', {
+      id: 'assistant-target',
+      role: 'assistant',
+      content: 'Existing answer',
+      interactionId: 'assistant-interaction',
+    });
+
+    expect(harness.regenerateCalls).toHaveLength(1);
+    expect(harness.removeCalls).toEqual([queuedMessageId as string]);
+    expect(harness.setComposerTextCalls).toEqual(['', 'Upload pending']);
+    expect(harness.setStagedPreviewsHiddenCalls).toEqual([true, false]);
+  });
+
+  test('switch branch cancels queued send draft before switching', async () => {
+    const harness = createHarness({
+      composerText: 'Upload pending',
+      stagedFiles: [createStagedFile('pending', 'uploading')],
+    });
+
+    await harness.flow.send();
+    const queuedMessageId = harness.appendCalls[0]?.id;
+    expect(queuedMessageId).toBeTruthy();
+
+    await harness.flow.switchAssistantBranch(' interaction-id ');
+
+    expect(harness.switchCalls).toEqual(['interaction-id']);
+    expect(harness.removeCalls).toEqual([queuedMessageId as string]);
+    expect(harness.setComposerTextCalls).toEqual(['', 'Upload pending']);
+    expect(harness.setStagedPreviewsHiddenCalls).toEqual([true, false]);
+  });
+
   test('stream deltas patch the assistant placeholder before final assistant reconciliation', async () => {
     const deferredSend = createDeferred<ChatMessage>();
     const harness = createHarness({

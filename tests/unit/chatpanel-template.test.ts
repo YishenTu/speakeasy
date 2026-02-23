@@ -75,8 +75,8 @@ describe('chatpanel template', () => {
 
     expect(template).toContain('id="speakeasy-image-preview-view"');
     expect(template).toContain('id="speakeasy-image-preview-image"');
+    expect(template).toContain('id="speakeasy-image-preview-close"');
     expect(template).not.toContain('id="speakeasy-image-preview-overlay"');
-    expect(template).not.toContain('id="speakeasy-image-preview-close"');
     expect(template).not.toContain('id="speakeasy-image-preview-caption"');
   });
 
@@ -89,7 +89,7 @@ describe('chatpanel template', () => {
     expect(template).toContain('z-index: 30;');
     expect(template).not.toContain('.image-preview-overlay {');
     expect(template).not.toContain('.image-preview-dialog {');
-    expect(template).not.toContain('.image-preview-close {');
+    expect(template).toContain('.image-preview-close {');
     expect(template).not.toContain('background: rgba(5, 5, 5, 0.72);');
   });
 

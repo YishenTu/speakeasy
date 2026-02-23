@@ -182,4 +182,36 @@ describe('runtime tab list handler', () => {
       ],
     });
   });
+
+  it('throws when chrome.tabs.query is unavailable', async () => {
+    (globalThis as { chrome?: unknown }).chrome = {
+      tabs: {},
+    };
+    const handler = createRuntimeRequestHandler({
+      repository: createRepositoryStub(),
+      bootstrapChatStorage: async () => {},
+    });
+
+    await expect(handler({ type: 'tab/list-open' } as RuntimeRequest)).rejects.toThrow(
+      'Chrome tabs API is unavailable.',
+    );
+  });
+
+  it('surfaces chrome.tabs.query rejections', async () => {
+    (globalThis as { chrome?: unknown }).chrome = {
+      tabs: {
+        query: async () => {
+          throw new Error('tabs query failed');
+        },
+      },
+    };
+    const handler = createRuntimeRequestHandler({
+      repository: createRepositoryStub(),
+      bootstrapChatStorage: async () => {},
+    });
+
+    await expect(handler({ type: 'tab/list-open' } as RuntimeRequest)).rejects.toThrow(
+      'tabs query failed',
+    );
+  });
 });

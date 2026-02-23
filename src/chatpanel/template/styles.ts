@@ -337,6 +337,29 @@ export function getChatPanelStyles(): string {
         display: none;
       }
 
+      .image-preview-close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.32);
+        border-radius: 999px;
+        background: rgba(8, 8, 8, 0.55);
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 18px;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 1;
+      }
+
+      .image-preview-close:hover {
+        background: rgba(8, 8, 8, 0.75);
+      }
+
       .image-preview-image {
         width: 100%;
         height: auto;

@@ -106,6 +106,7 @@ export interface ConversationFlowDeps {
 
 export interface ConversationFlowController {
   send(): Promise<void>;
+  cancelQueuedSend(): void;
   onAttachmentStateChange(): Promise<void>;
   handleMessageAction(action: MessageAction, message: ChatMessage): Promise<void>;
   switchAssistantBranch(interactionId: string): Promise<void>;
@@ -209,6 +210,21 @@ export function createConversationFlowController(
     deps.composer.focus();
   }
 
+  function cancelQueuedSend(restoreComposerText = true): void {
+    const queued = queuedSendDraft;
+    if (!queued) {
+      return;
+    }
+
+    deps.attachmentManager.setStagedPreviewsHidden(false);
+    deps.render.removeMessageById(queued.optimisticUserMessageId);
+    if (restoreComposerText && !deps.composer.getText().trim() && queued.userText) {
+      deps.composer.setText(queued.userText);
+      deps.composer.resize();
+    }
+    queuedSendDraft = undefined;
+  }
+
   async function flushQueuedSendIfReady(): Promise<void> {
     const queued = queuedSendDraft;
     if (!queued) {
@@ -220,21 +236,13 @@ export function createConversationFlowController(
     }
 
     if (deps.attachmentManager.hasFailedFiles()) {
-      deps.attachmentManager.setStagedPreviewsHidden(false);
-      deps.render.removeMessageById(queued.optimisticUserMessageId);
-      if (!deps.composer.getText().trim() && queued.userText) {
-        deps.composer.setText(queued.userText);
-        deps.composer.resize();
-      }
-      queuedSendDraft = undefined;
+      cancelQueuedSend();
       return;
     }
 
     const stagedSnapshot = [...deps.attachmentManager.getStaged()];
     if (!canSubmitMessage(queued.userText, stagedSnapshot.length)) {
-      deps.attachmentManager.setStagedPreviewsHidden(false);
-      deps.render.removeMessageById(queued.optimisticUserMessageId);
-      queuedSendDraft = undefined;
+      cancelQueuedSend();
       return;
     }
 
@@ -339,6 +347,8 @@ export function createConversationFlowController(
       return;
     }
 
+    cancelQueuedSend();
+
     const previousInteractionId = message.previousInteractionId?.trim();
     const interactionId = message.interactionId?.trim();
     let regenPlaceholderMessageId: string | undefined;
@@ -352,7 +362,9 @@ export function createConversationFlowController(
         }
         await deps.runtime.forkChat(previousInteractionId);
         deps.attachmentManager.clearStage(true);
-        deps.composer.setText(message.content);
+        if (!deps.composer.getText().trim()) {
+          deps.composer.setText(message.content);
+        }
         deps.composer.resize();
       } else {
         if (message.role !== 'assistant' || !interactionId) {
@@ -407,6 +419,8 @@ export function createConversationFlowController(
       return;
     }
 
+    cancelQueuedSend();
+
     const normalizedInteractionId = interactionId.trim();
     if (!normalizedInteractionId) {
       return;
@@ -427,6 +441,7 @@ export function createConversationFlowController(
 
   return {
     send,
+    cancelQueuedSend,
     onAttachmentStateChange,
     handleMessageAction,
     switchAssistantBranch,

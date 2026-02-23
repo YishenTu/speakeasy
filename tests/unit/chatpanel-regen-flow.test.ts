@@ -729,16 +729,18 @@ describe('chatpanel regenerate flow', () => {
     const previewImage = shadowRoot.querySelector(
       '#speakeasy-image-preview-image',
     ) as HTMLImageElement | null;
-    const closeButton = shadowRoot.querySelector('#speakeasy-image-preview-close');
+    const closeButton = shadowRoot.querySelector(
+      '#speakeasy-image-preview-close',
+    ) as HTMLButtonElement | null;
     const previewCaption = shadowRoot.querySelector('#speakeasy-image-preview-caption');
     expect(fileInput).not.toBeNull();
     expect(form).not.toBeNull();
     expect(messageList).not.toBeNull();
     expect(previewView).not.toBeNull();
     expect(previewImage).not.toBeNull();
-    expect(closeButton).toBeNull();
+    expect(closeButton).not.toBeNull();
     expect(previewCaption).toBeNull();
-    if (!fileInput || !form || !messageList || !previewView || !previewImage) {
+    if (!fileInput || !form || !messageList || !previewView || !previewImage || !closeButton) {
       throw new Error('Expected inline image preview controls.');
     }
 
@@ -762,7 +764,7 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList.hidden).toBe(false);
     expect(form.hidden).toBe(false);
 
-    document.dispatchEvent(new testWindow.KeyboardEvent('keydown', { key: 'Escape' }));
+    closeButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
     await flushMicrotasks();
     expect(previewView.hidden).toBe(true);
     expect(messageList.hidden).toBe(false);
@@ -1193,6 +1195,160 @@ describe('chatpanel regenerate flow', () => {
       mimeType: 'image/png',
       fileUri: 'https://example.invalid/files/pending',
     });
+  });
+
+  it('cancels queued upload send when regen is triggered and keeps the draft local', async () => {
+    const testWindow = getTestWindow();
+    const pendingUpload = createDeferred<UploadFilesRuntimeResponse>();
+    deferredUploadResponsesByFileName.set('pending-during-busy.png', pendingUpload);
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const regenButton = shadowRoot.querySelector('.message-regen-btn') as HTMLButtonElement | null;
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(fileInput).not.toBeNull();
+    expect(regenButton).not.toBeNull();
+    if (!form || !input || !fileInput || !regenButton) {
+      throw new Error('Expected form controls and regenerate action.');
+    }
+
+    const imageFile = new File(['pending-image'], 'pending-during-busy.png', { type: 'image/png' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [imageFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(8);
+
+    input.value = 'Send this after upload completes.';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(10);
+
+    expect(sendRequest).toBeNull();
+
+    regenButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(8);
+    expect(regenRequest?.type).toBe('chat/regen');
+
+    pendingUpload.resolve({
+      ok: true,
+      payload: {
+        attachments: [
+          {
+            name: 'pending-during-busy.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/pending-during-busy',
+          },
+        ],
+        failures: [],
+      },
+    });
+    await flushMicrotasks(24);
+    expect(sendRequest).toBeNull();
+
+    currentMessages = [
+      { id: 'user-1', role: 'user', content: 'Tell me a joke.' },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: 'Regenerated answer',
+        interactionId: 'interaction-2',
+      },
+    ];
+    regenDeferred.resolve({
+      ok: true,
+      payload: {
+        chatId: 'chat-seed',
+        assistantMessage: currentMessages[1],
+      },
+    });
+    await flushMicrotasks(36);
+
+    expect(sendRequest).toBeNull();
+    expect(input.value).toBe('Send this after upload completes.');
+    expect(shadowRoot.querySelectorAll('#speakeasy-file-previews .file-preview-item')).toHaveLength(
+      1,
+    );
+  });
+
+  it('cancels queued upload send when switching to another history session', async () => {
+    const testWindow = getTestWindow();
+    const pendingUpload = createDeferred<UploadFilesRuntimeResponse>();
+    deferredUploadResponsesByFileName.set('pending-history.png', pendingUpload);
+    listSessionsPayload = [
+      { chatId: 'chat-seed', title: 'Seed Chat', updatedAt: '2025-01-01T00:00:00.000Z' },
+      { chatId: 'chat-other', title: 'Other chat', updatedAt: '2025-01-01T00:01:00.000Z' },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const historyToggleButton = shadowRoot.querySelector(
+      '#speakeasy-history-toggle',
+    ) as HTMLButtonElement | null;
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(fileInput).not.toBeNull();
+    expect(historyToggleButton).not.toBeNull();
+    if (!form || !input || !fileInput || !historyToggleButton) {
+      throw new Error('Expected form controls and history toggle.');
+    }
+
+    const imageFile = new File(['pending-image'], 'pending-history.png', { type: 'image/png' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [imageFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(8);
+
+    input.value = 'History queued draft';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(10);
+    expect(sendRequest).toBeNull();
+
+    historyToggleButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(16);
+
+    const historyOpenButtons = Array.from(
+      shadowRoot.querySelectorAll<HTMLButtonElement>('.history-item-main'),
+    );
+    const otherSessionButton = historyOpenButtons.find(
+      (button) => button.querySelector('.history-item-title')?.textContent === 'Other chat',
+    );
+    expect(otherSessionButton).toBeDefined();
+    otherSessionButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(24);
+
+    expect(loadRequests.at(-1)?.chatId).toBe('chat-other');
+
+    pendingUpload.resolve({
+      ok: true,
+      payload: {
+        attachments: [
+          {
+            name: 'pending-history.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/pending-history',
+          },
+        ],
+        failures: [],
+      },
+    });
+    await flushMicrotasks(24);
+
+    expect(sendRequest).toBeNull();
+    expect(input.value).toBe('History queued draft');
   });
 
   it('switches assistant branches from the branch selector and reloads messages', async () => {
