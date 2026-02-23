@@ -27,6 +27,8 @@ export async function routeRuntimeRequest(
       return input.handleListChats();
     case 'chat/upload-files':
       return input.handleUploadFiles(request);
+    case 'tab/capture-full-page':
+      return input.handleCaptureFullPageScreenshot();
     default:
       return assertNever(request);
   }

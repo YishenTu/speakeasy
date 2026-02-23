@@ -319,6 +319,81 @@ export function getChatPanelStyles(): string {
         background: rgba(239, 68, 68, 0.2);
       }
 
+      .image-preview-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 24;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: rgba(5, 5, 5, 0.72);
+      }
+
+      .image-preview-overlay[hidden] {
+        display: none;
+      }
+
+      .image-preview-dialog {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border-radius: var(--sp-radius-panel);
+        border: none;
+        background: rgba(15, 15, 15, 0.94);
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        padding: 44px 12px 12px;
+        box-sizing: border-box;
+      }
+
+      .image-preview-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.64);
+        color: rgba(255, 255, 255, 0.9);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .image-preview-close:hover {
+        background: rgba(0, 0, 0, 0.82);
+      }
+
+      .image-preview-image {
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        max-height: none;
+        display: block;
+        border-radius: 6px;
+      }
+
+      .image-preview-caption {
+        margin: 0;
+        width: 100%;
+        font-size: var(--sp-font-size-xs);
+        color: rgba(255, 255, 255, 0.78);
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .messages {
         margin: 0;
         padding: 16px 16px var(--sp-messages-bottom-clearance);
@@ -960,6 +1035,10 @@ export function getChatPanelStyles(): string {
         object-fit: cover;
       }
 
+      .previewable-image {
+        cursor: zoom-in;
+      }
+
       .attachment-placeholder {
         display: inline-flex;
         max-width: 100%;
@@ -1008,9 +1087,9 @@ export function getChatPanelStyles(): string {
       }
 
       .attach-btn {
-        width: auto;
-        min-width: 0;
-        height: auto;
+        width: 22px;
+        min-width: 22px;
+        height: 22px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1026,8 +1105,8 @@ export function getChatPanelStyles(): string {
       }
 
       .attach-icon {
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
       }
 
       .file-preview-strip {
@@ -1198,18 +1277,25 @@ export function getChatPanelStyles(): string {
       .input-toolbar {
         display: flex;
         align-items: center;
-        gap: 6px;
-        padding: 2px 8px 4px;
+        gap: 8px;
+        padding: 4px 10px 6px;
       }
 
       .input-toolbar-label {
-        font-size: var(--sp-font-size-xs);
+        font-size: var(--sp-font-size-sm);
         color: rgba(255, 255, 255, 0.5);
         user-select: none;
       }
 
-      .input-toolbar .attach-btn {
+      .input-toolbar-actions {
         margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .input-toolbar .attach-btn {
+        margin-left: 0;
       }
 
       .dropup {
@@ -1218,7 +1304,8 @@ export function getChatPanelStyles(): string {
 
       .dropup-trigger {
         font-family: inherit;
-        font-size: var(--sp-font-size-xs);
+        font-size: var(--sp-font-size-sm);
+        font-weight: 500;
         outline: none;
       }
 
@@ -1252,8 +1339,8 @@ export function getChatPanelStyles(): string {
         background: transparent;
         color: rgba(255, 255, 255, 0.6);
         font-family: inherit;
-        font-size: var(--sp-font-size-xs);
-        padding: 5px 12px;
+        font-size: var(--sp-font-size-sm);
+        padding: 7px 14px;
         cursor: pointer;
         text-align: left;
         white-space: nowrap;

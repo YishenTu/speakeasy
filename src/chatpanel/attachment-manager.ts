@@ -17,6 +17,9 @@ import { uploadFilesToGemini } from './uploads';
 
 export const MAX_STAGED_FILES = 5;
 export const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const PREVIEW_MAX_EDGE_PX = 960;
+const PREVIEW_MIN_EDGE_PX = 64;
+const PREVIEW_SCALE_STEP = 0.75;
 
 export type StagedFile = {
   id: string;
@@ -116,7 +119,8 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
 
       if (isImageMimeType(staged.mimeType) && staged.previewUrl) {
         const image = document.createElement('img');
-        image.className = 'file-preview-image';
+        image.className = 'file-preview-image previewable-image';
+        image.dataset.speakeasyPreviewImage = 'true';
         image.src = staged.previewUrl;
         image.alt = staged.name;
         image.loading = 'lazy';
@@ -331,6 +335,15 @@ async function toImageDataUrl(file: File, mimeType: string): Promise<string | un
   if (!normalizedMimeType.startsWith('image/')) {
     return undefined;
   }
+  const directDataUrl = await toInlineImageDataUrl(file, normalizedMimeType);
+  if (directDataUrl) {
+    return directDataUrl;
+  }
+
+  return toDownscaledImageDataUrl(file, normalizedMimeType);
+}
+
+async function toInlineImageDataUrl(file: File, mimeType: string): Promise<string | undefined> {
   if (file.size > ATTACHMENT_PREVIEW_MAX_BYTES) {
     return undefined;
   }
@@ -340,12 +353,88 @@ async function toImageDataUrl(file: File, mimeType: string): Promise<string | un
     return undefined;
   }
 
-  const dataUrl = `data:${normalizedMimeType};base64,${base64Bytes}`;
+  const dataUrl = `data:${mimeType};base64,${base64Bytes}`;
   if (dataUrl.length > ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH) {
     return undefined;
   }
 
   return dataUrl;
+}
+
+async function toDownscaledImageDataUrl(file: File, mimeType: string): Promise<string | undefined> {
+  const image = await loadImageFromFile(file);
+  if (!image) {
+    return undefined;
+  }
+
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+  if (!sourceWidth || !sourceHeight) {
+    return undefined;
+  }
+
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return undefined;
+  }
+
+  const baseScale = Math.min(1, PREVIEW_MAX_EDGE_PX / Math.max(sourceWidth, sourceHeight));
+  let width = Math.max(1, Math.round(sourceWidth * baseScale));
+  let height = Math.max(1, Math.round(sourceHeight * baseScale));
+
+  while (width >= PREVIEW_MIN_EDGE_PX && height >= PREVIEW_MIN_EDGE_PX) {
+    canvas.width = width;
+    canvas.height = height;
+    context.clearRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+
+    const dataUrl = canvas.toDataURL(mimeType);
+    if (isDataUrlWithinPreviewBudget(dataUrl)) {
+      return dataUrl;
+    }
+
+    const nextWidth = Math.max(PREVIEW_MIN_EDGE_PX, Math.floor(width * PREVIEW_SCALE_STEP));
+    const nextHeight = Math.max(PREVIEW_MIN_EDGE_PX, Math.floor(height * PREVIEW_SCALE_STEP));
+    if (nextWidth === width && nextHeight === height) {
+      break;
+    }
+    width = nextWidth;
+    height = nextHeight;
+  }
+
+  return undefined;
+}
+
+function isDataUrlWithinPreviewBudget(dataUrl: string): boolean {
+  if (dataUrl.length > ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH) {
+    return false;
+  }
+
+  const [, base64Bytes = ''] = dataUrl.split(',', 2);
+  if (!base64Bytes) {
+    return false;
+  }
+
+  return estimateBase64DecodedByteLength(base64Bytes) <= ATTACHMENT_PREVIEW_MAX_BYTES;
+}
+
+async function loadImageFromFile(file: File): Promise<HTMLImageElement | null> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    return await new Promise<HTMLImageElement | null>((resolve) => {
+      const image = new Image();
+      image.onload = () => {
+        resolve(image);
+      };
+      image.onerror = () => {
+        resolve(null);
+      };
+      image.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean {

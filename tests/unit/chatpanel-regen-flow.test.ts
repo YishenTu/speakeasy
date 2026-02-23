@@ -63,6 +63,7 @@ describe('chatpanel regenerate flow', () => {
   let forkRequest: Extract<RuntimeRequest, { type: 'chat/fork' }> | null;
   let switchBranchRequest: Extract<RuntimeRequest, { type: 'chat/switch-branch' }> | null;
   let uploadRequests: Extract<RuntimeRequest, { type: 'chat/upload-files' }>[];
+  let fullPageCaptureRequests: Extract<RuntimeRequest, { type: 'tab/capture-full-page' }>[];
   let deleteRequests: Extract<RuntimeRequest, { type: 'chat/delete' }>[];
   let deferredUploadResponsesByFileName: Map<string, Deferred<UploadFilesRuntimeResponse>>;
   let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
@@ -104,6 +105,7 @@ describe('chatpanel regenerate flow', () => {
     forkRequest = null;
     switchBranchRequest = null;
     uploadRequests = [];
+    fullPageCaptureRequests = [];
     deleteRequests = [];
     deferredUploadResponsesByFileName = new Map();
     loadRequests = [];
@@ -250,6 +252,19 @@ describe('chatpanel regenerate flow', () => {
                   fileUri: `https://example.invalid/files/${index + 1}`,
                 })),
                 failures: [],
+              },
+            });
+          }
+          if (request.type === 'tab/capture-full-page') {
+            fullPageCaptureRequests.push(request);
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                dataUrl: 'data:image/png;base64,aW5wdXQ=',
+                mimeType: 'image/png',
+                fileName: 'mocked-page-title.png',
+                width: 1280,
+                height: 3200,
               },
             });
           }
@@ -523,6 +538,105 @@ describe('chatpanel regenerate flow', () => {
     expect(reconciledPreviewImage?.src.startsWith('data:image/png;base64,')).toBe(true);
     expect(revokeSpy).not.toHaveBeenCalledWith(streamedPreviewUrl);
     expect(messageList.textContent).toContain('Looks like a test image.');
+  });
+
+  it('opens image previews in a chatpanel-scoped overlay for staged and message attachments', async () => {
+    const testWindow = getTestWindow();
+    currentMessages = [
+      {
+        id: 'persisted-user-image',
+        role: 'user',
+        content: 'Look at this.',
+        attachments: [
+          {
+            name: 'persisted.png',
+            mimeType: 'image/png',
+            fileUri: 'https://example.invalid/files/persisted',
+            previewUrl: 'data:image/png;base64,cGVyc2lzdGVk',
+          },
+        ],
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Looks good.',
+        interactionId: 'interaction-1',
+      },
+    ];
+    listSessionsPayload = [
+      { chatId: 'chat-seed', title: 'Image Chat', updatedAt: '2025-01-01T00:00:00.000Z' },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    for (const listener of runtimeMessageListeners) {
+      listener({ type: 'overlay/open' });
+    }
+    await flushMicrotasks(4);
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const overlay = shadowRoot.querySelector(
+      '#speakeasy-image-preview-overlay',
+    ) as HTMLElement | null;
+    const overlayImage = shadowRoot.querySelector(
+      '#speakeasy-image-preview-image',
+    ) as HTMLImageElement | null;
+    const overlayCaption = shadowRoot.querySelector(
+      '#speakeasy-image-preview-caption',
+    ) as HTMLElement | null;
+    const closeButton = shadowRoot.querySelector(
+      '#speakeasy-image-preview-close',
+    ) as HTMLButtonElement | null;
+    expect(fileInput).not.toBeNull();
+    expect(overlay).not.toBeNull();
+    expect(overlayImage).not.toBeNull();
+    expect(overlayCaption).not.toBeNull();
+    expect(closeButton).not.toBeNull();
+    if (!fileInput || !overlay || !overlayImage || !overlayCaption || !closeButton) {
+      throw new Error('Expected image preview overlay controls.');
+    }
+
+    const stagedImageFile = new File(['staged-image'], 'staged-preview.png', { type: 'image/png' });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [stagedImageFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(16);
+
+    const stagedPreview = shadowRoot.querySelector(
+      '#speakeasy-file-previews .file-preview-image',
+    ) as HTMLImageElement | null;
+    expect(stagedPreview).not.toBeNull();
+    stagedPreview?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(overlay.hidden).toBe(false);
+    expect(overlayImage.src.startsWith('blob:')).toBe(true);
+    expect(overlayCaption.hidden).toBe(false);
+    expect(overlayCaption.textContent).toBe('staged-preview.png');
+
+    closeButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+    expect(overlay.hidden).toBe(true);
+    expect(fullPageCaptureRequests).toHaveLength(0);
+
+    const persistedPreview = shadowRoot.querySelector(
+      '.message-attachment-strip .file-preview-image',
+    ) as HTMLImageElement | null;
+    expect(persistedPreview).not.toBeNull();
+    persistedPreview?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(overlay.hidden).toBe(false);
+    expect(overlayImage.src).toBe('data:image/png;base64,cGVyc2lzdGVk');
+    expect(overlayCaption.textContent).toBe('persisted.png');
+
+    document.dispatchEvent(new testWindow.KeyboardEvent('keydown', { key: 'Escape' }));
+    await flushMicrotasks();
+    expect(overlay.hidden).toBe(true);
   });
 
   it('starts uploading on attach and blocks submit until image upload finishes', async () => {

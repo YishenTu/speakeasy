@@ -1,5 +1,6 @@
 import { getComposerTemplate, getResizeZonesTemplate } from './template/composer-template';
 import { getHistoryTemplate } from './template/history-template';
+import { getImagePreviewTemplate } from './template/image-preview-template';
 import { getShellTemplate } from './template/shell-template';
 import { getChatPanelStyles } from './template/styles';
 
@@ -11,7 +12,7 @@ export function getChatPanelTemplate(): string {
 
         <ol id="speakeasy-messages" class="messages"></ol>
 ${getComposerTemplate()}
-      </section>${getHistoryTemplate()}${getResizeZonesTemplate()}
+      </section>${getHistoryTemplate()}${getImagePreviewTemplate()}${getResizeZonesTemplate()}
     </div>
   `;
 }

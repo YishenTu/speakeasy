@@ -75,6 +75,9 @@ export type RuntimeRequest =
       uploadTimeoutMs?: number;
     }
   | {
+      type: 'tab/capture-full-page';
+    }
+  | {
       type: 'app/open-options';
     };
 
@@ -88,6 +91,7 @@ const RUNTIME_REQUEST_TYPE_LOOKUP: Record<RuntimeRequest['type'], true> = {
   'chat/delete': true,
   'chat/list': true,
   'chat/upload-files': true,
+  'tab/capture-full-page': true,
   'app/open-options': true,
 };
 
@@ -160,6 +164,14 @@ export interface ChatUploadFilesPayload {
 
 export interface OpenOptionsPayload {
   opened: true;
+}
+
+export interface TabCaptureFullPagePayload {
+  dataUrl: string;
+  mimeType: string;
+  fileName: string;
+  width: number;
+  height: number;
 }
 
 export interface ChatStreamDeltaEvent {

@@ -11,6 +11,7 @@ import type {
   FileDataAttachmentPayload,
   OpenOptionsPayload,
   RuntimeRequest,
+  TabCaptureFullPagePayload,
   UploadFilePayload,
 } from '../../shared/runtime';
 import type { GeminiSettings } from '../../shared/settings';
@@ -28,6 +29,7 @@ export type RuntimePayload =
   | ChatDeletePayload
   | ChatListPayload
   | ChatUploadFilesPayload
+  | TabCaptureFullPagePayload
   | OpenOptionsPayload;
 
 export interface RuntimeDependencies {
@@ -50,6 +52,7 @@ export interface RuntimeDependencies {
     apiKey: string,
     uploadTimeoutMs?: number,
   ) => Promise<ChatUploadFilesPayload>;
+  captureFullPageScreenshot: (tabId: number) => Promise<TabCaptureFullPagePayload>;
   openOptionsPage: () => Promise<void>;
   now: () => Date;
 }
@@ -94,4 +97,5 @@ export interface RuntimeRequestRoutingInput {
   handleUploadFiles: (
     request: Extract<RuntimeRequest, { type: 'chat/upload-files' }>,
   ) => Promise<ChatUploadFilesPayload>;
+  handleCaptureFullPageScreenshot: () => Promise<TabCaptureFullPagePayload>;
 }

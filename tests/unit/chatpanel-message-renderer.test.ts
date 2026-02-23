@@ -283,6 +283,9 @@ describe('chatpanel messages', () => {
     expect(strip?.querySelectorAll('.file-preview-tile')).toHaveLength(2);
     expect(strip?.querySelectorAll('.file-preview-name')).toHaveLength(2);
     expect(strip?.querySelector('.file-preview-generic.is-pdf')).not.toBeNull();
+    const previewImage = strip?.querySelector('.file-preview-image') as HTMLImageElement | null;
+    expect(previewImage?.classList.contains('previewable-image')).toBe(true);
+    expect(previewImage?.dataset.speakeasyPreviewImage).toBe('true');
     expect(bubble?.querySelector('.attachment-list')).toBeNull();
     expect(row?.firstElementChild).toBe(strip);
     expect(strip?.nextElementSibling).toBe(bubble);
@@ -786,6 +789,43 @@ describe('chatpanel messages', () => {
         previousInteractionId: 'interaction-1',
       },
     ]);
+  });
+
+  it('copies only user text and excludes attachment metadata from copy action', async () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    const clipboard = {
+      writeText: (_value: string) => Promise.resolve(),
+    };
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    });
+    const writeTextSpy = spyOn(clipboard, 'writeText').mockImplementation(() => Promise.resolve());
+
+    appendMessage(
+      {
+        id: 'user-copy-with-attachments',
+        role: 'user',
+        content: 'Compare these screenshots',
+        attachments: [
+          {
+            name: 'screenshot-1.png',
+            mimeType: 'image/png',
+            fileUri: 'files/screenshot-1',
+          },
+        ],
+      },
+      messageList,
+    );
+
+    const copyButton = messageList.querySelector('.message-copy-btn') as HTMLButtonElement | null;
+    expect(copyButton).not.toBeNull();
+
+    copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await Promise.resolve();
+
+    expect(writeTextSpy).toHaveBeenCalledTimes(1);
+    expect(writeTextSpy).toHaveBeenCalledWith('Compare these screenshots');
   });
 
   it('shows a temporary error label when fenced code copy fails', async () => {

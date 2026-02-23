@@ -12,6 +12,7 @@ import type {
   ChatSwitchBranchPayload,
   ChatUploadFilesPayload,
   FileDataAttachmentPayload,
+  TabCaptureFullPagePayload,
   UploadFileTransportPayload,
 } from './runtime';
 import { sendRuntimeRequest } from './runtime-client';
@@ -217,5 +218,11 @@ export async function uploadChatFiles(
     ...(typeof options.uploadTimeoutMs === 'number'
       ? { uploadTimeoutMs: options.uploadTimeoutMs }
       : {}),
+  });
+}
+
+export async function captureCurrentTabFullPageScreenshot(): Promise<TabCaptureFullPagePayload> {
+  return sendRuntimeRequest<TabCaptureFullPagePayload>({
+    type: 'tab/capture-full-page',
   });
 }

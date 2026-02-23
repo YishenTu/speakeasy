@@ -43,6 +43,7 @@ describe('chatpanel input toolbar', () => {
       '.dropup-item[data-value="gemini-3.2-custom"]',
     );
     expect(customModelButton).not.toBeNull();
+    expect(toolbar.captureButton.id).toBe('speakeasy-capture-full-page');
     expect(toolbar.attachButton.id).toBe('speakeasy-attach');
 
     customModelButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
@@ -273,6 +274,7 @@ describe('chatpanel input toolbar', () => {
           <button type="button" class="dropup-item" data-value="minimal" aria-selected="true">Min</button>
         </div>
       </div>
+      <button id="speakeasy-capture-full-page" type="button">Capture</button>
       <button id="speakeasy-attach" type="button">Attach</button>
     `;
     return shadowRoot;

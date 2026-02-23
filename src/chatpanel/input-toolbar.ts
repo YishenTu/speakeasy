@@ -4,6 +4,7 @@ import { queryRequiredElement } from './dom';
 export interface InputToolbar {
   selectedModel(): string;
   selectedThinkingLevel(): string;
+  captureButton: HTMLButtonElement;
   attachButton: HTMLButtonElement;
 }
 
@@ -44,6 +45,10 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     '.dropup-trigger',
   );
   const thinkingMenu = queryRequiredElement<HTMLElement>(thinkingDropup, '.dropup-menu');
+  const captureButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-capture-full-page',
+  );
   const attachButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-attach');
 
   function closeAllDropups(): void {
@@ -171,6 +176,7 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     selectedThinkingLevel(): string {
       return thinkingTrigger.dataset.value ?? 'minimal';
     },
+    captureButton,
     attachButton,
   };
 }

@@ -180,7 +180,8 @@ function createAttachmentListNode(
     if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
       const previewUrl = attachment.previewUrl;
       const image = document.createElement('img');
-      image.className = 'attachment-image';
+      image.className = 'attachment-image previewable-image';
+      image.dataset.speakeasyPreviewImage = 'true';
       image.src = previewUrl;
       image.alt = attachment.name;
       image.loading = 'lazy';
@@ -218,7 +219,8 @@ function createUserAttachmentStripNode(
     if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
       const previewUrl = attachment.previewUrl;
       const image = document.createElement('img');
-      image.className = 'file-preview-image';
+      image.className = 'file-preview-image previewable-image';
+      image.dataset.speakeasyPreviewImage = 'true';
       image.src = previewUrl;
       image.alt = attachment.name;
       image.loading = 'lazy';
@@ -543,20 +545,7 @@ function buildCopyableUserQuery(message: ChatMessage): string {
     return '';
   }
 
-  const blocks: string[] = [];
-  const content = message.content.trim();
-  if (content) {
-    blocks.push(content);
-  }
-
-  if (message.attachments && message.attachments.length > 0) {
-    const attachmentLines = message.attachments.map(
-      (attachment) => `- ${attachment.name} (${attachment.mimeType})`,
-    );
-    blocks.push(`Attachments:\n${attachmentLines.join('\n')}`);
-  }
-
-  return blocks.join('\n\n').trim();
+  return message.content.trim();
 }
 
 function createCopyActionButton(copyText: string, copyLabel: string): HTMLButtonElement {

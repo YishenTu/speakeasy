@@ -11,6 +11,7 @@ regular web pages (`http://*/*`, `https://*/*`).
 - Conversation history is branch-aware: regenerate, fork, and branch switching are supported.
 - File upload flow is wired end-to-end (Gemini Files API upload, attachment metadata, image preview
   persistence).
+- Full-page tab screenshot capture is available from the chatpanel toolbar (Chrome debugger API).
 - Options page manages API key, model, system instruction, tool toggles, and tool-specific config.
 - Deterministic test suites cover unit + contract behavior; live Gemini checks are isolated to
   canary workflow only.
@@ -108,6 +109,7 @@ GEMINI_API_KEY=your-real-gemini-key
 - In-page panel supports new chat, history list, per-session delete, and settings entrypoint.
 - Per-message actions include copy, regenerate response, fork/edit retry, and branch navigation.
 - Input toolbar supports model selection, thinking-level selection, and file attachment staging.
+- Input toolbar also supports one-click full-page screenshot capture with attachment preview.
 - Overlay is injected on `http://*/*` and `https://*/*` pages.
 
 ## Tool behavior and constraints

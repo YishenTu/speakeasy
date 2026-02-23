@@ -17,6 +17,7 @@ import {
 import { canSubmitMessage, createConversationFlowController } from './conversation-flow';
 import { createDeleteSessionConfirmation } from './delete-confirmation';
 import { queryRequiredElement } from './dom';
+import { captureAndStageFullPageScreenshot } from './full-page-screenshot';
 import { createHistoryDropdownController } from './history-dropdown';
 import { createInputToolbar } from './input-toolbar';
 import { isImageMimeType } from './media-helpers';
@@ -71,6 +72,23 @@ function mountChatPanel(): void {
   const fileInput = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-file-input');
   const filePreviews = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-file-previews');
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
+  const imagePreviewOverlay = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-image-preview-overlay',
+  );
+  const imagePreviewDialog = queryRequiredElement<HTMLElement>(shadowRoot, '.image-preview-dialog');
+  const imagePreviewCloseButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-image-preview-close',
+  );
+  const imagePreviewElement = queryRequiredElement<HTMLImageElement>(
+    shadowRoot,
+    '#speakeasy-image-preview-image',
+  );
+  const imagePreviewCaption = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-image-preview-caption',
+  );
   const toolbar = createInputToolbar(shadowRoot);
   const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
   if (resizeHandles.length === 0) {
@@ -122,6 +140,8 @@ function mountChatPanel(): void {
 
   let isPanelOpen = false;
   let isBusy = false;
+  let isCapturingFullPageScreenshot = false;
+  let isImagePreviewOpen = false;
   let hasLoadedHistory = false;
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
@@ -239,6 +259,14 @@ function mountChatPanel(): void {
     fileInput.click();
   });
 
+  toolbar.captureButton.addEventListener('click', () => {
+    if (isBusy || isCapturingFullPageScreenshot) {
+      return;
+    }
+
+    void captureFullPageScreenshotIntoAttachments();
+  });
+
   fileInput.addEventListener('change', () => {
     if (isBusy) {
       fileInput.value = '';
@@ -306,6 +334,42 @@ function mountChatPanel(): void {
 
     attachmentManager.stageFromFiles(extractFilesFromDataTransfer(event.dataTransfer));
     input.focus();
+  });
+
+  imagePreviewCloseButton.addEventListener('click', () => {
+    closeImagePreview();
+  });
+
+  imagePreviewOverlay.addEventListener('click', (event) => {
+    if (event.target === imagePreviewOverlay) {
+      closeImagePreview();
+    }
+  });
+
+  imagePreviewDialog.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
+  shadowRoot.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!target || typeof (target as Element).closest !== 'function') {
+      return;
+    }
+
+    const image = (target as Element).closest<HTMLImageElement>(
+      '[data-speakeasy-preview-image="true"]',
+    );
+    if (!image || imagePreviewOverlay.contains(image)) {
+      return;
+    }
+
+    const previewUrl = image.src.trim();
+    if (!previewUrl) {
+      return;
+    }
+
+    const imageLabel = image.alt?.trim() ?? '';
+    openImagePreview(previewUrl, imageLabel);
   });
 
   function appendLocalError(message: string): void {
@@ -404,6 +468,10 @@ function mountChatPanel(): void {
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && isPanelOpen) {
+      if (isImagePreviewOpen) {
+        closeImagePreview();
+        return;
+      }
       if (historyDropdown.isOpen()) {
         historyDropdown.setOpen(false);
         return;
@@ -439,6 +507,7 @@ function mountChatPanel(): void {
     layoutController.cancelInteraction();
     dragEnterDepth = 0;
     form.classList.remove('drop-active');
+    closeImagePreview();
     historyDropdown.setOpen(false);
     isPanelOpen = false;
     shell.hidden = true;
@@ -467,11 +536,73 @@ function mountChatPanel(): void {
   function setBusyState(nextBusy: boolean): void {
     isBusy = nextBusy;
     input.disabled = nextBusy;
-    toolbar.attachButton.disabled = nextBusy;
+    syncToolbarButtonState();
     newChatButton.disabled = nextBusy;
     historyToggleButton.disabled = nextBusy;
     form.toggleAttribute('aria-busy', nextBusy);
     historyDropdown.syncMenuState();
+  }
+
+  function syncToolbarButtonState(): void {
+    const toolbarBusy = isBusy || isCapturingFullPageScreenshot;
+    toolbar.attachButton.disabled = toolbarBusy;
+    toolbar.captureButton.disabled = toolbarBusy;
+  }
+
+  function openImagePreview(imageUrl: string, imageLabel: string): void {
+    imagePreviewElement.src = imageUrl;
+    imagePreviewElement.alt = imageLabel || 'Image preview';
+
+    if (imageLabel) {
+      imagePreviewCaption.textContent = imageLabel;
+      imagePreviewCaption.hidden = false;
+    } else {
+      imagePreviewCaption.textContent = '';
+      imagePreviewCaption.hidden = true;
+    }
+
+    imagePreviewOverlay.hidden = false;
+    isImagePreviewOpen = true;
+  }
+
+  function closeImagePreview(): void {
+    if (!isImagePreviewOpen && imagePreviewOverlay.hidden) {
+      return;
+    }
+
+    imagePreviewOverlay.hidden = true;
+    imagePreviewCaption.textContent = '';
+    imagePreviewCaption.hidden = true;
+    imagePreviewElement.removeAttribute('src');
+    imagePreviewElement.alt = '';
+    isImagePreviewOpen = false;
+  }
+
+  async function captureFullPageScreenshotIntoAttachments(): Promise<void> {
+    isCapturingFullPageScreenshot = true;
+    syncToolbarButtonState();
+
+    const shouldRestoreShell = isPanelOpen && !shell.hidden;
+    if (shouldRestoreShell) {
+      shell.hidden = true;
+      await waitForNextPaint();
+    }
+
+    try {
+      await captureAndStageFullPageScreenshot({
+        stageFromFiles: (files) => attachmentManager.stageFromFiles(files),
+      });
+    } catch (error: unknown) {
+      appendLocalError(toErrorMessage(error));
+    } finally {
+      if (shouldRestoreShell && isPanelOpen) {
+        shell.hidden = false;
+        layoutController.clampAndSync();
+        input.focus();
+      }
+      isCapturingFullPageScreenshot = false;
+      syncToolbarButtonState();
+    }
   }
 
   function rememberLocalAttachmentPreviews(message: ChatMessage): void {
@@ -553,6 +684,14 @@ function mountChatPanel(): void {
       localAttachmentPreviewUrls.delete(fileUri);
     }
   }
+}
+
+function waitForNextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      resolve();
+    });
+  });
 }
 
 async function openSettings(

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import {
+  captureCurrentTabFullPageScreenshot,
   createNewChat,
   deleteChatById,
   forkChat,
@@ -457,6 +458,30 @@ describe('shared chat client', () => {
         },
       ],
       failures: [],
+    });
+  });
+
+  it('requests full-page screenshots from background runtime', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        dataUrl: 'data:image/png;base64,AAAA',
+        mimeType: 'image/png',
+        fileName: 'speakeasy-full-page.png',
+        width: 1200,
+        height: 3400,
+      },
+    });
+
+    const payload = await captureCurrentTabFullPageScreenshot();
+
+    expect(runtimeRequests).toEqual([{ type: 'tab/capture-full-page' }]);
+    expect(payload).toEqual({
+      dataUrl: 'data:image/png;base64,AAAA',
+      mimeType: 'image/png',
+      fileName: 'speakeasy-full-page.png',
+      width: 1200,
+      height: 3400,
     });
   });
 });

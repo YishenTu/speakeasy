@@ -63,6 +63,57 @@ describe('chatpanel template', () => {
     expect(thinkingDropupIndex).toBeGreaterThan(labelIndex);
   });
 
+  it('renders a full-page screenshot capture button in the input toolbar', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('id="speakeasy-capture-full-page"');
+    expect(template).toContain('aria-label="Capture full-page screenshot"');
+  });
+
+  it('renders chatpanel-scoped image preview overlay markup', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('id="speakeasy-image-preview-overlay"');
+    expect(template).toContain('id="speakeasy-image-preview-image"');
+    expect(template).toContain('id="speakeasy-image-preview-close"');
+  });
+
+  it('uses a full-panel image preview container without border', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.image-preview-overlay {');
+    expect(template).toContain('padding: 0;');
+    expect(template).toContain('.image-preview-dialog {');
+    expect(template).toContain('border: none;');
+    expect(template).not.toContain('border: 1px solid rgba(255, 255, 255, 0.16);');
+  });
+
+  it('uses width-adaptive image preview with vertical scrolling for long images', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.image-preview-dialog {');
+    expect(template).toContain('justify-content: flex-start;');
+    expect(template).toContain('overflow-y: auto;');
+    expect(template).toContain('overflow-x: hidden;');
+    expect(template).toContain('.image-preview-image {');
+    expect(template).toContain('width: 100%;');
+    expect(template).toContain('height: auto;');
+    expect(template).toContain('max-height: none;');
+    expect(template).not.toContain('max-height: 100%;');
+  });
+
+  it('uses enlarged input toolbar controls and wider capture-action spacing', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.input-toolbar {');
+    expect(template).toContain('gap: 8px;');
+    expect(template).toContain('.input-toolbar-actions {');
+    expect(template).toContain('gap: 10px;');
+    expect(template).toContain('.attach-icon {');
+    expect(template).toContain('width: 18px;');
+    expect(template).toContain('height: 18px;');
+  });
+
   it('uses square staged-file previews and removes legacy chip styling', () => {
     const template = getChatPanelTemplate();
 

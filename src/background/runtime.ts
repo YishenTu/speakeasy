@@ -6,6 +6,7 @@ import {
 } from '../shared/settings';
 import { createChatRepository } from './chat-repository';
 import { bootstrapChatStorage } from './chat-storage-bootstrap';
+import { captureFullPageScreenshot } from './full-page-screenshot';
 import { type GeminiStreamDelta, completeAssistantTurn, generateSessionTitle } from './gemini';
 import { createRuntimeBootstrapGate } from './runtime/bootstrap';
 import type {
@@ -76,6 +77,7 @@ export function createRuntimeRequestHandler(
 
       return uploadFilesToGeminiInBackground(files, apiKey, {}, options);
     },
+    captureFullPageScreenshot,
     openOptionsPage,
     now: () => new Date(),
     ...overrides,
@@ -97,7 +99,7 @@ export function createRuntimeRequestHandler(
     request: RuntimeRequest,
     context?: RuntimeRequestContext,
   ): Promise<RuntimePayload> => {
-    if (request.type !== 'app/open-options') {
+    if (request.type !== 'app/open-options' && request.type !== 'tab/capture-full-page') {
       await bootstrapGate.ensureReady();
     }
 
@@ -166,6 +168,13 @@ export function createRuntimeRequestHandler(
       },
       handleUploadFiles: (uploadRequest) =>
         handleUploadFiles(uploadRequest.files, uploadRequest.uploadTimeoutMs, dependencies),
+      handleCaptureFullPageScreenshot: async () => {
+        const tabId = context?.sender?.tab?.id;
+        if (!Number.isInteger(tabId) || !tabId || tabId <= 0) {
+          throw new Error('Full-page screenshot capture requires an active browser tab.');
+        }
+        return dependencies.captureFullPageScreenshot(tabId);
+      },
     });
   };
 }
