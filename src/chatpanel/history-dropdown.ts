@@ -32,6 +32,7 @@ export interface HistoryDropdownDeps {
   getActiveChatId: () => string | null;
   setActiveChatId: (id: string | null) => void;
   clearStagedFiles: () => void;
+  cancelQueuedSend: () => void;
   renderMessages: (messages: ChatMessage[]) => void;
   appendLocalError: (message: string) => void;
   focusInput: () => void;
@@ -94,6 +95,7 @@ export function createHistoryDropdownController(
           return;
         }
 
+        deps.cancelQueuedSend();
         deps.setBusy(true);
         try {
           await loadSession(session.chatId);
@@ -124,6 +126,7 @@ export function createHistoryDropdownController(
           return;
         }
 
+        deps.cancelQueuedSend();
         deps.setBusy(true);
         try {
           const tabContext = await deps.getChatTabContext();

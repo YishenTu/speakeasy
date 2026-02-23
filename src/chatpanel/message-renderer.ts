@@ -215,6 +215,11 @@ function createUserAttachmentStripNode(
     tile.className = 'file-preview-tile';
     tile.setAttribute('aria-label', `${attachment.name} (${attachment.mimeType})`);
     tile.setAttribute('title', `${attachment.name} (${attachment.mimeType})`);
+    if (attachment.uploadState === 'uploading') {
+      tile.classList.add('is-uploading');
+    } else if (attachment.uploadState === 'failed') {
+      tile.classList.add('is-failed');
+    }
 
     if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
       const previewUrl = attachment.previewUrl;
@@ -230,6 +235,24 @@ function createUserAttachmentStripNode(
       tile.append(image);
     } else {
       tile.append(createGenericAttachmentPreviewNode(attachment));
+    }
+
+    if (attachment.uploadState === 'uploading') {
+      const overlay = document.createElement('div');
+      overlay.className = 'file-preview-upload-overlay';
+
+      const spinner = document.createElement('span');
+      spinner.className = 'file-preview-spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+
+      overlay.append(spinner);
+      tile.append(overlay);
+    } else if (attachment.uploadState === 'failed') {
+      const failedBadge = document.createElement('span');
+      failedBadge.className = 'file-preview-failed';
+      failedBadge.textContent = '!';
+      failedBadge.setAttribute('aria-label', 'Upload failed');
+      tile.append(failedBadge);
     }
 
     const nameLabel = document.createElement('span');

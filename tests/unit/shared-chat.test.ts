@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import {
   captureCurrentTabFullPageScreenshot,
+  captureTabFullPageScreenshotById,
   createNewChat,
   deleteChatById,
   forkChat,
   listChatSessions,
+  listOpenTabsForMention,
   loadChatMessages,
   loadChatMessagesById,
   regenerateAssistantMessage,
@@ -574,6 +576,64 @@ describe('shared chat client', () => {
       fileName: 'speakeasy-full-page.png',
       width: 1200,
       height: 3400,
+    });
+  });
+
+  it('requests open tabs for mention suggestions from background runtime', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        tabs: [
+          {
+            tabId: 88,
+            windowId: 5,
+            active: true,
+            title: 'Example',
+            url: 'https://example.com',
+            hostname: 'example.com',
+          },
+        ],
+      },
+    });
+
+    const payload = await listOpenTabsForMention();
+
+    expect(runtimeRequests).toEqual([{ type: 'tab/list-open' }]);
+    expect(payload).toEqual({
+      tabs: [
+        {
+          tabId: 88,
+          windowId: 5,
+          active: true,
+          title: 'Example',
+          url: 'https://example.com',
+          hostname: 'example.com',
+        },
+      ],
+    });
+  });
+
+  it('requests full-page screenshots for explicit tab ids from background runtime', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        dataUrl: 'data:image/png;base64,BBBB',
+        mimeType: 'image/png',
+        fileName: 'selected-tab.png',
+        width: 1110,
+        height: 2900,
+      },
+    });
+
+    const payload = await captureTabFullPageScreenshotById(88);
+
+    expect(runtimeRequests).toEqual([{ type: 'tab/capture-full-page-by-id', tabId: 88 }]);
+    expect(payload).toEqual({
+      dataUrl: 'data:image/png;base64,BBBB',
+      mimeType: 'image/png',
+      fileName: 'selected-tab.png',
+      width: 1110,
+      height: 2900,
     });
   });
 });

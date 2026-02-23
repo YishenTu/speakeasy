@@ -5,6 +5,7 @@ export interface OptimisticMessageFile {
   file: File;
   name: string;
   mimeType: string;
+  uploadState?: 'uploading' | 'uploaded' | 'failed';
 }
 
 export function buildOptimisticUserMessage(
@@ -34,6 +35,7 @@ export function buildOptimisticUserMessage(
             name: staged.name,
             mimeType: staged.mimeType,
             ...(isImage ? { previewUrl: URL.createObjectURL(staged.file) } : {}),
+            ...(staged.uploadState ? { uploadState: staged.uploadState } : {}),
           };
         });
   const normalizedPreviousInteractionId = normalizeInteractionId(previousInteractionId);
@@ -80,14 +82,9 @@ function resolveUploadedPreviewUrl(
     return undefined;
   }
 
-  const previewDataUrl = uploaded.previewDataUrl?.trim();
-  if (previewDataUrl) {
-    return previewDataUrl;
-  }
-
   if (staged) {
     return URL.createObjectURL(staged.file);
   }
 
-  return undefined;
+  return uploaded.previewDataUrl?.trim() || undefined;
 }

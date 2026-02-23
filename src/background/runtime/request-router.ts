@@ -29,8 +29,12 @@ export async function routeRuntimeRequest(
       return input.handleListChats();
     case 'chat/upload-files':
       return input.handleUploadFiles(request);
+    case 'tab/list-open':
+      return input.handleListOpenTabs();
     case 'tab/capture-full-page':
       return input.handleCaptureFullPageScreenshot();
+    case 'tab/capture-full-page-by-id':
+      return input.handleCaptureFullPageScreenshotById(request);
     default:
       return assertNever(request);
   }

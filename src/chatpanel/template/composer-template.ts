@@ -9,8 +9,14 @@ export function getComposerTemplate(): string {
               multiple
               hidden />
             <div id="speakeasy-file-previews" class="file-preview-strip"></div>
-            <div class="composer-row">
-              <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3"></textarea>
+            <div class="composer-input-wrap">
+              <div id="speakeasy-tab-mention-menu" class="mention-menu" hidden>
+                <div id="speakeasy-tab-mention-empty" class="mention-empty">No matching tabs</div>
+                <div id="speakeasy-tab-mention-list" class="mention-list" role="listbox"></div>
+              </div>
+              <div class="composer-row">
+                <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3"></textarea>
+              </div>
             </div>
             <div class="input-toolbar">
               <div class="dropup" id="speakeasy-model-dropup">

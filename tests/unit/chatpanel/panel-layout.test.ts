@@ -86,3 +86,45 @@ describe('applyPanelLayout', () => {
     expect(shell.style.top).toBe('50px');
   });
 });
+
+describe('createPanelLayoutController', () => {
+  test('restores panel size after transient viewport shrink and recovery', () => {
+    const { createPanelLayoutController } = getModule();
+    const shell = document.createElement('div');
+    const dragHandle = document.createElement('div');
+    document.body.append(shell, dragHandle);
+
+    env.window.innerWidth = 1200;
+    env.window.innerHeight = 900;
+
+    const controller = createPanelLayoutController({
+      shell,
+      dragHandle,
+      resizeHandles: [],
+      onLayoutApplied: () => {},
+    });
+
+    controller.clampAndSync();
+
+    const stableWidth = shell.style.width;
+    const stableHeight = shell.style.height;
+    expect(stableWidth).toBe('430px');
+    expect(stableHeight).toBe('720px');
+
+    env.window.innerWidth = 300;
+    env.window.innerHeight = 320;
+    window.dispatchEvent(new Event('resize'));
+    expect(shell.style.width).toBe('276px');
+    expect(shell.style.height).toBe('296px');
+
+    env.window.innerWidth = 1200;
+    env.window.innerHeight = 900;
+    window.dispatchEvent(new Event('resize'));
+    expect(shell.style.width).toBe(stableWidth);
+    expect(shell.style.height).toBe(stableHeight);
+
+    controller.dispose();
+    shell.remove();
+    dragHandle.remove();
+  });
+});

@@ -152,6 +152,7 @@ export function getChatPanelStyles(): string {
         width: min(300px, 58vw);
         max-height: 260px;
         overflow: auto;
+        overscroll-behavior: contain;
         z-index: 16;
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: var(--sp-radius-panel);
@@ -319,85 +320,60 @@ export function getChatPanelStyles(): string {
         background: rgba(239, 68, 68, 0.2);
       }
 
-      .image-preview-overlay {
+      .image-preview-view {
         position: absolute;
         inset: 0;
-        z-index: 24;
+        z-index: 30;
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: center;
-        padding: 0;
-        background: rgba(5, 5, 5, 0.72);
-      }
-
-      .image-preview-overlay[hidden] {
-        display: none;
-      }
-
-      .image-preview-dialog {
-        position: relative;
-        width: 100%;
-        height: 100%;
-        border-radius: var(--sp-radius-panel);
-        border: none;
-        background: transparent;
         overflow-y: auto;
         overflow-x: hidden;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 10px;
-        padding: 44px 12px 12px;
+        overscroll-behavior: contain;
         box-sizing: border-box;
+      }
+
+      .image-preview-view[hidden] {
+        display: none;
       }
 
       .image-preview-close {
         position: absolute;
-        top: 8px;
-        right: 8px;
-        width: 26px;
-        height: 26px;
-        border: none;
+        top: 10px;
+        right: 10px;
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.32);
         border-radius: 999px;
-        background: rgba(0, 0, 0, 0.64);
-        color: rgba(255, 255, 255, 0.9);
+        background: rgba(8, 8, 8, 0.55);
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 18px;
+        line-height: 1;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 16px;
-        line-height: 1;
         cursor: pointer;
+        z-index: 1;
       }
 
       .image-preview-close:hover {
-        background: rgba(0, 0, 0, 0.82);
+        background: rgba(8, 8, 8, 0.75);
       }
 
       .image-preview-image {
         width: 100%;
-        max-width: 100%;
         height: auto;
+        min-height: 100%;
         max-height: none;
+        object-fit: cover;
         display: block;
-        border-radius: 6px;
-      }
-
-      .image-preview-caption {
-        margin: 0;
-        width: 100%;
-        font-size: var(--sp-font-size-xs);
-        color: rgba(255, 255, 255, 0.78);
-        text-align: center;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
 
       .messages {
         margin: 0;
         padding: 16px 16px var(--sp-messages-bottom-clearance);
         overflow: auto;
+        overscroll-behavior: contain;
         list-style: none;
         display: flex;
         flex-direction: column;
@@ -935,7 +911,6 @@ export function getChatPanelStyles(): string {
       }
 
       .message-actions-assistant {
-        margin-top: 0;
         justify-content: flex-start;
       }
 
@@ -1073,6 +1048,10 @@ export function getChatPanelStyles(): string {
         display: flex;
         align-items: flex-end;
         gap: 2px;
+      }
+
+      .composer-input-wrap {
+        position: relative;
       }
 
       .attach-btn,
@@ -1274,6 +1253,80 @@ export function getChatPanelStyles(): string {
         }
       }
 
+      .mention-menu {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: calc(100% + 6px);
+        border: 1px solid var(--sp-color-border-base);
+        border-radius: var(--sp-radius-md);
+        background: var(--sp-color-surface-overlay);
+        max-height: 188px;
+        overflow: hidden;
+        z-index: 12;
+      }
+
+      .mention-list {
+        display: flex;
+        flex-direction: column;
+        max-height: 188px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      .mention-list::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .mention-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+      }
+
+      .mention-item {
+        border: none;
+        background: transparent;
+        color: var(--sp-color-text-default);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 7px 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .mention-item:hover,
+      .mention-item[aria-selected="true"] {
+        background: var(--sp-color-surface-hover);
+        color: var(--sp-color-text-primary);
+      }
+
+      .mention-item-title {
+        width: 100%;
+        font-size: 12px;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mention-item-meta {
+        width: 100%;
+        font-size: var(--sp-font-size-xs);
+        line-height: 1.2;
+        color: var(--sp-color-text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mention-empty {
+        padding: 8px 10px;
+        font-size: var(--sp-font-size-xs);
+        color: var(--sp-color-text-muted);
+      }
+
       .input-toolbar {
         display: flex;
         align-items: center;
@@ -1383,6 +1436,7 @@ export function getChatPanelStyles(): string {
         font-family: inherit;
         max-height: 200px;
         overflow-y: auto;
+        overscroll-behavior: contain;
       }
 
       .input::-webkit-scrollbar {

@@ -30,7 +30,7 @@
     }
   ],
   "options_page": "options.html",
-  "permissions": ["storage", "debugger"],
+  "permissions": ["storage", "debugger", "tabs"],
   "host_permissions": ["https://generativelanguage.googleapis.com/*"],
   "commands": {
     "_execute_action": {

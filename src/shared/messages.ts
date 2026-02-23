@@ -5,6 +5,7 @@ export interface ChatAttachment {
   mimeType: string;
   fileUri?: string;
   previewUrl?: string;
+  uploadState?: 'uploading' | 'uploaded' | 'failed';
 }
 
 export interface AssistantResponseStats {

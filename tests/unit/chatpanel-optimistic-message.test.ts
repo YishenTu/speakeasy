@@ -41,11 +41,13 @@ describe('chatpanel optimistic message', () => {
             file: imageFile,
             name: 'photo.png',
             mimeType: 'IMAGE/PNG',
+            uploadState: 'uploading',
           },
           {
             file: textFile,
             name: 'note.txt',
             mimeType: 'text/plain',
+            uploadState: 'uploading',
           },
         ],
         undefined,
@@ -56,10 +58,12 @@ describe('chatpanel optimistic message', () => {
           name: 'photo.png',
           mimeType: 'IMAGE/PNG',
           previewUrl: 'blob://preview/1',
+          uploadState: 'uploading',
         },
         {
           name: 'note.txt',
           mimeType: 'text/plain',
+          uploadState: 'uploading',
         },
       ]);
       expect(createObjectURLCalls).toEqual(['photo.png']);
@@ -112,7 +116,7 @@ describe('chatpanel optimistic message', () => {
     }
   });
 
-  it('prefers uploaded previewDataUrl over blob previews for uploaded images', () => {
+  it('prefers staged blob previews over uploaded previewDataUrl for uploaded images', () => {
     const imageFile = new File(['image-bytes'], 'photo.png', { type: 'image/png' });
     const originalCreateObjectURL = URL.createObjectURL;
     let createObjectURLCalls = 0;
@@ -147,7 +151,57 @@ describe('chatpanel optimistic message', () => {
           name: 'photo.png',
           mimeType: 'image/png',
           fileUri: 'https://example.invalid/files/photo',
-          previewUrl: 'data:image/png;base64,aGVsbG8=',
+          previewUrl: 'blob://preview/uploaded',
+        },
+      ]);
+      expect(createObjectURLCalls).toBe(1);
+    } finally {
+      URL.createObjectURL = originalCreateObjectURL;
+    }
+  });
+
+  it('falls back to uploaded previewDataUrl when staged file context is unavailable', () => {
+    const message = buildOptimisticUserMessage('Draft prompt', [], undefined, [
+      {
+        name: 'photo.png',
+        mimeType: 'image/png',
+        fileUri: 'https://example.invalid/files/photo',
+        previewDataUrl: 'data:image/png;base64,aGVsbG8=',
+      },
+    ]);
+
+    expect(message.attachments).toEqual([
+      {
+        name: 'photo.png',
+        mimeType: 'image/png',
+        fileUri: 'https://example.invalid/files/photo',
+        previewUrl: 'data:image/png;base64,aGVsbG8=',
+      },
+    ]);
+  });
+
+  it('omits uploaded image preview when staged file context and previewDataUrl are both unavailable', () => {
+    const originalCreateObjectURL = URL.createObjectURL;
+    let createObjectURLCalls = 0;
+    URL.createObjectURL = () => {
+      createObjectURLCalls += 1;
+      return 'blob://preview/uploaded';
+    };
+
+    try {
+      const message = buildOptimisticUserMessage('Draft prompt', [], undefined, [
+        {
+          name: 'photo.png',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/photo',
+        },
+      ]);
+
+      expect(message.attachments).toEqual([
+        {
+          name: 'photo.png',
+          mimeType: 'image/png',
+          fileUri: 'https://example.invalid/files/photo',
         },
       ]);
       expect(createObjectURLCalls).toBe(0);

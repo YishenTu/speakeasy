@@ -11,8 +11,9 @@ export function getChatPanelTemplate(): string {
       <section id="speakeasy-panel" class="panel">${getShellTemplate()}
 
         <ol id="speakeasy-messages" class="messages"></ol>
+${getImagePreviewTemplate()}
 ${getComposerTemplate()}
-      </section>${getHistoryTemplate()}${getImagePreviewTemplate()}${getResizeZonesTemplate()}
+      </section>${getHistoryTemplate()}${getResizeZonesTemplate()}
     </div>
   `;
 }

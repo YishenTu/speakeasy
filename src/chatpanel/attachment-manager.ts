@@ -37,12 +37,14 @@ export interface AttachmentManagerDeps {
   localAttachmentPreviewUrls: Map<string, string>;
   onResizeComposer: () => void;
   onError: (message: string) => void;
+  onStagedFilesChanged?: () => void;
   uploadFiles?: (files: File[]) => Promise<FileDataAttachmentPayload[]>;
 }
 
 export interface AttachmentManager {
   stageFromFiles(files: File[]): void;
   getStaged(): readonly StagedFile[];
+  setStagedPreviewsHidden(hidden: boolean): void;
   hasUploadingFiles(): boolean;
   hasFailedFiles(): boolean;
   getUploadedAttachments(): FileDataAttachmentPayload[];
@@ -52,6 +54,7 @@ export interface AttachmentManager {
 
 export function createAttachmentManager(deps: AttachmentManagerDeps): AttachmentManager {
   let stagedFiles: StagedFile[] = [];
+  let stagedPreviewsHidden = false;
   const uploadFiles = deps.uploadFiles ?? uploadFilesToGemini;
 
   function stageFromFiles(files: File[]): void {
@@ -103,7 +106,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
   function renderStagedFiles(): void {
     const fragment = document.createDocumentFragment();
 
-    for (const staged of stagedFiles) {
+    for (const staged of stagedPreviewsHidden ? [] : stagedFiles) {
       const previewItem = document.createElement('div');
       previewItem.className = 'file-preview-item';
       previewItem.dataset.fileId = staged.id;
@@ -179,6 +182,16 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
 
     deps.filePreviews.replaceChildren(fragment);
     deps.onResizeComposer();
+    deps.onStagedFilesChanged?.();
+  }
+
+  function setStagedPreviewsHidden(hidden: boolean): void {
+    if (stagedPreviewsHidden === hidden) {
+      return;
+    }
+
+    stagedPreviewsHidden = hidden;
+    renderStagedFiles();
   }
 
   async function uploadStagedFile(fileId: string): Promise<void> {
@@ -256,6 +269,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
         }
       }
     }
+    stagedPreviewsHidden = false;
     stagedFiles = [];
     renderStagedFiles();
   }
@@ -290,6 +304,7 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
   return {
     stageFromFiles,
     getStaged,
+    setStagedPreviewsHidden,
     hasUploadingFiles,
     hasFailedFiles,
     getUploadedAttachments,

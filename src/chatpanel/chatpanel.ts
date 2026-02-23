@@ -1,8 +1,10 @@
 import {
   type ChatMessage,
   type ChatTabContext,
+  captureTabFullPageScreenshotById,
   createNewChat,
   forkChat,
+  listOpenTabsForMention,
   loadChatMessages,
   regenerateAssistantMessage,
   resolveChatTabContext,
@@ -19,7 +21,7 @@ import {
 import { canSubmitMessage, createConversationFlowController } from './conversation-flow';
 import { createDeleteSessionConfirmation } from './delete-confirmation';
 import { queryRequiredElement } from './dom';
-import { captureAndStageFullPageScreenshot } from './full-page-screenshot';
+import { captureAndStageFullPageScreenshot, toScreenshotFile } from './full-page-screenshot';
 import { createHistoryDropdownController } from './history-dropdown';
 import { createInputToolbar } from './input-toolbar';
 import { isImageMimeType } from './media-helpers';
@@ -33,6 +35,12 @@ import {
 } from './message-renderer';
 import { findLatestAssistantInteractionId } from './optimistic-message';
 import { createPanelLayoutController } from './panel-layout';
+import {
+  type MentionTokenRange,
+  type MentionableTab,
+  createTabMentionController,
+  removeMentionTokenFromInputText,
+} from './tab-mention';
 import { getChatPanelTemplate } from './template';
 
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
@@ -73,23 +81,30 @@ function mountChatPanel(): void {
   const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
   const fileInput = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-file-input');
   const filePreviews = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-file-previews');
-  const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
-  const imagePreviewOverlay = queryRequiredElement<HTMLElement>(
+  const tabMentionMenu = queryRequiredElement<HTMLElement>(
     shadowRoot,
-    '#speakeasy-image-preview-overlay',
+    '#speakeasy-tab-mention-menu',
   );
-  const imagePreviewDialog = queryRequiredElement<HTMLElement>(shadowRoot, '.image-preview-dialog');
-  const imagePreviewCloseButton = queryRequiredElement<HTMLButtonElement>(
+  const tabMentionList = queryRequiredElement<HTMLElement>(
     shadowRoot,
-    '#speakeasy-image-preview-close',
+    '#speakeasy-tab-mention-list',
+  );
+  const tabMentionEmpty = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-tab-mention-empty',
+  );
+  const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
+  const imagePreviewView = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-image-preview-view',
   );
   const imagePreviewElement = queryRequiredElement<HTMLImageElement>(
     shadowRoot,
     '#speakeasy-image-preview-image',
   );
-  const imagePreviewCaption = queryRequiredElement<HTMLElement>(
+  const imagePreviewCloseButton = queryRequiredElement<HTMLButtonElement>(
     shadowRoot,
-    '#speakeasy-image-preview-caption',
+    '#speakeasy-image-preview-close',
   );
   const toolbar = createInputToolbar(shadowRoot);
   const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
@@ -138,11 +153,21 @@ function mountChatPanel(): void {
   });
   layoutController.clampAndSync();
 
-  input.addEventListener('input', resizeComposerInput);
+  input.addEventListener('input', () => {
+    resizeComposerInput();
+    tabMentionController.onInputOrCaretChange();
+  });
+  input.addEventListener('click', () => {
+    tabMentionController.onInputOrCaretChange();
+  });
+  input.addEventListener('keyup', () => {
+    tabMentionController.onInputOrCaretChange();
+  });
 
   let isPanelOpen = false;
   let isBusy = false;
   let isCapturingFullPageScreenshot = false;
+  let isCapturingMentionScreenshot = false;
   let isImagePreviewOpen = false;
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
@@ -177,6 +202,32 @@ function mountChatPanel(): void {
     localAttachmentPreviewUrls,
     onResizeComposer: resizeComposerInput,
     onError: appendLocalError,
+    onStagedFilesChanged: () => {
+      if (!conversationFlow) {
+        return;
+      }
+
+      void conversationFlow.onAttachmentStateChange();
+    },
+  });
+
+  const tabMentionController = createTabMentionController({
+    input,
+    menu: tabMentionMenu,
+    list: tabMentionList,
+    emptyState: tabMentionEmpty,
+    onSelectTab: captureMentionTabScreenshot,
+    listTabs: async () => {
+      const payload = await listOpenTabsForMention();
+      return payload.tabs.map((tab) => ({
+        tabId: tab.tabId,
+        title: tab.title,
+        url: tab.url,
+        hostname: tab.hostname,
+      }));
+    },
+    onError: appendLocalError,
+    isBusy: () => isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot,
   });
 
   async function ensureChatTabContext(): Promise<ChatTabContext> {
@@ -211,6 +262,9 @@ function mountChatPanel(): void {
       activeChatId = id;
     },
     clearStagedFiles: () => attachmentManager.clearStage(true),
+    cancelQueuedSend: () => {
+      conversationFlow?.cancelQueuedSend();
+    },
     renderMessages,
     appendLocalError,
     focusInput: () => input.focus(),
@@ -381,20 +435,6 @@ function mountChatPanel(): void {
     input.focus();
   });
 
-  imagePreviewCloseButton.addEventListener('click', () => {
-    closeImagePreview();
-  });
-
-  imagePreviewOverlay.addEventListener('click', (event) => {
-    if (event.target === imagePreviewOverlay) {
-      closeImagePreview();
-    }
-  });
-
-  imagePreviewDialog.addEventListener('click', (event) => {
-    event.stopPropagation();
-  });
-
   shadowRoot.addEventListener('click', (event) => {
     const target = event.target;
     if (!target || typeof (target as Element).closest !== 'function') {
@@ -404,7 +444,7 @@ function mountChatPanel(): void {
     const image = (target as Element).closest<HTMLImageElement>(
       '[data-speakeasy-preview-image="true"]',
     );
-    if (!image || imagePreviewOverlay.contains(image)) {
+    if (!image || imagePreviewView.contains(image)) {
       return;
     }
 
@@ -416,6 +456,21 @@ function mountChatPanel(): void {
     const imageLabel = image.alt?.trim() ?? '';
     openImagePreview(previewUrl, imageLabel);
   });
+
+  shadowRoot.addEventListener(
+    'keydown',
+    (event) => {
+      if (!('key' in event)) {
+        return;
+      }
+
+      const keyboardEvent = event as KeyboardEvent;
+      if (tabMentionController.onKeyDown(keyboardEvent)) {
+        keyboardEvent.stopPropagation();
+      }
+    },
+    true,
+  );
 
   function appendLocalError(message: string): void {
     appendMessage(
@@ -440,6 +495,10 @@ function mountChatPanel(): void {
     closePanel();
   });
 
+  imagePreviewCloseButton.addEventListener('click', () => {
+    closeImagePreview();
+  });
+
   settingsButton.addEventListener('click', () => {
     void openSettings(messageList, messageRenderOptions);
   });
@@ -449,6 +508,7 @@ function mountChatPanel(): void {
       return;
     }
 
+    conversationFlow?.cancelQueuedSend();
     setBusyState(true);
     try {
       const chatId = await createNewChat(await ensureChatTabContext());
@@ -549,6 +609,7 @@ function mountChatPanel(): void {
     layoutController.cancelInteraction();
     dragEnterDepth = 0;
     form.classList.remove('drop-active');
+    tabMentionController.close();
     closeImagePreview();
     historyDropdown.setOpen(false);
     isPanelOpen = false;
@@ -574,48 +635,50 @@ function mountChatPanel(): void {
   }
 
   function setBusyState(nextBusy: boolean): void {
+    const wasBusy = isBusy;
     isBusy = nextBusy;
-    input.disabled = nextBusy;
+    syncComposerDisabledState();
+    if (nextBusy) {
+      tabMentionController.close();
+    }
     syncToolbarButtonState();
     newChatButton.disabled = nextBusy;
     historyToggleButton.disabled = nextBusy;
     form.toggleAttribute('aria-busy', nextBusy);
     historyDropdown.syncMenuState();
+    if (wasBusy && !nextBusy && conversationFlow) {
+      void conversationFlow.onAttachmentStateChange();
+    }
   }
 
   function syncToolbarButtonState(): void {
-    const toolbarBusy = isBusy || isCapturingFullPageScreenshot;
+    const toolbarBusy = isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot;
     toolbar.attachButton.disabled = toolbarBusy;
     toolbar.captureButton.disabled = toolbarBusy;
+  }
+
+  function syncComposerDisabledState(): void {
+    input.disabled = isBusy || isCapturingMentionScreenshot;
   }
 
   function openImagePreview(imageUrl: string, imageLabel: string): void {
     imagePreviewElement.src = imageUrl;
     imagePreviewElement.alt = imageLabel || 'Image preview';
-
-    if (imageLabel) {
-      imagePreviewCaption.textContent = imageLabel;
-      imagePreviewCaption.hidden = false;
-    } else {
-      imagePreviewCaption.textContent = '';
-      imagePreviewCaption.hidden = true;
-    }
-
-    imagePreviewOverlay.hidden = false;
+    tabMentionController.close();
+    imagePreviewView.hidden = false;
     isImagePreviewOpen = true;
   }
 
   function closeImagePreview(): void {
-    if (!isImagePreviewOpen && imagePreviewOverlay.hidden) {
+    if (!isImagePreviewOpen && imagePreviewView.hidden) {
       return;
     }
 
-    imagePreviewOverlay.hidden = true;
-    imagePreviewCaption.textContent = '';
-    imagePreviewCaption.hidden = true;
+    imagePreviewView.hidden = true;
     imagePreviewElement.removeAttribute('src');
     imagePreviewElement.alt = '';
     isImagePreviewOpen = false;
+    resizeComposerInput();
   }
 
   async function captureFullPageScreenshotIntoAttachments(): Promise<void> {
@@ -645,6 +708,34 @@ function mountChatPanel(): void {
     }
   }
 
+  async function captureMentionTabScreenshot(
+    tab: MentionableTab,
+    token: MentionTokenRange,
+  ): Promise<void> {
+    if (isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot) {
+      return;
+    }
+
+    isCapturingMentionScreenshot = true;
+    syncComposerDisabledState();
+    syncToolbarButtonState();
+
+    const nextComposerState = removeMentionTokenFromInputText(input.value, token);
+    try {
+      const screenshotPayload = await captureTabFullPageScreenshotById(tab.tabId);
+      const screenshotFile = toScreenshotFile(screenshotPayload);
+      attachmentManager.stageFromFiles([screenshotFile]);
+      input.value = nextComposerState.text;
+      input.focus();
+      input.setSelectionRange(nextComposerState.caret, nextComposerState.caret);
+      resizeComposerInput();
+    } finally {
+      isCapturingMentionScreenshot = false;
+      syncComposerDisabledState();
+      syncToolbarButtonState();
+    }
+  }
+
   function rememberLocalAttachmentPreviews(message: ChatMessage): void {
     for (const attachment of message.attachments ?? []) {
       const fileUri = attachment.fileUri?.trim() ?? '';
@@ -654,8 +745,19 @@ function mountChatPanel(): void {
       }
 
       const existing = localAttachmentPreviewUrls.get(fileUri);
-      if (existing && existing !== previewUrl) {
-        URL.revokeObjectURL(existing);
+      if (existing) {
+        if (existing === previewUrl) {
+          continue;
+        }
+
+        // Keep local blob previews because they preserve original fidelity for in-session rehydration.
+        if (isBlobObjectUrl(existing) && !isBlobObjectUrl(previewUrl)) {
+          continue;
+        }
+
+        if (isBlobObjectUrl(existing)) {
+          URL.revokeObjectURL(existing);
+        }
       }
       localAttachmentPreviewUrls.set(fileUri, previewUrl);
     }
@@ -670,7 +772,7 @@ function mountChatPanel(): void {
 
       let changed = false;
       const nextAttachments = attachments.map((attachment) => {
-        if (attachment.previewUrl || !isImageMimeType(attachment.mimeType)) {
+        if (!isImageMimeType(attachment.mimeType)) {
           return attachment;
         }
         const fileUri = attachment.fileUri?.trim() ?? '';
@@ -680,6 +782,11 @@ function mountChatPanel(): void {
 
         const localPreviewUrl = localAttachmentPreviewUrls.get(fileUri);
         if (!localPreviewUrl) {
+          return attachment;
+        }
+
+        const currentPreviewUrl = attachment.previewUrl?.trim() ?? '';
+        if (currentPreviewUrl === localPreviewUrl) {
           return attachment;
         }
 
@@ -720,17 +827,21 @@ function mountChatPanel(): void {
       if (renderedPreviewUrl && renderedPreviewUrl === previewUrl) {
         continue;
       }
-      URL.revokeObjectURL(previewUrl);
+      if (isBlobObjectUrl(previewUrl)) {
+        URL.revokeObjectURL(previewUrl);
+      }
       localAttachmentPreviewUrls.delete(fileUri);
     }
   }
 }
 
+function isBlobObjectUrl(value: string): boolean {
+  return value.startsWith('blob:');
+}
+
 function waitForNextPaint(): Promise<void> {
   return new Promise((resolve) => {
-    window.requestAnimationFrame(() => {
-      resolve();
-    });
+    window.requestAnimationFrame(() => resolve());
   });
 }
 
