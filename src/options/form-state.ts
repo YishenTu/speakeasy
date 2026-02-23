@@ -7,6 +7,7 @@ export function applySettingsToForm(dom: OptionsDom, settings: GeminiSettings): 
   dom.systemInstructionInput.value = settings.systemInstruction;
   dom.storeInteractionsInput.checked = settings.storeInteractions;
   dom.maxToolRoundTripsInput.value = String(settings.maxToolRoundTrips);
+  dom.pageTextExtractionEngineInput.value = settings.pageTextExtractionEngine;
 
   dom.toolGoogleSearch.checked = settings.tools.googleSearch;
   dom.toolGoogleMaps.checked = settings.tools.googleMaps;
@@ -34,6 +35,8 @@ export function readFormState(dom: OptionsDom): Partial<GeminiSettings> {
     systemInstruction: dom.systemInstructionInput.value.trim(),
     storeInteractions: dom.storeInteractionsInput.checked,
     maxToolRoundTrips: Number(dom.maxToolRoundTripsInput.value),
+    pageTextExtractionEngine: dom.pageTextExtractionEngineInput
+      .value as GeminiSettings['pageTextExtractionEngine'],
     tools: {
       googleSearch: dom.toolGoogleSearch.checked,
       googleMaps: dom.toolGoogleMaps.checked,

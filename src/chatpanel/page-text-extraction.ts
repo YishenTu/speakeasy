@@ -1,5 +1,11 @@
+import { Readability } from '@mozilla/readability';
 import Defuddle, { type DefuddleOptions, type DefuddleResponse } from 'defuddle/full';
+import TurndownService from 'turndown';
 import type { TabExtractTextPayload } from '../shared/runtime';
+import {
+  DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE,
+  type PageTextExtractionEngine,
+} from '../shared/settings';
 
 const SPEAKEASY_OVERLAY_ROOT_SELECTOR = '#speakeasy-overlay-root';
 const DEFAULT_EXTRACTED_TEXT_FILE_BASENAME = 'speakeasy-page-extract';
@@ -9,21 +15,45 @@ type DefuddleExtractor = {
   parse: () => Pick<DefuddleResponse, 'content' | 'contentMarkdown' | 'title'>;
 };
 
-export interface ExtractAndStageCurrentTabTextDependencies {
-  stageFromFiles: (files: File[]) => void;
-  sourceDocument?: Document;
-  sourceTitle?: string;
-  sourceUrl?: string;
-  parseHtmlToDocument?: (html: string) => Document;
-  createDefuddle?: (doc: Document, options: DefuddleOptions) => DefuddleExtractor;
+type ReadabilityExtractor = {
+  parse: () => ReadabilityParseResult | null;
+};
+
+type ReadabilityParseResult = {
+  content: string | null | undefined;
+  textContent: string | null | undefined;
+  title: string | null | undefined;
+};
+
+interface ExtractedPageContent {
+  markdown: string;
 }
 
+interface ExtractionEngineAdapterInput {
+  extractionDocument: Document;
+  sourceUrl: string;
+  parseHtmlToDocument: (html: string) => Document;
+  createDefuddle: ((doc: Document, options: DefuddleOptions) => DefuddleExtractor) | undefined;
+  createReadability: ((doc: Document) => ReadabilityExtractor) | undefined;
+  convertHtmlToMarkdown: ((html: string) => string) | undefined;
+}
+
+type ExtractionEngineAdapter = (input: ExtractionEngineAdapterInput) => ExtractedPageContent;
+
 export interface ExtractCurrentTabTextDependencies {
+  extractionEngine?: PageTextExtractionEngine;
   sourceDocument?: Document;
   sourceTitle?: string;
   sourceUrl?: string;
   parseHtmlToDocument?: (html: string) => Document;
   createDefuddle?: (doc: Document, options: DefuddleOptions) => DefuddleExtractor;
+  createReadability?: (doc: Document) => ReadabilityExtractor;
+  convertHtmlToMarkdown?: (html: string) => string;
+}
+
+export interface ExtractAndStageCurrentTabTextDependencies
+  extends ExtractCurrentTabTextDependencies {
+  stageFromFiles: (files: File[]) => void;
 }
 
 interface ExtractedTextFileInput {
@@ -60,22 +90,25 @@ export function extractCurrentTabText(
   extractionDocument.querySelector(SPEAKEASY_OVERLAY_ROOT_SELECTOR)?.remove();
 
   const sourceUrl = resolveSourceUrl(dependencies.sourceUrl, sourceDocument);
-  const createDefuddle =
-    dependencies.createDefuddle ??
-    ((doc: Document, options: DefuddleOptions) => new Defuddle(doc, options));
-  const extracted = createDefuddle(extractionDocument, {
-    url: sourceUrl,
-    markdown: true,
-  }).parse();
-
-  const markdown = resolveExtractedMarkdown(extracted);
-  if (!markdown) {
-    throw new Error('Defuddle returned no readable text for this page.');
+  const extractionEngine = dependencies.extractionEngine ?? DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE;
+  const content = extractPageContentByEngine({
+    extractionDocument,
+    sourceUrl,
+    parseHtmlToDocument,
+    extractionEngine,
+    createDefuddle: dependencies.createDefuddle,
+    createReadability: dependencies.createReadability,
+    convertHtmlToMarkdown: dependencies.convertHtmlToMarkdown,
+  });
+  if (!content.markdown) {
+    throw new Error(
+      `${toExtractionEngineLabel(extractionEngine)} returned no readable text for this page.`,
+    );
   }
 
   const sourceTitle = resolveSourceTitle(dependencies.sourceTitle, sourceDocument);
   return {
-    markdown,
+    markdown: content.markdown,
     title: sourceTitle,
     url: sourceUrl,
   };
@@ -96,6 +129,89 @@ function resolveExtractedMarkdown(
   extracted: Pick<DefuddleResponse, 'content' | 'contentMarkdown'>,
 ): string {
   return extracted.contentMarkdown?.trim() || extracted.content?.trim() || '';
+}
+
+const EXTRACT_CONTENT_ADAPTERS: Record<PageTextExtractionEngine, ExtractionEngineAdapter> = {
+  defuddle: extractContentWithDefuddle,
+  readability: extractContentWithReadability,
+};
+
+interface ExtractPageContentByEngineInput extends ExtractionEngineAdapterInput {
+  extractionEngine: PageTextExtractionEngine;
+}
+
+function extractPageContentByEngine(input: ExtractPageContentByEngineInput): ExtractedPageContent {
+  const extract = EXTRACT_CONTENT_ADAPTERS[input.extractionEngine];
+  return extract(input);
+}
+
+function extractContentWithDefuddle(input: ExtractionEngineAdapterInput): ExtractedPageContent {
+  const createDefuddle =
+    input.createDefuddle ??
+    ((doc: Document, options: DefuddleOptions) => new Defuddle(doc, options));
+  const extracted = createDefuddle(input.extractionDocument, {
+    url: input.sourceUrl,
+    markdown: true,
+  }).parse();
+  return { markdown: resolveExtractedMarkdown(extracted) };
+}
+
+function extractContentWithReadability(input: ExtractionEngineAdapterInput): ExtractedPageContent {
+  const createReadability = input.createReadability ?? ((doc: Document) => new Readability(doc));
+  const parsed = createReadability(input.extractionDocument).parse();
+  if (!parsed) {
+    return { markdown: '' };
+  }
+
+  const convertHtmlToMarkdown =
+    input.convertHtmlToMarkdown ??
+    ((html: string) => convertHtmlToMarkdownWithTurndown(html, input.parseHtmlToDocument));
+
+  const markdownFromHtml = convertHtmlToMarkdown(parsed.content ?? '').trim();
+  if (markdownFromHtml) {
+    return { markdown: markdownFromHtml };
+  }
+
+  return { markdown: normalizeReadabilityText(parsed.textContent ?? '') };
+}
+
+function convertHtmlToMarkdownWithTurndown(
+  html: string,
+  parseHtmlToDocument: (html: string) => Document,
+): string {
+  const content = html.trim();
+  if (!content) {
+    return '';
+  }
+
+  const readabilityDocument = parseHtmlToDocument(content);
+  const body = readabilityDocument.body;
+  if (!body) {
+    return '';
+  }
+
+  const turndown = new TurndownService({
+    headingStyle: 'atx',
+    bulletListMarker: '-',
+    codeBlockStyle: 'fenced',
+    emDelimiter: '_',
+    strongDelimiter: '**',
+  });
+
+  return turndown.turndown(body).trim();
+}
+
+function normalizeReadabilityText(value: string): string {
+  return value
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function toExtractionEngineLabel(engine: PageTextExtractionEngine): string {
+  return engine === 'readability' ? 'Readability' : 'Defuddle';
 }
 
 function resolveSourceUrl(explicitSourceUrl: string | undefined, sourceDocument: Document): string {

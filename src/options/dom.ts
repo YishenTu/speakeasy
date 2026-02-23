@@ -7,6 +7,7 @@ export interface OptionsDom {
   systemInstructionInput: HTMLTextAreaElement;
   storeInteractionsInput: HTMLInputElement;
   maxToolRoundTripsInput: HTMLInputElement;
+  pageTextExtractionEngineInput: HTMLSelectElement;
   toolGoogleSearch: HTMLInputElement;
   toolGoogleMaps: HTMLInputElement;
   toolCodeExecution: HTMLInputElement;
@@ -32,6 +33,9 @@ export function getOptionsDom(): OptionsDom {
     systemInstructionInput: queryRequiredElement<HTMLTextAreaElement>('#system-instruction'),
     storeInteractionsInput: queryRequiredElement<HTMLInputElement>('#store-interactions'),
     maxToolRoundTripsInput: queryRequiredElement<HTMLInputElement>('#max-tool-round-trips'),
+    pageTextExtractionEngineInput: queryRequiredElement<HTMLSelectElement>(
+      '#page-text-extraction-engine',
+    ),
     toolGoogleSearch: queryRequiredElement<HTMLInputElement>('#tool-google-search'),
     toolGoogleMaps: queryRequiredElement<HTMLInputElement>('#tool-google-maps'),
     toolCodeExecution: queryRequiredElement<HTMLInputElement>('#tool-code-execution'),

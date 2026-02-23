@@ -9,12 +9,17 @@ export interface GeminiToolSettings {
   functionCalling: boolean;
 }
 
+export const PAGE_TEXT_EXTRACTION_ENGINES = ['defuddle', 'readability'] as const;
+export type PageTextExtractionEngine = (typeof PAGE_TEXT_EXTRACTION_ENGINES)[number];
+export const DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE: PageTextExtractionEngine = 'defuddle';
+
 export interface GeminiSettings {
   apiKey: string;
   model: string;
   systemInstruction: string;
   storeInteractions: boolean;
   maxToolRoundTrips: number;
+  pageTextExtractionEngine: PageTextExtractionEngine;
   tools: GeminiToolSettings;
   fileSearchStoreNames: string[];
   mcpServerUrls: string[];
@@ -35,6 +40,7 @@ const DEFAULT_SETTINGS: GeminiSettings = {
   systemInstruction: '',
   storeInteractions: true,
   maxToolRoundTrips: 6,
+  pageTextExtractionEngine: DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE,
   tools: {
     googleSearch: true,
     googleMaps: false,
@@ -107,6 +113,19 @@ function sanitizeStringList(value: unknown): string[] {
   return [...unique];
 }
 
+function toPageTextExtractionEngineOrDefault(
+  value: unknown,
+  fallback: PageTextExtractionEngine,
+): PageTextExtractionEngine {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  return PAGE_TEXT_EXTRACTION_ENGINES.includes(value as PageTextExtractionEngine)
+    ? (value as PageTextExtractionEngine)
+    : fallback;
+}
+
 export function parseCommaSeparatedList(raw: string): string[] {
   const unique = new Set<string>();
   for (const segment of raw.split(',')) {
@@ -141,6 +160,10 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
       1,
       20,
       DEFAULT_SETTINGS.maxToolRoundTrips,
+    ),
+    pageTextExtractionEngine: toPageTextExtractionEngineOrDefault(
+      settings.pageTextExtractionEngine,
+      DEFAULT_SETTINGS.pageTextExtractionEngine,
     ),
     tools: {
       googleSearch: toBooleanOrDefault(tools.googleSearch, DEFAULT_SETTINGS.tools.googleSearch),

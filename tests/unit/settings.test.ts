@@ -16,6 +16,7 @@ describe('defaultGeminiSettings', () => {
       systemInstruction: '',
       storeInteractions: true,
       maxToolRoundTrips: 6,
+      pageTextExtractionEngine: 'defuddle',
       tools: {
         googleSearch: true,
         googleMaps: false,
@@ -47,6 +48,7 @@ describe('normalizeGeminiSettings', () => {
       systemInstruction: null,
       storeInteractions: 'yes',
       maxToolRoundTrips: '7',
+      pageTextExtractionEngine: 'invalid',
       tools: {
         googleSearch: 'yes',
         googleMaps: true,
@@ -69,6 +71,7 @@ describe('normalizeGeminiSettings', () => {
     expect(normalized.systemInstruction).toBe('');
     expect(normalized.storeInteractions).toBe(true);
     expect(normalized.maxToolRoundTrips).toBe(6);
+    expect(normalized.pageTextExtractionEngine).toBe('defuddle');
     expect(normalized.tools).toEqual({
       googleSearch: true,
       googleMaps: true,
@@ -97,6 +100,9 @@ describe('normalizeGeminiSettings', () => {
       normalizeGeminiSettings({ mapsLatitude: Number.POSITIVE_INFINITY }).mapsLatitude,
     ).toBeNull();
     expect(normalizeGeminiSettings({ mapsLongitude: ' -73.98 ' }).mapsLongitude).toBe(-73.98);
+    expect(
+      normalizeGeminiSettings({ pageTextExtractionEngine: 'readability' }).pageTextExtractionEngine,
+    ).toBe('readability');
   });
 });
 

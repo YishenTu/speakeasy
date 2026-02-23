@@ -22,6 +22,7 @@
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
     "@types/chrome": "0.0.293",
+    "@types/turndown": "5.0.6",
     "dependency-cruiser": "17.3.8",
     "fake-indexeddb": "6.2.5",
     "happy-dom": "20.7.0",
@@ -31,12 +32,14 @@
   "dependencies": {
     "@google/genai": "1.42.0",
     "@modelcontextprotocol/sdk": "1.26.0",
+    "@mozilla/readability": "0.6.0",
     "baseline-browser-mapping": "2.10.0",
     "caniuse-lite": "1.0.30001770",
     "defuddle": "0.7.0",
     "dompurify": "3.3.1",
     "highlight.js": "11.11.1",
     "katex": "0.16.28",
-    "marked": "17.0.3"
+    "marked": "17.0.3",
+    "turndown": "7.2.2"
   }
 }

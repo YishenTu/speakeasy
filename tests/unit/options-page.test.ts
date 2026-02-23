@@ -25,6 +25,7 @@ describe('options page bootstrap', () => {
       apiKey: 'init-key',
       customModels: ['gemini-3.2-custom'],
       maxToolRoundTrips: 7,
+      pageTextExtractionEngine: 'readability',
     };
     installChromeOptionsMock();
 
@@ -34,6 +35,9 @@ describe('options page bootstrap', () => {
     expect(document.getElementById('version')?.textContent).toBe('9.9.9');
     expect((document.getElementById('api-key') as HTMLInputElement).value).toBe('init-key');
     expect((document.getElementById('model') as HTMLInputElement).value).toBe('gemini-3.2-custom');
+    expect(
+      (document.getElementById('page-text-extraction-engine') as HTMLSelectElement).value,
+    ).toBe('readability');
     expect(document.getElementById('save-status')?.textContent).toBe('Ready.');
   });
 
@@ -71,17 +75,25 @@ describe('options page bootstrap', () => {
     (document.getElementById('api-key') as HTMLInputElement).value = 'live-key';
     (document.getElementById('model') as HTMLInputElement).value = 'gemini-3.2-custom';
     (document.getElementById('max-tool-round-trips') as HTMLInputElement).value = '4';
+    (document.getElementById('page-text-extraction-engine') as HTMLSelectElement).value =
+      'readability';
     const form = document.getElementById('settings-form') as HTMLFormElement;
     form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
     await flushTasks();
 
     expect(savedItems).toHaveLength(1);
     const persisted = savedItems[0]?.[GEMINI_SETTINGS_STORAGE_KEY] as
-      | { apiKey?: string; customModels?: string[]; maxToolRoundTrips?: number }
+      | {
+          apiKey?: string;
+          customModels?: string[];
+          maxToolRoundTrips?: number;
+          pageTextExtractionEngine?: string;
+        }
       | undefined;
     expect(persisted?.apiKey).toBe('live-key');
     expect(persisted?.customModels).toEqual(['gemini-3.2-custom']);
     expect(persisted?.maxToolRoundTrips).toBe(4);
+    expect(persisted?.pageTextExtractionEngine).toBe('readability');
     expect(document.getElementById('save-status')?.textContent).toBe('Saved Gemini settings.');
   });
 
@@ -125,6 +137,7 @@ function buildOptionsPageFixtureHtml(): string {
           <textarea id="system-instruction"></textarea>
           <input id="store-interactions" type="checkbox" />
           <input id="max-tool-round-trips" value="8" />
+          <input id="page-text-extraction-engine" />
           <input id="tool-google-search" type="checkbox" />
           <input id="tool-google-maps" type="checkbox" />
           <input id="tool-code-execution" type="checkbox" />

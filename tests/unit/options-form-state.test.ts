@@ -11,6 +11,10 @@ function createTextArea(value = ''): HTMLTextAreaElement {
   return { value } as HTMLTextAreaElement;
 }
 
+function createSelect(value = 'defuddle'): HTMLSelectElement {
+  return { value } as HTMLSelectElement;
+}
+
 function createOptionsDomStub(): OptionsDom {
   return {
     form: {} as HTMLFormElement,
@@ -21,6 +25,7 @@ function createOptionsDomStub(): OptionsDom {
     systemInstructionInput: createTextArea(),
     storeInteractionsInput: createInput('', false),
     maxToolRoundTripsInput: createInput(),
+    pageTextExtractionEngineInput: createSelect(),
     toolGoogleSearch: createInput('', false),
     toolGoogleMaps: createInput('', false),
     toolCodeExecution: createInput('', false),
@@ -47,6 +52,7 @@ describe('options form state', () => {
     settings.systemInstruction = 'Be direct.';
     settings.storeInteractions = false;
     settings.maxToolRoundTrips = 9;
+    settings.pageTextExtractionEngine = 'readability';
     settings.tools.googleSearch = false;
     settings.tools.googleMaps = true;
     settings.tools.codeExecution = false;
@@ -68,6 +74,7 @@ describe('options form state', () => {
     expect(dom.systemInstructionInput.value).toBe('Be direct.');
     expect(dom.storeInteractionsInput.checked).toBe(false);
     expect(dom.maxToolRoundTripsInput.value).toBe('9');
+    expect(dom.pageTextExtractionEngineInput.value).toBe('readability');
     expect(dom.toolGoogleSearch.checked).toBe(false);
     expect(dom.toolGoogleMaps.checked).toBe(true);
     expect(dom.toolCodeExecution.checked).toBe(false);
@@ -102,6 +109,7 @@ describe('options form state', () => {
     dom.systemInstructionInput.value = '  Use tools when needed. ';
     dom.storeInteractionsInput.checked = true;
     dom.maxToolRoundTripsInput.value = '7';
+    dom.pageTextExtractionEngineInput.value = 'readability';
     dom.toolGoogleSearch.checked = true;
     dom.toolGoogleMaps.checked = false;
     dom.toolCodeExecution.checked = true;
@@ -125,6 +133,7 @@ describe('options form state', () => {
       systemInstruction: 'Use tools when needed.',
       storeInteractions: true,
       maxToolRoundTrips: 7,
+      pageTextExtractionEngine: 'readability',
       tools: {
         googleSearch: true,
         googleMaps: false,

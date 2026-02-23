@@ -20,6 +20,7 @@ describe('options dom helpers', () => {
     expect(optionsDom.form.id).toBe('settings-form');
     expect(optionsDom.apiKeyInput.id).toBe('api-key');
     expect(optionsDom.modelInput.id).toBe('model');
+    expect(optionsDom.pageTextExtractionEngineInput.id).toBe('page-text-extraction-engine');
     expect(optionsDom.statusNode.id).toBe('save-status');
   });
 
@@ -54,6 +55,7 @@ function buildOptionsFixtureHtml(): string {
         <textarea id="system-instruction"></textarea>
         <input id="store-interactions" type="checkbox" />
         <input id="max-tool-round-trips" />
+        <select id="page-text-extraction-engine"></select>
         <input id="tool-google-search" type="checkbox" />
         <input id="tool-google-maps" type="checkbox" />
         <input id="tool-code-execution" type="checkbox" />

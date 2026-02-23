@@ -110,6 +110,93 @@ describe('chatpanel page text extraction', () => {
     ).rejects.toThrow(/no readable text/i);
   });
 
+  it('extracts markdown with readability when configured', async () => {
+    const stagedFiles: File[][] = [];
+    const textFile = await extractAndStageCurrentTabText({
+      stageFromFiles: (files) => {
+        stagedFiles.push(files);
+      },
+      sourceTitle: 'Readability Tab',
+      sourceUrl: 'https://example.test/readability',
+      extractionEngine: 'readability',
+      parseHtmlToDocument: (html) => {
+        const parsed = document.implementation.createHTMLDocument('Readability');
+        parsed.open();
+        parsed.write(html);
+        parsed.close();
+        return parsed;
+      },
+      createReadability: (doc) => {
+        expect(doc.getElementById('speakeasy-overlay-root')).toBeNull();
+        return {
+          parse: () => ({
+            title: 'Readable',
+            content: '<h1>Readable</h1><p>Body paragraph</p>',
+          }),
+        };
+      },
+      convertHtmlToMarkdown: (html) => {
+        expect(html).toContain('<h1>Readable</h1>');
+        return '# Readable\n\nBody paragraph';
+      },
+    });
+
+    expect(stagedFiles).toHaveLength(1);
+    expect(stagedFiles[0]?.[0]).toBe(textFile);
+    expect(textFile.name).toBe('Readability Tab.md');
+    expect(await textFile.text()).toBe('# Readable\n\nBody paragraph');
+  });
+
+  it('throws when readability extraction returns empty content', async () => {
+    await expect(
+      extractAndStageCurrentTabText({
+        stageFromFiles: () => {},
+        extractionEngine: 'readability',
+        parseHtmlToDocument: (html) => {
+          const parsed = document.implementation.createHTMLDocument('Readability');
+          parsed.open();
+          parsed.write(html);
+          parsed.close();
+          return parsed;
+        },
+        createReadability: () => ({
+          parse: () => ({
+            title: 'Readable',
+            content: ' ',
+          }),
+        }),
+      }),
+    ).rejects.toThrow(/no readable text/i);
+  });
+
+  it('converts readability HTML to markdown with turndown by default', async () => {
+    const textFile = await extractAndStageCurrentTabText({
+      stageFromFiles: () => {},
+      sourceTitle: 'Readability Turndown',
+      extractionEngine: 'readability',
+      parseHtmlToDocument: (html) => {
+        const parsed = document.implementation.createHTMLDocument('Readability');
+        parsed.open();
+        parsed.write(html);
+        parsed.close();
+        return parsed;
+      },
+      createReadability: () => ({
+        parse: () => ({
+          title: 'Readable',
+          content: '<h1>Readable</h1><p>Body paragraph</p><ul><li>first</li><li>second</li></ul>',
+          textContent: null,
+        }),
+      }),
+    });
+
+    const markdown = await textFile.text();
+    expect(markdown).toContain('# Readable');
+    expect(markdown).toContain('Body paragraph');
+    expect(markdown).toContain('-   first');
+    expect(markdown).toContain('-   second');
+  });
+
   it('uses a stable fallback file name when title is missing', async () => {
     const file = toExtractedTextFile({
       markdown: '# Untitled',

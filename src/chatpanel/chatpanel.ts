@@ -12,8 +12,14 @@ import {
   sendMessage,
   switchAssistantBranch,
 } from '../shared/chat';
-import type { RuntimeResponse } from '../shared/runtime';
+import type { RuntimeResponse, TabExtractTextPayload } from '../shared/runtime';
 import { requestOpenOptionsPage } from '../shared/runtime-client';
+import {
+  DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE,
+  GEMINI_SETTINGS_STORAGE_KEY,
+  type PageTextExtractionEngine,
+  normalizeGeminiSettings,
+} from '../shared/settings';
 import { isTabExtractTextMessageRequest } from '../shared/tab-text-extraction-message';
 import { isRecord } from '../shared/utils';
 import {
@@ -206,6 +212,39 @@ function mountChatPanel(): void {
   const localAttachmentPreviewUrls = new Map<string, string>();
   const localAttachmentPreviewTextByFileUri = new Map<string, string>();
   let conversationFlow: ReturnType<typeof createConversationFlowController> | null = null;
+  let pageTextExtractionEngine: PageTextExtractionEngine = DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE;
+  let hasLoadedPageTextExtractionEngine = false;
+  const loadPageTextExtractionEnginePromise = loadPageTextExtractionEngine();
+
+  function applyPageTextExtractionEngine(rawSettings: unknown): void {
+    pageTextExtractionEngine = normalizeGeminiSettings(rawSettings).pageTextExtractionEngine;
+    hasLoadedPageTextExtractionEngine = true;
+  }
+
+  async function loadPageTextExtractionEngine(): Promise<void> {
+    try {
+      const stored = await chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY);
+      applyPageTextExtractionEngine(stored[GEMINI_SETTINGS_STORAGE_KEY]);
+    } catch {
+      hasLoadedPageTextExtractionEngine = true;
+    }
+  }
+
+  async function resolvePageTextExtractionEngine(): Promise<PageTextExtractionEngine> {
+    if (!hasLoadedPageTextExtractionEngine) {
+      await loadPageTextExtractionEnginePromise;
+    }
+    return pageTextExtractionEngine;
+  }
+
+  chrome.storage.onChanged.addListener((changes) => {
+    const settingsChange = changes[GEMINI_SETTINGS_STORAGE_KEY];
+    if (!settingsChange) {
+      return;
+    }
+    applyPageTextExtractionEngine(settingsChange.newValue);
+  });
+
   const messageRenderOptions: MessageRenderOptions = {
     onAssistantAction: (action, message) => {
       if (!conversationFlow) {
@@ -604,20 +643,7 @@ function mountChatPanel(): void {
 
   chrome.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
     if (isTabExtractTextMessageRequest(request)) {
-      try {
-        const payload = extractCurrentTabText();
-        const response: RuntimeResponse<typeof payload> = {
-          ok: true,
-          payload,
-        };
-        sendResponse(response);
-      } catch (error: unknown) {
-        const response: RuntimeResponse<never> = {
-          ok: false,
-          error: toErrorMessage(error),
-        };
-        sendResponse(response);
-      }
+      void handleTabExtractTextMessage(sendResponse);
 
       return true;
     }
@@ -651,6 +677,30 @@ function mountChatPanel(): void {
 
     return false;
   });
+
+  async function handleTabExtractTextMessage(
+    sendResponse: (
+      response: RuntimeResponse<TabExtractTextPayload> | RuntimeResponse<never>,
+    ) => void,
+  ): Promise<void> {
+    try {
+      const extractionEngine = await resolvePageTextExtractionEngine();
+      const payload = extractCurrentTabText({
+        extractionEngine,
+      });
+      const response: RuntimeResponse<typeof payload> = {
+        ok: true,
+        payload,
+      };
+      sendResponse(response);
+    } catch (error: unknown) {
+      const response: RuntimeResponse<never> = {
+        ok: false,
+        error: toErrorMessage(error),
+      };
+      sendResponse(response);
+    }
+  }
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && isPanelOpen) {
@@ -823,8 +873,10 @@ function mountChatPanel(): void {
     syncToolbarButtonState();
 
     try {
+      const extractionEngine = await resolvePageTextExtractionEngine();
       await extractAndStageCurrentTabText({
         stageFromFiles: (files) => attachmentManager.stageFromFiles(files),
+        extractionEngine,
       });
     } catch (error: unknown) {
       appendLocalError(toErrorMessage(error));
