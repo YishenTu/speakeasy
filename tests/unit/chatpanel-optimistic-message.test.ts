@@ -41,11 +41,13 @@ describe('chatpanel optimistic message', () => {
             file: imageFile,
             name: 'photo.png',
             mimeType: 'IMAGE/PNG',
+            uploadState: 'uploading',
           },
           {
             file: textFile,
             name: 'note.txt',
             mimeType: 'text/plain',
+            uploadState: 'uploading',
           },
         ],
         undefined,
@@ -56,10 +58,12 @@ describe('chatpanel optimistic message', () => {
           name: 'photo.png',
           mimeType: 'IMAGE/PNG',
           previewUrl: 'blob://preview/1',
+          uploadState: 'uploading',
         },
         {
           name: 'note.txt',
           mimeType: 'text/plain',
+          uploadState: 'uploading',
         },
       ]);
       expect(createObjectURLCalls).toEqual(['photo.png']);

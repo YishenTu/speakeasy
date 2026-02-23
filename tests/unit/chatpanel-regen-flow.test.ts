@@ -1110,7 +1110,7 @@ describe('chatpanel regenerate flow', () => {
     });
   });
 
-  it('starts uploading on attach and blocks submit until image upload finishes', async () => {
+  it('queues submit while image upload is in-flight and auto-sends when upload finishes', async () => {
     const testWindow = getTestWindow();
     currentMessages = [];
     listSessionsPayload = [];
@@ -1154,9 +1154,19 @@ describe('chatpanel regenerate flow', () => {
     await flushMicrotasks(10);
 
     expect(sendRequest).toBeNull();
-    expect(messageList.textContent).toContain(
+    expect(input.value).toBe('');
+    expect(messageList.textContent).not.toContain(
       'Please wait for file uploads to finish before sending.',
     );
+    expect(messageList.textContent).toContain('Describe this image.');
+    expect(
+      messageList.querySelector('.message-attachment-strip .file-preview-item'),
+    ).not.toBeNull();
+    expect(
+      messageList.querySelectorAll('.message-attachment-strip .file-preview-spinner'),
+    ).toHaveLength(1);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-item')).toHaveLength(0);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-spinner')).toHaveLength(0);
 
     pendingUpload.resolve({
       ok: true,
@@ -1171,12 +1181,10 @@ describe('chatpanel regenerate flow', () => {
         failures: [],
       },
     });
-    await flushMicrotasks(16);
+    await flushMicrotasks(24);
 
     expect(filePreviewContainer.querySelector('.file-preview-spinner')).toBeNull();
-
-    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
-    await flushMicrotasks(16);
+    expect(messageList.querySelector('.message-attachment-strip .file-preview-spinner')).toBeNull();
 
     expect(sendRequest?.type).toBe('chat/send');
     expect(sendRequest?.attachments).toHaveLength(1);

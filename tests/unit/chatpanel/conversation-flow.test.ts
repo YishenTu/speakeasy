@@ -49,7 +49,7 @@ function createDeferred<T>(): Deferred<T> {
 function createHarness(options: HarnessOptions = {}) {
   let composerText = options.composerText ?? '';
   let stagedFiles = options.stagedFiles ?? [];
-  const uploadedAttachments = options.uploadedAttachments ?? [];
+  let uploadedAttachments = options.uploadedAttachments ?? [];
   let busy = false;
 
   const appendCalls: ChatMessage[] = [];
@@ -59,6 +59,7 @@ function createHarness(options: HarnessOptions = {}) {
   const busyTransitions: boolean[] = [];
   const setComposerTextCalls: string[] = [];
   const clearStageCalls: boolean[] = [];
+  const setStagedPreviewsHiddenCalls: boolean[] = [];
   const sendCalls: Array<{
     userInput: string;
     model: string;
@@ -128,6 +129,9 @@ function createHarness(options: HarnessOptions = {}) {
     },
     attachmentManager: {
       getStaged: () => stagedFiles,
+      setStagedPreviewsHidden: (hidden) => {
+        setStagedPreviewsHiddenCalls.push(hidden);
+      },
       hasUploadingFiles: () => stagedFiles.some((staged) => staged.uploadState === 'uploading'),
       hasFailedFiles: () => stagedFiles.some((staged) => staged.uploadState === 'failed'),
       getUploadedAttachments: () => uploadedAttachments,
@@ -201,12 +205,19 @@ function createHarness(options: HarnessOptions = {}) {
     busyTransitions,
     setComposerTextCalls,
     clearStageCalls,
+    setStagedPreviewsHiddenCalls,
     sendCalls,
     regenerateCalls,
     forkCalls,
     switchCalls,
     historySetOpenCalls,
     rememberedPreviewMessages,
+    setStagedFiles: (nextStagedFiles: StagedFile[]) => {
+      stagedFiles = nextStagedFiles;
+    },
+    setUploadedAttachments: (nextUploadedAttachments: FileDataAttachmentPayload[]) => {
+      uploadedAttachments = nextUploadedAttachments;
+    },
     getHistoryReloadCount: () => historyReloadCount,
     getComposerFocusCount: () => composerFocusCount,
     getComposerResizeCount: () => composerResizeCount,
@@ -263,7 +274,7 @@ describe('conversation flow controller', () => {
     expect(harness.getHistoryReloadCount()).toBe(1);
   });
 
-  test('send flow blocks while staged uploads are still in progress', async () => {
+  test('send flow queues while staged uploads are still in progress without surfacing warnings', async () => {
     const harness = createHarness({
       composerText: 'Upload pending',
       stagedFiles: [createStagedFile('pending', 'uploading')],
@@ -272,9 +283,73 @@ describe('conversation flow controller', () => {
     await harness.flow.send();
 
     expect(harness.sendCalls).toHaveLength(0);
-    expect(harness.localErrors).toEqual(['Please wait for file uploads to finish before sending.']);
+    expect(harness.localErrors).toEqual([]);
     expect(harness.busyTransitions).toEqual([]);
-    expect(harness.appendCalls).toHaveLength(0);
+    expect(harness.appendCalls).toHaveLength(1);
+    expect(harness.appendCalls[0]?.role).toBe('user');
+    expect(harness.appendCalls[0]?.content).toBe('Upload pending');
+    expect(harness.setComposerTextCalls).toEqual(['']);
+    expect(harness.getComposerResizeCount()).toBe(1);
+    expect(harness.getComposerFocusCount()).toBe(1);
+    expect(harness.setStagedPreviewsHiddenCalls).toEqual([true]);
+  });
+
+  test('send flow dispatches queued submission once uploads finish', async () => {
+    const uploadedAttachment: FileDataAttachmentPayload = {
+      name: 'pending.txt',
+      mimeType: 'text/plain',
+      fileUri: 'https://example.invalid/files/pending',
+    };
+    const harness = createHarness({
+      composerText: 'Upload pending',
+      stagedFiles: [createStagedFile('pending', 'uploading')],
+    });
+
+    await harness.flow.send();
+    expect(harness.sendCalls).toHaveLength(0);
+    const queuedMessageId = harness.appendCalls[0]?.id;
+    expect(queuedMessageId).toBeTruthy();
+
+    harness.setStagedFiles([
+      {
+        ...createStagedFile('pending', 'uploaded'),
+        uploadedAttachment,
+      },
+    ]);
+    harness.setUploadedAttachments([uploadedAttachment]);
+
+    await harness.flow.onAttachmentStateChange();
+
+    expect(harness.sendCalls).toHaveLength(1);
+    expect(harness.sendCalls[0]?.userInput).toBe('Upload pending');
+    expect(harness.sendCalls[0]?.attachments).toEqual([uploadedAttachment]);
+    expect(harness.appendCalls).toHaveLength(2);
+    expect(harness.appendCalls[1]?.role).toBe('assistant');
+    expect(harness.replaceCalls).toHaveLength(2);
+    expect(harness.replaceCalls[0]?.messageId).toBe(queuedMessageId);
+    expect(harness.clearStageCalls).toEqual([true]);
+    expect(harness.setComposerTextCalls).toEqual(['']);
+    expect(harness.setStagedPreviewsHiddenCalls).toEqual([true]);
+    expect(harness.localErrors).toEqual([]);
+  });
+
+  test('queued send restores composer when an upload fails before dispatch', async () => {
+    const harness = createHarness({
+      composerText: 'Upload pending',
+      stagedFiles: [createStagedFile('pending', 'uploading')],
+    });
+
+    await harness.flow.send();
+    const queuedMessageId = harness.appendCalls[0]?.id;
+    expect(queuedMessageId).toBeTruthy();
+
+    harness.setStagedFiles([createStagedFile('pending', 'failed')]);
+    await harness.flow.onAttachmentStateChange();
+
+    expect(harness.sendCalls).toHaveLength(0);
+    expect(harness.removeCalls).toEqual([queuedMessageId as string]);
+    expect(harness.setComposerTextCalls).toEqual(['', 'Upload pending']);
+    expect(harness.setStagedPreviewsHiddenCalls).toEqual([true, false]);
   });
 
   test('stream deltas patch the assistant placeholder before final assistant reconciliation', async () => {

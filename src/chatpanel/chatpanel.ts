@@ -198,6 +198,13 @@ function mountChatPanel(): void {
     localAttachmentPreviewUrls,
     onResizeComposer: resizeComposerInput,
     onError: appendLocalError,
+    onStagedFilesChanged: () => {
+      if (!conversationFlow) {
+        return;
+      }
+
+      void conversationFlow.onAttachmentStateChange();
+    },
   });
 
   const tabMentionController = createTabMentionController({

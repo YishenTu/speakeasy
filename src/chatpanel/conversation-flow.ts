@@ -10,6 +10,23 @@ type ActiveStreamDraft = {
   thinkingSummary: string;
 };
 
+type QueuedSendDraft = {
+  userText: string;
+  optimisticUserMessageId: string;
+  previousInteractionId: string | undefined;
+};
+
+type StagedAttachmentFile = ReturnType<AttachmentManager['getStaged']>[number];
+
+type DispatchSendInput = {
+  userText: string;
+  stagedSnapshot: readonly StagedAttachmentFile[];
+  attachmentsForSend: readonly FileDataAttachmentPayload[];
+  previousInteractionId: string | undefined;
+  optimisticUserMessageId?: string;
+  shouldResetComposerText: boolean;
+};
+
 type MessageAction = 'regen' | 'fork';
 
 type RuntimeDeps = {
@@ -70,7 +87,12 @@ export interface ConversationFlowDeps {
   runtime: RuntimeDeps;
   attachmentManager: Pick<
     AttachmentManager,
-    'getStaged' | 'hasUploadingFiles' | 'hasFailedFiles' | 'getUploadedAttachments' | 'clearStage'
+    | 'getStaged'
+    | 'setStagedPreviewsHidden'
+    | 'hasUploadingFiles'
+    | 'hasFailedFiles'
+    | 'getUploadedAttachments'
+    | 'clearStage'
   >;
   toolbar: ToolbarDeps;
   composer: ComposerDeps;
@@ -84,6 +106,7 @@ export interface ConversationFlowDeps {
 
 export interface ConversationFlowController {
   send(): Promise<void>;
+  onAttachmentStateChange(): Promise<void>;
   handleMessageAction(action: MessageAction, message: ChatMessage): Promise<void>;
   switchAssistantBranch(interactionId: string): Promise<void>;
   applyStreamDelta(requestId: string, textDelta?: string, thinkingDelta?: string): void;
@@ -94,6 +117,7 @@ export function createConversationFlowController(
   deps: ConversationFlowDeps,
 ): ConversationFlowController {
   const activeStreamDrafts = new Map<string, ActiveStreamDraft>();
+  let queuedSendDraft: QueuedSendDraft | undefined;
 
   function applyStreamDelta(requestId: string, textDelta?: string, thinkingDelta?: string): void {
     const draft = activeStreamDrafts.get(requestId);
@@ -124,6 +148,11 @@ export function createConversationFlowController(
       return;
     }
 
+    if (queuedSendDraft) {
+      await flushQueuedSendIfReady();
+      return;
+    }
+
     const userText = deps.composer.getText().trim();
     const stagedFiles = deps.attachmentManager.getStaged();
     if (!canSubmitMessage(userText, stagedFiles.length)) {
@@ -131,7 +160,7 @@ export function createConversationFlowController(
     }
 
     if (deps.attachmentManager.hasUploadingFiles()) {
-      deps.appendLocalError('Please wait for file uploads to finish before sending.');
+      queueSend(userText, stagedFiles);
       return;
     }
 
@@ -150,7 +179,87 @@ export function createConversationFlowController(
       return;
     }
 
-    let optimisticUserMessageId: string | undefined;
+    await dispatchSend({
+      userText,
+      stagedSnapshot,
+      attachmentsForSend,
+      previousInteractionId: deps.interactions.getLastAssistantInteractionId(),
+      shouldResetComposerText: true,
+    });
+  }
+
+  function queueSend(userText: string, stagedFiles: readonly StagedAttachmentFile[]): void {
+    const stagedSnapshot = [...stagedFiles];
+    const previousInteractionId = deps.interactions.getLastAssistantInteractionId();
+    const queuedMessage = buildOptimisticUserMessage(
+      userText,
+      stagedSnapshot,
+      previousInteractionId,
+    );
+    deps.previews.rememberLocalAttachmentPreviews(queuedMessage);
+    deps.render.appendMessage(queuedMessage);
+    queuedSendDraft = {
+      userText,
+      optimisticUserMessageId: queuedMessage.id,
+      previousInteractionId: queuedMessage.previousInteractionId,
+    };
+    deps.attachmentManager.setStagedPreviewsHidden(true);
+    deps.composer.setText('');
+    deps.composer.resize();
+    deps.composer.focus();
+  }
+
+  async function flushQueuedSendIfReady(): Promise<void> {
+    const queued = queuedSendDraft;
+    if (!queued) {
+      return;
+    }
+
+    if (deps.busyState.isBusy() || deps.attachmentManager.hasUploadingFiles()) {
+      return;
+    }
+
+    if (deps.attachmentManager.hasFailedFiles()) {
+      deps.attachmentManager.setStagedPreviewsHidden(false);
+      deps.render.removeMessageById(queued.optimisticUserMessageId);
+      if (!deps.composer.getText().trim() && queued.userText) {
+        deps.composer.setText(queued.userText);
+        deps.composer.resize();
+      }
+      queuedSendDraft = undefined;
+      return;
+    }
+
+    const stagedSnapshot = [...deps.attachmentManager.getStaged()];
+    if (!canSubmitMessage(queued.userText, stagedSnapshot.length)) {
+      deps.attachmentManager.setStagedPreviewsHidden(false);
+      deps.render.removeMessageById(queued.optimisticUserMessageId);
+      queuedSendDraft = undefined;
+      return;
+    }
+
+    const attachmentsForSend = deps.attachmentManager.getUploadedAttachments();
+    if (attachmentsForSend.length !== stagedSnapshot.length) {
+      const notReady = stagedSnapshot.find((staged) => !staged.uploadedAttachment);
+      if (notReady) {
+        deps.appendLocalError(`"${notReady.name}" is not ready to send yet.`);
+      }
+      return;
+    }
+
+    queuedSendDraft = undefined;
+    await dispatchSend({
+      userText: queued.userText,
+      stagedSnapshot,
+      attachmentsForSend,
+      previousInteractionId: queued.previousInteractionId,
+      optimisticUserMessageId: queued.optimisticUserMessageId,
+      shouldResetComposerText: false,
+    });
+  }
+
+  async function dispatchSend(input: DispatchSendInput): Promise<void> {
+    let optimisticUserMessageId: string | undefined = input.optimisticUserMessageId;
     let assistantPlaceholderId: string | undefined;
     let streamRequestId: string | undefined;
     deps.busyState.setBusy(true);
@@ -160,22 +269,31 @@ export function createConversationFlowController(
       const selectedThinking = deps.toolbar.selectedThinkingLevel();
       streamRequestId = crypto.randomUUID();
       const optimisticUserMessage = buildOptimisticUserMessage(
-        userText,
-        stagedSnapshot,
-        deps.interactions.getLastAssistantInteractionId(),
-        attachmentsForSend,
+        input.userText,
+        input.stagedSnapshot,
+        input.previousInteractionId,
+        input.attachmentsForSend,
       );
       deps.previews.rememberLocalAttachmentPreviews(optimisticUserMessage);
-      optimisticUserMessageId = optimisticUserMessage.id;
+      if (optimisticUserMessageId) {
+        deps.render.replaceMessageById(optimisticUserMessageId, {
+          ...optimisticUserMessage,
+          id: optimisticUserMessageId,
+        });
+      } else {
+        optimisticUserMessageId = optimisticUserMessage.id;
+        deps.render.appendMessage(optimisticUserMessage);
+      }
       assistantPlaceholderId = crypto.randomUUID();
-      deps.render.appendMessage(optimisticUserMessage);
       deps.render.appendMessage({
         id: assistantPlaceholderId,
         role: 'assistant',
         content: '',
       });
 
-      deps.composer.setText('');
+      if (input.shouldResetComposerText) {
+        deps.composer.setText('');
+      }
       deps.attachmentManager.clearStage(true);
       deps.composer.resize();
 
@@ -186,10 +304,10 @@ export function createConversationFlowController(
       });
 
       const assistantMessage = await deps.runtime.sendMessage(
-        userText,
+        input.userText,
         selectedModel,
         selectedThinking,
-        attachmentsForSend,
+        [...input.attachmentsForSend],
         streamRequestId,
       );
       activeStreamDrafts.delete(streamRequestId);
@@ -210,6 +328,10 @@ export function createConversationFlowController(
       deps.busyState.setBusy(false);
       deps.composer.focus();
     }
+  }
+
+  async function onAttachmentStateChange(): Promise<void> {
+    await flushQueuedSendIfReady();
   }
 
   async function handleMessageAction(action: MessageAction, message: ChatMessage): Promise<void> {
@@ -305,6 +427,7 @@ export function createConversationFlowController(
 
   return {
     send,
+    onAttachmentStateChange,
     handleMessageAction,
     switchAssistantBranch,
     applyStreamDelta,
