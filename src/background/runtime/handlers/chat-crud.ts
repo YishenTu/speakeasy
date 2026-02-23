@@ -4,11 +4,12 @@ import type {
   ChatLoadPayload,
   ChatNewPayload,
   ChatSessionSummary,
+  ChatTabContextPayload,
 } from '../../../shared/runtime';
 import { createSession, mapSessionToChatMessages } from '../../sessions';
 import type { ChatSession } from '../../types';
 import { pruneExpiredSessionsBestEffort } from '../bootstrap';
-import type { RuntimeDependencies } from '../contracts';
+import type { RuntimeDependencies, RuntimeRequestContext } from '../contracts';
 
 export async function handleLoadChat(
   chatId: string | undefined,
@@ -71,6 +72,15 @@ export async function handleListChats(dependencies: RuntimeDependencies): Promis
   return {
     sessions: summaries,
   };
+}
+
+export function handleGetChatTabContext(context?: RuntimeRequestContext): ChatTabContextPayload {
+  const tabId = context?.sender?.tab?.id;
+  if (typeof tabId !== 'number' || !Number.isInteger(tabId) || tabId <= 0) {
+    return { tabId: null };
+  }
+
+  return { tabId };
 }
 
 function summarizeSessionTitle(session: ChatSession): string {

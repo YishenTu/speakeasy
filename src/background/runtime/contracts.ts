@@ -7,6 +7,7 @@ import type {
   ChatRegenPayload,
   ChatSendPayload,
   ChatSwitchBranchPayload,
+  ChatTabContextPayload,
   ChatUploadFilesPayload,
   FileDataAttachmentPayload,
   OpenOptionsPayload,
@@ -20,6 +21,7 @@ import type { GeminiStreamDelta } from '../gemini';
 import type { ChatSession, GeminiContent } from '../types';
 
 export type RuntimePayload =
+  | ChatTabContextPayload
   | ChatLoadPayload
   | ChatNewPayload
   | ChatSendPayload
@@ -78,6 +80,7 @@ export type MutationEnqueuer = <TPayload>(operation: () => Promise<TPayload>) =>
 export interface RuntimeRequestRoutingInput {
   request: RuntimeRequest;
   handleOpenOptions: () => Promise<OpenOptionsPayload>;
+  handleGetChatTabContext: () => Promise<ChatTabContextPayload>;
   handleLoadChat: (chatId: string | undefined) => Promise<ChatLoadPayload>;
   handleNewChat: () => Promise<ChatNewPayload>;
   handleSendMessage: (

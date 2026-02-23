@@ -37,7 +37,7 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-async function flushMicrotasks(iterations = 6): Promise<void> {
+async function flushMicrotasks(iterations = 24): Promise<void> {
   for (let index = 0; index < iterations; index += 1) {
     await Promise.resolve();
   }
@@ -69,6 +69,7 @@ describe('chatpanel regenerate flow', () => {
   let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
   let loadMessageSnapshots: string[];
   let runtimeMessageListeners: Array<(request: unknown) => void>;
+  let currentTabId: number | null;
   let regenDeferred: Deferred<{
     ok: true;
     payload: {
@@ -83,7 +84,8 @@ describe('chatpanel regenerate flow', () => {
 
   beforeEach(() => {
     dom = installDomTestEnvironment();
-    storageState = { [ACTIVE_CHAT_STORAGE_KEY]: 'chat-seed' };
+    currentTabId = 77;
+    storageState = { [ACTIVE_CHAT_STORAGE_KEY]: { [String(currentTabId)]: 'chat-seed' } };
     currentMessages = [
       { id: 'user-1', role: 'user', content: 'Tell me a joke.' },
       {
@@ -155,7 +157,15 @@ describe('chatpanel regenerate flow', () => {
         },
       },
       runtime: {
-        sendMessage: (request: RuntimeRequest | { type: 'app/open-options' }) => {
+        sendMessage: (
+          request: RuntimeRequest | { type: 'app/open-options' } | { type: 'chat/get-tab-context' },
+        ) => {
+          if (request.type === 'chat/get-tab-context') {
+            return Promise.resolve({
+              ok: true as const,
+              payload: { tabId: currentTabId },
+            });
+          }
           if (request.type === 'chat/load') {
             loadRequests.push(request);
             loadMessageSnapshots.push(currentMessages.map((message) => message.content).join('|'));
@@ -361,6 +371,24 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList?.textContent).toContain('Regenerated pro answer');
   });
 
+  it('loads conversation history from the current tab scoped active chat id', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = {
+      '11': 'chat-tab-11',
+      '22': 'chat-tab-22',
+      fallback: 'chat-fallback',
+    };
+    currentTabId = 22;
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    expect(loadRequests.length).toBeGreaterThan(0);
+    expect(loadRequests[0]).toEqual({
+      type: 'chat/load',
+      chatId: 'chat-tab-22',
+    });
+  });
+
   it('shows a local error message when opening settings fails', async () => {
     const testWindow = getTestWindow();
     openOptionsErrorMessage = 'Failed to open settings';
@@ -461,7 +489,7 @@ describe('chatpanel regenerate flow', () => {
       value: [imageFile],
     });
     fileInput.dispatchEvent(new Event('change'));
-    await flushMicrotasks(20);
+    await flushMicrotasks(50);
     expect(shadowRoot.querySelector('#speakeasy-file-previews .file-preview-spinner')).toBeNull();
 
     input.value = 'What is in this image?';
@@ -806,7 +834,7 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList).not.toBeNull();
 
     forkButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    await flushMicrotasks(20);
+    await flushMicrotasks(50);
 
     expect(forkRequest).toMatchObject({
       type: 'chat/fork',
@@ -844,7 +872,10 @@ describe('chatpanel regenerate flow', () => {
     }
     input.value = 'Second prompt (edited)';
     form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
-    await flushMicrotasks(40);
+    await flushMicrotasks(80);
+
+    expect(sendRequest).not.toBeNull();
+    expect(loadRequests.length).toBeGreaterThan(1);
 
     const userRowBranchSwitch = shadowRoot.querySelector(
       'li[data-message-id="user-2-fork"] .message-branch-switch',

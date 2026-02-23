@@ -9,6 +9,8 @@ export async function routeRuntimeRequest(
   switch (request.type) {
     case 'app/open-options':
       return input.handleOpenOptions();
+    case 'chat/get-tab-context':
+      return input.handleGetChatTabContext();
     case 'chat/load':
       return input.handleLoadChat(request.chatId);
     case 'chat/new':

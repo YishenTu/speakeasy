@@ -71,7 +71,76 @@ describe('shared chat client', () => {
 
     expect(payload.chatId).toBe('chat-2');
     expect(runtimeRequests).toEqual([{ type: 'chat/load', chatId: 'chat-1' }]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-2');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-2' });
+  });
+
+  it('isolates active chat selection across tabs with independent storage slots', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = {
+      '101': 'chat-tab-a',
+      '202': 'chat-tab-b',
+      fallback: 'chat-fallback',
+    };
+    queueRuntimeResponses(
+      {
+        ok: true,
+        payload: {
+          chatId: 'chat-tab-a-next',
+          assistantMessage: {
+            id: 'assistant-a',
+            role: 'assistant',
+            content: 'tab a',
+          },
+        },
+      },
+      {
+        ok: true,
+        payload: {
+          chatId: 'chat-tab-b-next',
+          assistantMessage: {
+            id: 'assistant-b',
+            role: 'assistant',
+            content: 'tab b',
+          },
+        },
+      },
+    );
+
+    await sendMessage(
+      'hello from tab a',
+      'gemini-3-flash-preview',
+      undefined,
+      undefined,
+      undefined,
+      { tabId: 101 },
+    );
+    await sendMessage(
+      'hello from tab b',
+      'gemini-3-flash-preview',
+      undefined,
+      undefined,
+      undefined,
+      { tabId: 202 },
+    );
+
+    expect(runtimeRequests).toEqual([
+      {
+        type: 'chat/send',
+        text: 'hello from tab a',
+        model: 'gemini-3-flash-preview',
+        chatId: 'chat-tab-a',
+      },
+      {
+        type: 'chat/send',
+        text: 'hello from tab b',
+        model: 'gemini-3-flash-preview',
+        chatId: 'chat-tab-b',
+      },
+    ]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({
+      '101': 'chat-tab-a-next',
+      '202': 'chat-tab-b-next',
+      fallback: 'chat-fallback',
+    });
   });
 
   it('loads chat messages without chat id when none is stored', async () => {
@@ -91,6 +160,29 @@ describe('shared chat client', () => {
     expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBeUndefined();
   });
 
+  it('uses the fallback slot when tab context is not provided', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = {
+      '44': 'chat-tab-44',
+      fallback: 'chat-fallback',
+    };
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        chatId: 'chat-fallback-next',
+        messages: [],
+      },
+    });
+
+    const payload = await loadChatMessages();
+
+    expect(payload).toEqual({ chatId: 'chat-fallback-next', messages: [] });
+    expect(runtimeRequests).toEqual([{ type: 'chat/load', chatId: 'chat-fallback' }]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({
+      '44': 'chat-tab-44',
+      fallback: 'chat-fallback-next',
+    });
+  });
+
   it('loads chat messages by explicit chat id and persists returned chat id', async () => {
     queueRuntimeResponses({
       ok: true,
@@ -104,7 +196,7 @@ describe('shared chat client', () => {
 
     expect(payload).toEqual({ chatId: 'chat-explicit', messages: [] });
     expect(runtimeRequests).toEqual([{ type: 'chat/load', chatId: 'chat-explicit' }]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-explicit');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-explicit' });
   });
 
   it('creates a new chat and stores the returned chat id', async () => {
@@ -119,7 +211,7 @@ describe('shared chat client', () => {
 
     expect(chatId).toBe('chat-new');
     expect(runtimeRequests).toEqual([{ type: 'chat/new' }]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-new');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-new' });
   });
 
   it('sends trimmed user messages and forwards optional stream request ids', async () => {
@@ -154,7 +246,7 @@ describe('shared chat client', () => {
         streamRequestId: 'stream-req-1',
       },
     ]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-11');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-11' });
     expect(assistantMessage).toEqual({
       id: 'assistant-1',
       role: 'assistant',
@@ -307,7 +399,7 @@ describe('shared chat client', () => {
         previousInteractionId: 'interaction-123',
       },
     ]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-active' });
   });
 
   it('rejects fork when no active chat exists', async () => {
@@ -353,7 +445,7 @@ describe('shared chat client', () => {
         streamRequestId: 'regen-stream-1',
       },
     ]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-active' });
   });
 
   it('switches assistant branch in the active chat', async () => {
@@ -375,7 +467,7 @@ describe('shared chat client', () => {
         interactionId: 'interaction-2',
       },
     ]);
-    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toBe('chat-active');
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({ fallback: 'chat-active' });
   });
 
   it('rejects branch switching when no active chat exists', async () => {

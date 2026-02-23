@@ -1,9 +1,11 @@
 import {
   type ChatMessage,
+  type ChatTabContext,
   createNewChat,
   forkChat,
   loadChatMessages,
   regenerateAssistantMessage,
+  resolveChatTabContext,
   sendMessage,
   switchAssistantBranch,
 } from '../shared/chat';
@@ -145,6 +147,8 @@ function mountChatPanel(): void {
   let hasLoadedHistory = false;
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
+  const chatTabContext: ChatTabContext = {};
+  let hasResolvedChatTabContext = false;
   let lastAssistantInteractionId: string | undefined;
   const localAttachmentPreviewUrls = new Map<string, string>();
   let conversationFlow: ReturnType<typeof createConversationFlowController> | null = null;
@@ -176,6 +180,25 @@ function mountChatPanel(): void {
     onError: appendLocalError,
   });
 
+  async function ensureChatTabContext(): Promise<ChatTabContext> {
+    if (hasResolvedChatTabContext) {
+      return chatTabContext;
+    }
+
+    const resolved = await resolveChatTabContext();
+    if (
+      typeof resolved.tabId === 'number' &&
+      Number.isInteger(resolved.tabId) &&
+      resolved.tabId > 0
+    ) {
+      chatTabContext.tabId = resolved.tabId;
+    } else {
+      chatTabContext.tabId = null;
+    }
+    hasResolvedChatTabContext = true;
+    return chatTabContext;
+  }
+
   const historyDropdown = createHistoryDropdownController({
     historyControl,
     historyToggleButton,
@@ -183,6 +206,7 @@ function mountChatPanel(): void {
     deleteSessionConfirmation,
     isBusy: () => isBusy,
     setBusy: (busy) => setBusyState(busy),
+    getChatTabContext: ensureChatTabContext,
     getActiveChatId: () => activeChatId,
     setActiveChatId: (id) => {
       activeChatId = id;
@@ -195,10 +219,32 @@ function mountChatPanel(): void {
 
   conversationFlow = createConversationFlowController({
     runtime: {
-      sendMessage,
-      regenerateAssistantMessage,
-      forkChat,
-      switchAssistantBranch,
+      sendMessage: async (userInput, model, thinkingLevel, attachments, streamRequestId) =>
+        sendMessage(
+          userInput,
+          model,
+          thinkingLevel,
+          attachments,
+          streamRequestId,
+          await ensureChatTabContext(),
+        ),
+      regenerateAssistantMessage: async (
+        previousInteractionId,
+        model,
+        thinkingLevel,
+        streamRequestId,
+      ) =>
+        regenerateAssistantMessage(
+          previousInteractionId,
+          model,
+          thinkingLevel,
+          streamRequestId,
+          await ensureChatTabContext(),
+        ),
+      forkChat: async (previousInteractionId) =>
+        forkChat(previousInteractionId, await ensureChatTabContext()),
+      switchAssistantBranch: async (interactionId) =>
+        switchAssistantBranch(interactionId, await ensureChatTabContext()),
     },
     attachmentManager,
     toolbar,
@@ -406,7 +452,7 @@ function mountChatPanel(): void {
 
     setBusyState(true);
     try {
-      const chatId = await createNewChat();
+      const chatId = await createNewChat(await ensureChatTabContext());
       activeChatId = chatId;
       attachmentManager.clearStage(true);
       renderMessages([]);
@@ -515,7 +561,7 @@ function mountChatPanel(): void {
 
   async function loadConversationHistory(): Promise<void> {
     try {
-      const history = await loadChatMessages();
+      const history = await loadChatMessages(await ensureChatTabContext());
       activeChatId = history.chatId;
       renderMessages(history.messages);
       await historyDropdown.refresh();

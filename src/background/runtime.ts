@@ -21,6 +21,7 @@ import {
 } from './runtime/handlers/chat-branch';
 import {
   handleDeleteChat,
+  handleGetChatTabContext,
   handleListChats,
   handleLoadChat,
   handleNewChat,
@@ -99,7 +100,11 @@ export function createRuntimeRequestHandler(
     request: RuntimeRequest,
     context?: RuntimeRequestContext,
   ): Promise<RuntimePayload> => {
-    if (request.type !== 'app/open-options' && request.type !== 'tab/capture-full-page') {
+    if (
+      request.type !== 'app/open-options' &&
+      request.type !== 'tab/capture-full-page' &&
+      request.type !== 'chat/get-tab-context'
+    ) {
       await bootstrapGate.ensureReady();
     }
 
@@ -111,6 +116,7 @@ export function createRuntimeRequestHandler(
           opened: true,
         };
       },
+      handleGetChatTabContext: async () => handleGetChatTabContext(context),
       handleLoadChat: async (chatId) => {
         await mutationQueue;
         return handleLoadChat(chatId, dependencies);

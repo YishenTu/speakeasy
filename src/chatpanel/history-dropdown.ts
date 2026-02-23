@@ -1,5 +1,6 @@
 import {
   type ChatMessage,
+  type ChatTabContext,
   deleteChatById,
   getActiveChatId,
   listChatSessions,
@@ -27,6 +28,7 @@ export interface HistoryDropdownDeps {
   deleteSessionConfirmation: { confirm: (title: string) => Promise<boolean> };
   isBusy: () => boolean;
   setBusy: (busy: boolean) => void;
+  getChatTabContext: () => Promise<ChatTabContext>;
   getActiveChatId: () => string | null;
   setActiveChatId: (id: string | null) => void;
   clearStagedFiles: () => void;
@@ -124,9 +126,10 @@ export function createHistoryDropdownController(
 
         deps.setBusy(true);
         try {
-          const deleted = await deleteChatById(session.chatId);
+          const tabContext = await deps.getChatTabContext();
+          const deleted = await deleteChatById(session.chatId, tabContext);
           if (deleted && deps.getActiveChatId() === session.chatId) {
-            deps.setActiveChatId((await getActiveChatId()) ?? null);
+            deps.setActiveChatId((await getActiveChatId(tabContext)) ?? null);
             deps.clearStagedFiles();
             deps.renderMessages([]);
           }
@@ -155,14 +158,14 @@ export function createHistoryDropdownController(
   }
 
   async function loadSession(chatId: string): Promise<void> {
-    const payload = await loadChatMessagesById(chatId);
+    const payload = await loadChatMessagesById(chatId, await deps.getChatTabContext());
     deps.setActiveChatId(payload.chatId);
     deps.renderMessages(payload.messages);
     await refresh();
   }
 
   async function reloadActive(): Promise<void> {
-    const payload = await loadChatMessages();
+    const payload = await loadChatMessages(await deps.getChatTabContext());
     deps.setActiveChatId(payload.chatId);
     deps.renderMessages(payload.messages);
     await refresh();

@@ -29,6 +29,9 @@ export interface ChatUploadFailurePayload {
 
 export type RuntimeRequest =
   | {
+      type: 'chat/get-tab-context';
+    }
+  | {
       type: 'chat/send';
       text: string;
       chatId?: string;
@@ -82,6 +85,7 @@ export type RuntimeRequest =
     };
 
 const RUNTIME_REQUEST_TYPE_LOOKUP: Record<RuntimeRequest['type'], true> = {
+  'chat/get-tab-context': true,
   'chat/send': true,
   'chat/regen': true,
   'chat/fork': true,
@@ -160,6 +164,10 @@ export interface ChatListPayload {
 export interface ChatUploadFilesPayload {
   attachments: FileDataAttachmentPayload[];
   failures: ChatUploadFailurePayload[];
+}
+
+export interface ChatTabContextPayload {
+  tabId: number | null;
 }
 
 export interface OpenOptionsPayload {
