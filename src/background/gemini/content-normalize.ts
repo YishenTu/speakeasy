@@ -1,6 +1,7 @@
 import {
   ATTACHMENT_PREVIEW_MAX_BYTES,
   ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
+  ATTACHMENT_PREVIEW_TEXT_MAX_CHARS,
   estimateBase64DecodedByteLength,
   parseImageDataUrl,
 } from '../../shared/attachment-preview';
@@ -173,13 +174,17 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   const attachmentPreviewByFileUri = normalizeAttachmentPreviewByFileUri(
     readPartRecord(value, 'attachmentPreviewByFileUri', 'attachment_preview_by_file_uri'),
   );
+  const attachmentPreviewTextByFileUri = normalizeAttachmentPreviewTextByFileUri(
+    readPartRecord(value, 'attachmentPreviewTextByFileUri', 'attachment_preview_text_by_file_uri'),
+  );
 
   if (
     !responseStats &&
     !interactionId &&
     !sourceModel &&
     !createdAt &&
-    !attachmentPreviewByFileUri
+    !attachmentPreviewByFileUri &&
+    !attachmentPreviewTextByFileUri
   ) {
     return undefined;
   }
@@ -199,6 +204,9 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   }
   if (attachmentPreviewByFileUri) {
     metadata.attachmentPreviewByFileUri = attachmentPreviewByFileUri;
+  }
+  if (attachmentPreviewTextByFileUri) {
+    metadata.attachmentPreviewTextByFileUri = attachmentPreviewTextByFileUri;
   }
 
   return metadata;
@@ -224,6 +232,31 @@ function normalizeAttachmentPreviewByFileUri(
     }
 
     normalized[fileUri] = previewDataUrl;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeAttachmentPreviewTextByFileUri(
+  value: Record<string, unknown> | null,
+): Record<string, string> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [rawFileUri, rawPreviewText] of Object.entries(value)) {
+    const fileUri = rawFileUri.trim();
+    if (!fileUri || typeof rawPreviewText !== 'string') {
+      continue;
+    }
+
+    const previewText = rawPreviewText.trim().slice(0, ATTACHMENT_PREVIEW_TEXT_MAX_CHARS).trim();
+    if (!previewText) {
+      continue;
+    }
+
+    normalized[fileUri] = previewText;
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;

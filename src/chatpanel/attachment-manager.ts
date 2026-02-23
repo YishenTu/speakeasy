@@ -1,6 +1,7 @@
 import {
   ATTACHMENT_PREVIEW_MAX_BYTES,
   ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
+  ATTACHMENT_PREVIEW_TEXT_MAX_CHARS,
   estimateBase64DecodedByteLength,
 } from '../shared/attachment-preview';
 import { encodeArrayBufferToBase64 } from '../shared/base64';
@@ -357,26 +358,35 @@ export async function withAttachmentPreviewDataUrls(
 
   return Promise.all(
     uploadedAttachments.map(async (attachment, index) => {
-      if (!isImageMimeType(attachment.mimeType)) {
-        return attachment;
+      const stagedFile = stagedFiles[index];
+      let nextAttachment = attachment;
+
+      const previewText = normalizeAttachmentPreviewText(stagedFile?.previewText);
+      if (previewText) {
+        nextAttachment = { ...nextAttachment, previewText };
       }
 
-      const stagedFile = stagedFiles[index];
-      if (!stagedFile) {
-        return attachment;
+      if (!stagedFile || !isImageMimeType(attachment.mimeType)) {
+        return nextAttachment;
       }
 
       const previewDataUrl = await toImageDataUrl(stagedFile.file, attachment.mimeType);
       if (!previewDataUrl) {
-        return attachment;
+        return nextAttachment;
       }
 
-      return {
-        ...attachment,
-        previewDataUrl,
-      };
+      return { ...nextAttachment, previewDataUrl };
     }),
   );
+}
+
+function normalizeAttachmentPreviewText(value: string | undefined): string | undefined {
+  const normalized = value?.trim() ?? '';
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.slice(0, ATTACHMENT_PREVIEW_TEXT_MAX_CHARS).trim() || undefined;
 }
 
 async function toImageDataUrl(file: File, mimeType: string): Promise<string | undefined> {

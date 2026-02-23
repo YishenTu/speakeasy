@@ -163,4 +163,39 @@ describe('createAttachmentManager', () => {
       revokeObjectUrlSpy.mockRestore();
     }
   });
+
+  test('copies markdown preview text into uploaded attachment metadata', async () => {
+    const markdownFile = new env.window.File(['# Hello\n\nworld'], 'notes.md', {
+      type: 'text/plain',
+    }) as unknown as File;
+
+    const attachments = await withAttachmentPreviewDataUrls(
+      [
+        {
+          fileUri: 'file-1',
+          name: 'notes.md',
+          mimeType: 'text/plain',
+        },
+      ],
+      [
+        {
+          id: 'staged-1',
+          file: markdownFile,
+          name: 'notes.md',
+          mimeType: 'text/plain',
+          previewText: '# Hello\n\nworld',
+          uploadState: 'uploaded',
+        },
+      ],
+    );
+
+    expect(attachments).toEqual([
+      {
+        fileUri: 'file-1',
+        name: 'notes.md',
+        mimeType: 'text/plain',
+        previewText: '# Hello\n\nworld',
+      },
+    ]);
+  });
 });

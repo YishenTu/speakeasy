@@ -139,6 +139,7 @@ export interface GeminiContentMetadata {
   sourceModel?: string;
   createdAt?: string;
   attachmentPreviewByFileUri?: Record<string, string>;
+  attachmentPreviewTextByFileUri?: Record<string, string>;
 }
 
 export interface GeminiFunctionCall {

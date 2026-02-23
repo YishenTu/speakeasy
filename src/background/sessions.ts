@@ -220,6 +220,7 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
     const attachments = applyAttachmentPreviewMetadata(
       extractAttachments(content),
       content.metadata?.attachmentPreviewByFileUri,
+      content.metadata?.attachmentPreviewTextByFileUri,
     );
     if (!text && !thinkingSummary && attachments.length === 0) {
       continue;
@@ -289,6 +290,7 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   const attachments = applyAttachmentPreviewMetadata(
     extractAttachments(content),
     content.metadata?.attachmentPreviewByFileUri,
+    content.metadata?.attachmentPreviewTextByFileUri,
   );
   const stats = content.metadata?.responseStats;
   const interactionId = content.metadata?.interactionId?.trim() || undefined;
@@ -328,31 +330,34 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
 function applyAttachmentPreviewMetadata(
   attachments: ChatAttachment[],
   previewByFileUri: Record<string, string> | undefined,
+  previewTextByFileUri: Record<string, string> | undefined,
 ): ChatAttachment[] {
-  if (!previewByFileUri || attachments.length === 0) {
+  if ((!previewByFileUri && !previewTextByFileUri) || attachments.length === 0) {
     return attachments;
   }
 
   let changed = false;
   const nextAttachments = attachments.map((attachment) => {
-    if (attachment.previewUrl) {
-      return attachment;
-    }
-
     const fileUri = attachment.fileUri?.trim() ?? '';
     if (!fileUri) {
       return attachment;
     }
 
-    const previewDataUrl = previewByFileUri[fileUri]?.trim() ?? '';
-    if (!previewDataUrl) {
+    const previewUrl = !attachment.previewUrl
+      ? previewByFileUri?.[fileUri]?.trim() || undefined
+      : undefined;
+    const previewText = !attachment.previewText
+      ? previewTextByFileUri?.[fileUri]?.trim() || undefined
+      : undefined;
+    if (!previewUrl && !previewText) {
       return attachment;
     }
 
     changed = true;
     return {
       ...attachment,
-      previewUrl: previewDataUrl,
+      ...(previewUrl ? { previewUrl } : {}),
+      ...(previewText ? { previewText } : {}),
     };
   });
 

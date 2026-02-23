@@ -1,6 +1,7 @@
 import {
   ATTACHMENT_PREVIEW_MAX_BYTES,
   ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
+  ATTACHMENT_PREVIEW_TEXT_MAX_CHARS,
   estimateBase64DecodedByteLength,
   parseImageDataUrl,
 } from '../../shared/attachment-preview';
@@ -45,6 +46,10 @@ export function normalizeFileDataAttachments(
     if (previewDataUrl) {
       normalizedAttachment.previewDataUrl = previewDataUrl;
     }
+    const previewText = normalizeAttachmentPreviewText(attachment.previewText);
+    if (previewText) {
+      normalizedAttachment.previewText = previewText;
+    }
 
     normalized.push(normalizedAttachment);
   }
@@ -64,6 +69,23 @@ export function buildAttachmentPreviewByFileUri(
     }
 
     normalized[fileUri] = previewDataUrl;
+  }
+
+  return normalized;
+}
+
+export function buildAttachmentPreviewTextByFileUri(
+  attachments: readonly FileDataAttachmentPayload[],
+): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const attachment of attachments) {
+    const fileUri = attachment.fileUri.trim();
+    const previewText = attachment.previewText?.trim();
+    if (!fileUri || !previewText) {
+      continue;
+    }
+
+    normalized[fileUri] = previewText;
   }
 
   return normalized;
@@ -101,6 +123,19 @@ export function normalizeAttachmentPreviewDataUrl(
   }
 
   return normalized;
+}
+
+export function normalizeAttachmentPreviewText(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return undefined;
+  }
+
+  return normalized.slice(0, ATTACHMENT_PREVIEW_TEXT_MAX_CHARS).trim() || undefined;
 }
 
 export function normalizeUploadFiles(files: UploadFileTransportPayload[] | undefined): {

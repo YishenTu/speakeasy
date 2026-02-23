@@ -141,6 +141,20 @@ describe('chatpanel template', () => {
     expect(template).toMatch(/\.input\s*{[^}]*overscroll-behavior:\s*contain;/);
   });
 
+  it('uses the same scrollbar style for chat messages and preview panes', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.messages::-webkit-scrollbar,');
+    expect(template).toContain('.image-preview-view::-webkit-scrollbar,');
+    expect(template).toContain('.text-preview-content::-webkit-scrollbar {');
+    expect(template).toContain('.messages::-webkit-scrollbar-thumb,');
+    expect(template).toContain('.image-preview-view::-webkit-scrollbar-thumb,');
+    expect(template).toContain('.text-preview-content::-webkit-scrollbar-thumb {');
+    expect(template).toContain('.messages::-webkit-scrollbar-thumb:hover,');
+    expect(template).toContain('.image-preview-view::-webkit-scrollbar-thumb:hover,');
+    expect(template).toContain('.text-preview-content::-webkit-scrollbar-thumb:hover {');
+  });
+
   it('uses enlarged input toolbar controls and wider capture-action spacing', () => {
     const template = getChatPanelTemplate();
 

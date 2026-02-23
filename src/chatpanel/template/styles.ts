@@ -440,16 +440,30 @@ export function getChatPanelStyles(): string {
         scroll-behavior: smooth;
       }
 
-      .messages::-webkit-scrollbar {
-        width: 4px;
+      .messages,
+      .image-preview-view,
+      .text-preview-content {
+        scrollbar-width: thin;
+        scrollbar-color: var(--sp-color-border-base) transparent;
       }
 
-      .messages::-webkit-scrollbar-thumb {
+      .messages::-webkit-scrollbar,
+      .image-preview-view::-webkit-scrollbar,
+      .text-preview-content::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+
+      .messages::-webkit-scrollbar-thumb,
+      .image-preview-view::-webkit-scrollbar-thumb,
+      .text-preview-content::-webkit-scrollbar-thumb {
         background: var(--sp-color-border-base);
         border-radius: 0;
       }
 
-      .messages::-webkit-scrollbar-thumb:hover {
+      .messages::-webkit-scrollbar-thumb:hover,
+      .image-preview-view::-webkit-scrollbar-thumb:hover,
+      .text-preview-content::-webkit-scrollbar-thumb:hover {
         background: rgba(255, 255, 255, 0.2);
       }
 

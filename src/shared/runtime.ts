@@ -7,6 +7,7 @@ export interface FileDataAttachmentPayload {
   fileUri: string;
   fileName?: string;
   previewDataUrl?: string;
+  previewText?: string;
 }
 
 export interface UploadFilePayload {

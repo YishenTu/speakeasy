@@ -1108,6 +1108,12 @@ describe('runtime chat storage handler', () => {
           previewDataUrl: 'data:image/png;base64,aGVsbG8=',
         },
         {
+          name: 'notes.md',
+          mimeType: 'text/plain',
+          fileUri: 'https://example.invalid/files/notes.md',
+          previewText: '  # Notes\n\n- one\n- two  ',
+        },
+        {
           name: '',
           mimeType: 'image/png',
           fileUri: 'https://example.invalid/files/skip.png',
@@ -1117,6 +1123,12 @@ describe('runtime chat storage handler', () => {
           mimeType: 'image/png',
           fileUri: 'https://example.invalid/files/bad-preview.png',
           previewDataUrl: 'data:text/plain;base64,aGVsbG8=',
+        },
+        {
+          name: 'empty-preview',
+          mimeType: 'text/plain',
+          fileUri: 'https://example.invalid/files/empty-preview.md',
+          previewText: '   ',
         },
       ],
     });
@@ -1136,15 +1148,32 @@ describe('runtime chat storage handler', () => {
         },
         {
           fileData: {
+            fileUri: 'https://example.invalid/files/notes.md',
+            mimeType: 'text/plain',
+            displayName: 'notes.md',
+          },
+        },
+        {
+          fileData: {
             fileUri: 'https://example.invalid/files/bad-preview.png',
             mimeType: 'image/png',
             displayName: 'bad-preview',
+          },
+        },
+        {
+          fileData: {
+            fileUri: 'https://example.invalid/files/empty-preview.md',
+            mimeType: 'text/plain',
+            displayName: 'empty-preview',
           },
         },
       ],
       metadata: {
         attachmentPreviewByFileUri: {
           'https://example.invalid/files/image.png': 'data:image/png;base64,aGVsbG8=',
+        },
+        attachmentPreviewTextByFileUri: {
+          'https://example.invalid/files/notes.md': '# Notes\n\n- one\n- two',
         },
       },
     });

@@ -527,11 +527,18 @@ describe('normalizeContent', () => {
           'https://example.invalid/files/empty': '   ',
           'https://example.invalid/files/too-large': `data:image/png;base64,${'A'.repeat(500_000)}`,
         },
+        attachmentPreviewTextByFileUri: {
+          ' https://example.invalid/files/note ': ' # Note\n\nbody ',
+          'https://example.invalid/files/empty-note': '   ',
+        },
       },
     });
 
     expect(withPreviewMetadata.metadata?.attachmentPreviewByFileUri).toEqual({
       'https://example.invalid/files/image-1': 'data:image/png;base64,aGVsbG8=',
+    });
+    expect(withPreviewMetadata.metadata?.attachmentPreviewTextByFileUri).toEqual({
+      'https://example.invalid/files/note': '# Note\n\nbody',
     });
 
     const withOnlyInvalidPreviewMetadata = normalizeContent({
@@ -540,6 +547,9 @@ describe('normalizeContent', () => {
       metadata: {
         attachmentPreviewByFileUri: {
           'https://example.invalid/files/image': 'not-a-data-url',
+        },
+        attachmentPreviewTextByFileUri: {
+          'https://example.invalid/files/note': '   ',
         },
       },
     });

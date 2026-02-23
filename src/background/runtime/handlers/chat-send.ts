@@ -8,7 +8,11 @@ import {
 } from '../../sessions';
 import type { ChatSession, GeminiContent } from '../../types';
 import { completeAssistantTurnOnBranchNode } from '../assistant-branch';
-import { buildAttachmentPreviewByFileUri, normalizeFileDataAttachments } from '../attachments';
+import {
+  buildAttachmentPreviewByFileUri,
+  buildAttachmentPreviewTextByFileUri,
+  normalizeFileDataAttachments,
+} from '../attachments';
 import { pruneExpiredSessionsBestEffort } from '../bootstrap';
 import type {
   PendingSessionTitleGeneration,
@@ -68,9 +72,13 @@ export async function handleSendMessage(
     parts: userParts,
   };
   const attachmentPreviewByFileUri = buildAttachmentPreviewByFileUri(normalizedAttachments);
-  if (Object.keys(attachmentPreviewByFileUri).length > 0) {
+  const attachmentPreviewTextByFileUri = buildAttachmentPreviewTextByFileUri(normalizedAttachments);
+  const hasImagePreviews = Object.keys(attachmentPreviewByFileUri).length > 0;
+  const hasTextPreviews = Object.keys(attachmentPreviewTextByFileUri).length > 0;
+  if (hasImagePreviews || hasTextPreviews) {
     userContent.metadata = {
-      attachmentPreviewByFileUri,
+      ...(hasImagePreviews ? { attachmentPreviewByFileUri } : {}),
+      ...(hasTextPreviews ? { attachmentPreviewTextByFileUri } : {}),
     };
   }
   const branchStartNodeId = workingSession.branchTree?.activeLeafNodeId;

@@ -467,6 +467,9 @@ describe('sessions', () => {
             attachmentPreviewByFileUri: {
               'https://example.invalid/files/image.png': 'data:image/png;base64,aGVsbG8=',
             },
+            attachmentPreviewTextByFileUri: {
+              'https://example.invalid/files/image.png': '# image note',
+            },
           },
         },
       ],
@@ -481,6 +484,7 @@ describe('sessions', () => {
         mimeType: 'image/png',
         fileUri: 'https://example.invalid/files/image.png',
         previewUrl: 'data:image/png;base64,aGVsbG8=',
+        previewText: '# image note',
       },
     ]);
   });
