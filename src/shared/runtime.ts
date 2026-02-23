@@ -88,6 +88,10 @@ export type RuntimeRequest =
       tabId: number;
     }
   | {
+      type: 'tab/extract-text-by-id';
+      tabId: number;
+    }
+  | {
       type: 'app/open-options';
     };
 
@@ -105,6 +109,7 @@ const RUNTIME_REQUEST_TYPE_LOOKUP: Record<RuntimeRequest['type'], true> = {
   'tab/capture-full-page': true,
   'tab/list-open': true,
   'tab/capture-full-page-by-id': true,
+  'tab/extract-text-by-id': true,
   'app/open-options': true,
 };
 
@@ -202,6 +207,12 @@ export interface OpenTabSummary {
 
 export interface TabListOpenPayload {
   tabs: OpenTabSummary[];
+}
+
+export interface TabExtractTextPayload {
+  markdown: string;
+  title: string;
+  url: string;
 }
 
 export interface ChatStreamDeltaEvent {

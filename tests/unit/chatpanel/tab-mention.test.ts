@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import {
+  type MentionTabAction,
   type MentionTokenRange,
   type MentionableTab,
   createTabMentionController,
@@ -31,6 +32,7 @@ const TABS: MentionableTab[] = [
 type SelectedMention = {
   tab: MentionableTab;
   token: MentionTokenRange;
+  action: MentionTabAction;
 };
 
 type MentionFixtureOptions = {
@@ -264,7 +266,7 @@ describe('chatpanel tab mention controller', () => {
     expect(fixture.getRenderedTabIds()).toEqual([33]);
   });
 
-  it('selects the active mention candidate on Enter', async () => {
+  it('opens action choices on Enter, then selects the highlighted action on Enter', async () => {
     const fixture = createMentionFixture();
     const controller = fixture.createController();
     const testWindow = dom?.window;
@@ -292,6 +294,17 @@ describe('chatpanel tab mention controller', () => {
 
     expect(handled).toBe(true);
     expect(enterEvent.defaultPrevented).toBe(true);
+    expect(fixture.selected).toHaveLength(0);
+    expect(fixture.getRenderedMentionActions()).toEqual(['extract-text', 'screenshot']);
+
+    controller.onKeyDown(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks();
+
     expect(fixture.selected).toHaveLength(1);
     expect(fixture.selected[0]?.tab.tabId).toBe(22);
     expect(fixture.selected[0]?.token).toEqual({
@@ -299,9 +312,10 @@ describe('chatpanel tab mention controller', () => {
       tokenEnd: 1,
       query: '',
     });
+    expect(fixture.selected[0]?.action).toBe('extract-text');
   });
 
-  it('selects the active mention candidate on Tab', async () => {
+  it('opens action choices on Tab, then selects the highlighted action on Tab', async () => {
     const fixture = createMentionFixture();
     const controller = fixture.createController();
     const testWindow = dom?.window;
@@ -322,8 +336,55 @@ describe('chatpanel tab mention controller', () => {
 
     expect(handled).toBe(true);
     expect(tabEvent.defaultPrevented).toBe(true);
+    expect(fixture.selected).toHaveLength(0);
+    expect(fixture.getRenderedMentionActions()).toEqual(['extract-text', 'screenshot']);
+
+    controller.onKeyDown(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Tab',
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks();
+
     expect(fixture.selected).toHaveLength(1);
     expect(fixture.selected[0]?.tab.tabId).toBe(11);
+    expect(fixture.selected[0]?.action).toBe('extract-text');
+  });
+
+  it('returns to the tab list when Escape is pressed from action selection mode', async () => {
+    const fixture = createMentionFixture();
+    const controller = fixture.createController();
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    fixture.setInputValue('@', 1);
+    controller.onInputOrCaretChange();
+    await flushMicrotasks();
+
+    controller.onKeyDown(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks();
+    expect(fixture.getRenderedMentionActions()).toEqual(['extract-text', 'screenshot']);
+
+    const escapeEvent = new testWindow.KeyboardEvent('keydown', {
+      key: 'Escape',
+      cancelable: true,
+    });
+    const handled = controller.onKeyDown(escapeEvent);
+    await flushMicrotasks();
+
+    expect(handled).toBe(true);
+    expect(escapeEvent.defaultPrevented).toBe(true);
+    expect(fixture.menu.hidden).toBe(false);
+    expect(fixture.getRenderedTabIds()).toEqual([11, 22, 33]);
+    expect(fixture.selected).toHaveLength(0);
   });
 
   it('closes mention mode on Escape without selecting a tab', async () => {
@@ -369,6 +430,13 @@ describe('chatpanel tab mention controller', () => {
       }),
     );
     await flushMicrotasks();
+    controller.onKeyDown(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks();
 
     expect(fixture.selected).toHaveLength(1);
     expect(fixture.selected[0]?.tab.tabId).toBe(22);
@@ -377,6 +445,7 @@ describe('chatpanel tab mention controller', () => {
       tokenEnd: 11,
       query: 'bet',
     });
+    expect(fixture.selected[0]?.action).toBe('extract-text');
   });
 
   it('removes mention tokens correctly at start, middle, and end positions', () => {
@@ -446,6 +515,14 @@ describe('chatpanel tab mention controller', () => {
           .map((row) => Number(row.dataset.tabId))
           .filter((id) => Number.isInteger(id));
       },
+      getRenderedMentionActions(): MentionTabAction[] {
+        return Array.from(list.querySelectorAll<HTMLElement>('.mention-item'))
+          .map((row) => row.dataset.action)
+          .filter(
+            (action): action is MentionTabAction =>
+              action === 'extract-text' || action === 'screenshot',
+          );
+      },
       getSelectedTabId(): number | null {
         const selectedItem = list.querySelector<HTMLElement>('.mention-item[aria-selected="true"]');
         if (!selectedItem) {
@@ -461,8 +538,8 @@ describe('chatpanel tab mention controller', () => {
           menu,
           list,
           emptyState,
-          onSelectTab: async (tab, token) => {
-            selected.push({ tab, token });
+          onSelectTabAction: async (tab, token, action) => {
+            selected.push({ tab, token, action });
           },
           listTabs: async () => {
             listTabCalls += 1;

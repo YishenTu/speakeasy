@@ -33,6 +33,15 @@ type CaptureByIdRuntimeResponse = {
   };
 };
 
+type ExtractTextByIdRuntimeResponse = {
+  ok: true;
+  payload: {
+    markdown: string;
+    title: string;
+    url: string;
+  };
+};
+
 function createDeferred<T>(): Deferred<T> {
   let resolve: ((value: T) => void) | undefined;
   let reject: ((reason?: unknown) => void) | undefined;
@@ -80,6 +89,7 @@ describe('chatpanel regenerate flow', () => {
     RuntimeRequest,
     { type: 'tab/capture-full-page-by-id' }
   >[];
+  let extractTextByIdRequests: Extract<RuntimeRequest, { type: 'tab/extract-text-by-id' }>[];
   let mentionTabsPayload: Array<{
     tabId: number;
     windowId: number;
@@ -136,6 +146,7 @@ describe('chatpanel regenerate flow', () => {
     listOpenTabRequests = [];
     fullPageCaptureRequests = [];
     fullPageCaptureByIdRequests = [];
+    extractTextByIdRequests = [];
     mentionTabsPayload = [
       {
         tabId: 21,
@@ -356,6 +367,17 @@ describe('chatpanel regenerate flow', () => {
                 height: 2400,
               },
             });
+          }
+          if (request.type === 'tab/extract-text-by-id') {
+            extractTextByIdRequests.push(request);
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                markdown: `# Extracted from tab ${request.tabId}\n\ncontent`,
+                title: `tab-${request.tabId}`,
+                url: `https://example.com/tab-${request.tabId}`,
+              },
+            } satisfies ExtractTextByIdRuntimeResponse);
           }
           if (request.type === 'chat/delete') {
             deleteRequests.push(request);
@@ -914,7 +936,7 @@ describe('chatpanel regenerate flow', () => {
     expect(form.hidden).toBe(false);
   });
 
-  it('lists tabs for @mention and stages selected tab screenshots with keyboard selection', async () => {
+  it('lists tabs for @mention and stages selected tab text extraction with keyboard selection', async () => {
     const testWindow = getTestWindow();
     await importFreshChatpanelModule();
     await flushMicrotasks();
@@ -949,6 +971,76 @@ describe('chatpanel regenerate flow', () => {
         cancelable: true,
       }),
     );
+    await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(24);
+
+    expect(extractTextByIdRequests).toEqual([
+      {
+        type: 'tab/extract-text-by-id',
+        tabId: 22,
+      },
+    ]);
+    expect(fullPageCaptureByIdRequests).toEqual([]);
+    expect(input.value).toBe('Summarize ');
+    expect(mentionMenu.hidden).toBe(true);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
+    expect(sendRequest).toBeNull();
+  });
+
+  it('stages selected tab screenshots when screenshot action is chosen from mention actions', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const mentionMenu = shadowRoot.querySelector(
+      '#speakeasy-tab-mention-menu',
+    ) as HTMLElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    expect(input).not.toBeNull();
+    expect(mentionMenu).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    if (!input || !mentionMenu || !filePreviewContainer) {
+      throw new Error('Expected mention controls and file preview container.');
+    }
+
+    input.value = 'Summarize @work';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(12);
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(8);
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
     await flushMicrotasks(24);
 
     expect(fullPageCaptureByIdRequests).toEqual([
@@ -957,6 +1049,7 @@ describe('chatpanel regenerate flow', () => {
         tabId: 22,
       },
     ]);
+    expect(extractTextByIdRequests).toEqual([]);
     expect(input.value).toBe('Summarize ');
     expect(mentionMenu.hidden).toBe(true);
     expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
@@ -982,6 +1075,24 @@ describe('chatpanel regenerate flow', () => {
     input.setSelectionRange(input.value.length, input.value.length);
     input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
     await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(8);
 
     input.dispatchEvent(
       new testWindow.KeyboardEvent('keydown', {
@@ -1046,6 +1157,24 @@ describe('chatpanel regenerate flow', () => {
         cancelable: true,
       }),
     );
+    await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(8);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
     await flushMicrotasks(24);
 
     expect(fullPageCaptureByIdRequests).toEqual([
@@ -1092,6 +1221,22 @@ describe('chatpanel regenerate flow', () => {
     input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
     await flushMicrotasks(8);
 
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(12);
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(8);
     input.dispatchEvent(
       new testWindow.KeyboardEvent('keydown', {
         key: 'Enter',
@@ -1208,6 +1353,22 @@ describe('chatpanel regenerate flow', () => {
     input.setSelectionRange(input.value.length, input.value.length);
     input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
     await flushMicrotasks(12);
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(12);
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(8);
     input.dispatchEvent(
       new testWindow.KeyboardEvent('keydown', {
         key: 'Enter',

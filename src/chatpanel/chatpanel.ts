@@ -3,6 +3,7 @@ import {
   type ChatTabContext,
   captureTabFullPageScreenshotById,
   createNewChat,
+  extractTabTextById,
   forkChat,
   listOpenTabsForMention,
   loadChatMessages,
@@ -11,7 +12,9 @@ import {
   sendMessage,
   switchAssistantBranch,
 } from '../shared/chat';
+import type { RuntimeResponse } from '../shared/runtime';
 import { requestOpenOptionsPage } from '../shared/runtime-client';
+import { isTabExtractTextMessageRequest } from '../shared/tab-text-extraction-message';
 import { isRecord } from '../shared/utils';
 import {
   createAttachmentManager,
@@ -34,9 +37,14 @@ import {
   toErrorMessage,
 } from './message-renderer';
 import { findLatestAssistantInteractionId } from './optimistic-message';
-import { extractAndStageCurrentTabText } from './page-text-extraction';
+import {
+  extractAndStageCurrentTabText,
+  extractCurrentTabText,
+  toExtractedTextFile,
+} from './page-text-extraction';
 import { createPanelLayoutController } from './panel-layout';
 import {
+  type MentionTabAction,
   type MentionTokenRange,
   type MentionableTab,
   createTabMentionController,
@@ -187,7 +195,7 @@ function mountChatPanel(): void {
   let isBusy = false;
   let isCapturingFullPageScreenshot = false;
   let isExtractingPageText = false;
-  let isCapturingMentionScreenshot = false;
+  let isProcessingMentionAction = false;
   let isImagePreviewOpen = false;
   let isTextPreviewOpen = false;
   let dragEnterDepth = 0;
@@ -238,7 +246,7 @@ function mountChatPanel(): void {
     menu: tabMentionMenu,
     list: tabMentionList,
     emptyState: tabMentionEmpty,
-    onSelectTab: captureMentionTabScreenshot,
+    onSelectTabAction: handleMentionTabActionSelection,
     listTabs: async () => {
       const payload = await listOpenTabsForMention();
       return payload.tabs.map((tab) => ({
@@ -250,10 +258,7 @@ function mountChatPanel(): void {
     },
     onError: appendLocalError,
     isBusy: () =>
-      isBusy ||
-      isCapturingFullPageScreenshot ||
-      isExtractingPageText ||
-      isCapturingMentionScreenshot,
+      isBusy || isCapturingFullPageScreenshot || isExtractingPageText || isProcessingMentionAction,
   });
 
   async function ensureChatTabContext(): Promise<ChatTabContext> {
@@ -597,9 +602,28 @@ function mountChatPanel(): void {
     await conversationFlow.send();
   });
 
-  chrome.runtime.onMessage.addListener((request: unknown) => {
+  chrome.runtime.onMessage.addListener((request: unknown, _sender, sendResponse) => {
+    if (isTabExtractTextMessageRequest(request)) {
+      try {
+        const payload = extractCurrentTabText();
+        const response: RuntimeResponse<typeof payload> = {
+          ok: true,
+          payload,
+        };
+        sendResponse(response);
+      } catch (error: unknown) {
+        const response: RuntimeResponse<never> = {
+          ok: false,
+          error: toErrorMessage(error),
+        };
+        sendResponse(response);
+      }
+
+      return true;
+    }
+
     if (!isRecord(request)) {
-      return;
+      return false;
     }
 
     switch (request.type) {
@@ -624,6 +648,8 @@ function mountChatPanel(): void {
         closePanel();
         break;
     }
+
+    return false;
   });
 
   document.addEventListener('keydown', (event) => {
@@ -713,17 +739,14 @@ function mountChatPanel(): void {
 
   function syncToolbarButtonState(): void {
     const toolbarBusy =
-      isBusy ||
-      isCapturingFullPageScreenshot ||
-      isExtractingPageText ||
-      isCapturingMentionScreenshot;
+      isBusy || isCapturingFullPageScreenshot || isExtractingPageText || isProcessingMentionAction;
     toolbar.attachButton.disabled = toolbarBusy;
     toolbar.captureButton.disabled = toolbarBusy;
     toolbar.extractTextButton.disabled = toolbarBusy;
   }
 
   function syncComposerDisabledState(): void {
-    input.disabled = isBusy || isCapturingMentionScreenshot;
+    input.disabled = isBusy || isProcessingMentionAction;
   }
 
   function openImagePreview(imageUrl: string, imageLabel: string): void {
@@ -811,34 +834,75 @@ function mountChatPanel(): void {
     }
   }
 
+  async function handleMentionTabActionSelection(
+    tab: MentionableTab,
+    token: MentionTokenRange,
+    action: MentionTabAction,
+  ): Promise<void> {
+    switch (action) {
+      case 'extract-text':
+        await extractMentionTabText(tab, token);
+        return;
+      case 'screenshot':
+        await captureMentionTabScreenshot(tab, token);
+        return;
+      default: {
+        const unsupportedAction: never = action;
+        throw new Error(`Unsupported mention action: ${String(unsupportedAction)}`);
+      }
+    }
+  }
+
+  async function extractMentionTabText(
+    tab: MentionableTab,
+    token: MentionTokenRange,
+  ): Promise<void> {
+    await stageMentionAttachment(token, async () => {
+      const extractedPayload = await extractTabTextById(tab.tabId);
+      return toExtractedTextFile({
+        markdown: extractedPayload.markdown,
+        title: extractedPayload.title,
+      });
+    });
+  }
+
   async function captureMentionTabScreenshot(
     tab: MentionableTab,
     token: MentionTokenRange,
+  ): Promise<void> {
+    await stageMentionAttachment(token, async () => {
+      const screenshotPayload = await captureTabFullPageScreenshotById(tab.tabId);
+      return toScreenshotFile(screenshotPayload);
+    });
+  }
+
+  async function stageMentionAttachment(
+    token: MentionTokenRange,
+    resolveAttachmentFile: () => Promise<File>,
   ): Promise<void> {
     if (
       isBusy ||
       isCapturingFullPageScreenshot ||
       isExtractingPageText ||
-      isCapturingMentionScreenshot
+      isProcessingMentionAction
     ) {
       return;
     }
 
-    isCapturingMentionScreenshot = true;
+    isProcessingMentionAction = true;
     syncComposerDisabledState();
     syncToolbarButtonState();
 
     const nextComposerState = removeMentionTokenFromInputText(input.value, token);
     try {
-      const screenshotPayload = await captureTabFullPageScreenshotById(tab.tabId);
-      const screenshotFile = toScreenshotFile(screenshotPayload);
-      attachmentManager.stageFromFiles([screenshotFile]);
+      const attachmentFile = await resolveAttachmentFile();
+      attachmentManager.stageFromFiles([attachmentFile]);
       input.value = nextComposerState.text;
       input.focus();
       input.setSelectionRange(nextComposerState.caret, nextComposerState.caret);
       resizeComposerInput();
     } finally {
-      isCapturingMentionScreenshot = false;
+      isProcessingMentionAction = false;
       syncComposerDisabledState();
       syncToolbarButtonState();
     }
@@ -984,19 +1048,7 @@ function waitForNextPaint(): Promise<void> {
 }
 
 function resolveExtensionAssetUrl(assetPath: string): string {
-  const chromeApi = globalThis as {
-    chrome?: {
-      runtime?: {
-        getURL?: (path: string) => string;
-      };
-    };
-  };
-  const getUrl = chromeApi.chrome?.runtime?.getURL;
-  if (typeof getUrl === 'function') {
-    return getUrl(assetPath);
-  }
-
-  return assetPath;
+  return chrome.runtime?.getURL?.(assetPath) ?? assetPath;
 }
 
 async function openSettings(

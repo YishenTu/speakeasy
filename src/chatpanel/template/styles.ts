@@ -372,7 +372,7 @@ export function getChatPanelStyles(): string {
       .text-preview-view {
         align-items: stretch;
         justify-content: stretch;
-        padding: 44px 12px 12px;
+        padding: 0;
         background: rgba(5, 5, 5, 0.82);
       }
 
@@ -380,7 +380,9 @@ export function getChatPanelStyles(): string {
         width: 100%;
         height: 100%;
         box-sizing: border-box;
-        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         overscroll-behavior: contain;
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: 0;
@@ -388,8 +390,16 @@ export function getChatPanelStyles(): string {
         padding: 12px;
       }
 
+      .text-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
       .text-preview-title {
-        margin: 0 0 8px;
+        margin: 0;
+        flex: 1;
         font-size: 12px;
         line-height: 1.35;
         color: rgba(255, 255, 255, 0.86);
@@ -398,8 +408,18 @@ export function getChatPanelStyles(): string {
         white-space: nowrap;
       }
 
+      .text-preview-close {
+        position: static;
+        width: 24px;
+        min-width: 24px;
+        height: 24px;
+      }
+
       .text-preview-content {
         margin: 0;
+        flex: 1;
+        overflow: auto;
+        overscroll-behavior: contain;
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         font-family: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;

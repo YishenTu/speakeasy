@@ -24,6 +24,7 @@ describe('chatpanel page text extraction', () => {
       stageFromFiles: (files) => {
         stagedFiles.push(files);
       },
+      sourceTitle: 'Workspace / Example Tab',
       parseHtmlToDocument: (html) => {
         capturedHtml = html;
         const parsed = document.implementation.createHTMLDocument('Extracted');
@@ -38,7 +39,7 @@ describe('chatpanel page text extraction', () => {
         expect(options.markdown).toBe(true);
         return {
           parse: () => ({
-            title: 'Example Article',
+            title: 'Defuddle Article Title',
             content: '# Example Article\n\nThis is extracted markdown.',
           }),
         };
@@ -49,7 +50,7 @@ describe('chatpanel page text extraction', () => {
     expect(stagedFiles).toHaveLength(1);
     expect(stagedFiles[0]).toHaveLength(1);
     expect(stagedFiles[0]?.[0]).toBe(textFile);
-    expect(textFile.name).toBe('example-article.md');
+    expect(textFile.name).toBe('Workspace Example Tab.md');
     expect(textFile.type).toContain('text/plain');
     expect(await textFile.text()).toBe('# Example Article\n\nThis is extracted markdown.');
   });
@@ -118,5 +119,14 @@ describe('chatpanel page text extraction', () => {
     expect(file.name).toBe('speakeasy-page-extract.md');
     expect(file.type).toContain('text/plain');
     expect(await file.text()).toBe('# Untitled');
+  });
+
+  it('sanitizes extracted file names with screenshot-style title rules', async () => {
+    const file = toExtractedTextFile({
+      markdown: '# Report',
+      title: '  Project: Alpha/Beta? <Draft>\n',
+    });
+
+    expect(file.name).toBe('Project Alpha Beta Draft.md');
   });
 });

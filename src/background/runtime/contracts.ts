@@ -13,6 +13,7 @@ import type {
   OpenOptionsPayload,
   RuntimeRequest,
   TabCaptureFullPagePayload,
+  TabExtractTextPayload,
   TabListOpenPayload,
   UploadFilePayload,
 } from '../../shared/runtime';
@@ -33,6 +34,7 @@ export type RuntimePayload =
   | ChatListPayload
   | ChatUploadFilesPayload
   | TabCaptureFullPagePayload
+  | TabExtractTextPayload
   | TabListOpenPayload
   | OpenOptionsPayload;
 
@@ -57,6 +59,7 @@ export interface RuntimeDependencies {
     uploadTimeoutMs?: number,
   ) => Promise<ChatUploadFilesPayload>;
   captureFullPageScreenshot: (tabId: number) => Promise<TabCaptureFullPagePayload>;
+  extractTabTextById: (tabId: number) => Promise<TabExtractTextPayload>;
   openOptionsPage: () => Promise<void>;
   now: () => Date;
 }
@@ -107,4 +110,7 @@ export interface RuntimeRequestRoutingInput {
   handleCaptureFullPageScreenshotById: (
     request: Extract<RuntimeRequest, { type: 'tab/capture-full-page-by-id' }>,
   ) => Promise<TabCaptureFullPagePayload>;
+  handleExtractTextById: (
+    request: Extract<RuntimeRequest, { type: 'tab/extract-text-by-id' }>,
+  ) => Promise<TabExtractTextPayload>;
 }

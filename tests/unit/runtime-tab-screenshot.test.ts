@@ -2,7 +2,11 @@ import { describe, expect, it } from 'bun:test';
 import type { ChatRepository } from '../../src/background/chat-repository';
 import { createRuntimeRequestHandler } from '../../src/background/runtime';
 import type { RuntimeRequestContext } from '../../src/background/runtime/contracts';
-import type { RuntimeRequest, TabCaptureFullPagePayload } from '../../src/shared/runtime';
+import type {
+  RuntimeRequest,
+  TabCaptureFullPagePayload,
+  TabExtractTextPayload,
+} from '../../src/shared/runtime';
 
 const CAPTURE_PAYLOAD: TabCaptureFullPagePayload = {
   dataUrl: 'data:image/png;base64,AAAA',
@@ -10,6 +14,12 @@ const CAPTURE_PAYLOAD: TabCaptureFullPagePayload = {
   fileName: 'speakeasy-full-page.png',
   width: 1400,
   height: 3200,
+};
+
+const EXTRACT_TEXT_PAYLOAD: TabExtractTextPayload = {
+  markdown: '# Extracted',
+  title: 'Example Tab',
+  url: 'https://example.com',
 };
 
 function createSenderContext(tabId: number): RuntimeRequestContext {
@@ -90,6 +100,41 @@ describe('runtime tab screenshot handler', () => {
     await expect(
       handler({
         type: 'tab/capture-full-page-by-id',
+        tabId: 0,
+      } as RuntimeRequest),
+    ).rejects.toThrow(/valid target tab id/i);
+  });
+
+  it('extracts text for explicit tab ids without sender context', async () => {
+    const extractCalls: number[] = [];
+    const handler = createRuntimeRequestHandler({
+      repository: createRepositoryStub(),
+      bootstrapChatStorage: () => new Promise<void>(() => {}),
+      extractTabTextById: async (tabId) => {
+        extractCalls.push(tabId);
+        return EXTRACT_TEXT_PAYLOAD;
+      },
+    });
+
+    const payload = await handler({
+      type: 'tab/extract-text-by-id',
+      tabId: 101,
+    } as RuntimeRequest);
+
+    expect(extractCalls).toEqual([101]);
+    expect(payload).toEqual(EXTRACT_TEXT_PAYLOAD);
+  });
+
+  it('rejects explicit tab text extraction requests with invalid tab ids', async () => {
+    const handler = createRuntimeRequestHandler({
+      repository: createRepositoryStub(),
+      bootstrapChatStorage: async () => {},
+      extractTabTextById: async () => EXTRACT_TEXT_PAYLOAD,
+    });
+
+    await expect(
+      handler({
+        type: 'tab/extract-text-by-id',
         tabId: 0,
       } as RuntimeRequest),
     ).rejects.toThrow(/valid target tab id/i);

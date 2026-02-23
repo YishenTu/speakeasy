@@ -1,7 +1,8 @@
 import Defuddle, { type DefuddleOptions, type DefuddleResponse } from 'defuddle/full';
+import type { TabExtractTextPayload } from '../shared/runtime';
 
 const SPEAKEASY_OVERLAY_ROOT_SELECTOR = '#speakeasy-overlay-root';
-const DEFAULT_EXTRACTED_TEXT_FILE_NAME = 'speakeasy-page-extract.md';
+const DEFAULT_EXTRACTED_TEXT_FILE_BASENAME = 'speakeasy-page-extract';
 const MAX_EXTRACTED_TEXT_FILE_NAME_LENGTH = 96;
 
 type DefuddleExtractor = {
@@ -11,6 +12,15 @@ type DefuddleExtractor = {
 export interface ExtractAndStageCurrentTabTextDependencies {
   stageFromFiles: (files: File[]) => void;
   sourceDocument?: Document;
+  sourceTitle?: string;
+  sourceUrl?: string;
+  parseHtmlToDocument?: (html: string) => Document;
+  createDefuddle?: (doc: Document, options: DefuddleOptions) => DefuddleExtractor;
+}
+
+export interface ExtractCurrentTabTextDependencies {
+  sourceDocument?: Document;
+  sourceTitle?: string;
   sourceUrl?: string;
   parseHtmlToDocument?: (html: string) => Document;
   createDefuddle?: (doc: Document, options: DefuddleOptions) => DefuddleExtractor;
@@ -24,6 +34,18 @@ interface ExtractedTextFileInput {
 export async function extractAndStageCurrentTabText(
   dependencies: ExtractAndStageCurrentTabTextDependencies,
 ): Promise<File> {
+  const extractedPayload = extractCurrentTabText(dependencies);
+  const textFile = toExtractedTextFile({
+    markdown: extractedPayload.markdown,
+    title: extractedPayload.title,
+  });
+  dependencies.stageFromFiles([textFile]);
+  return textFile;
+}
+
+export function extractCurrentTabText(
+  dependencies: ExtractCurrentTabTextDependencies = {},
+): TabExtractTextPayload {
   const sourceDocument = dependencies.sourceDocument ?? document;
   const sourceHtml = sourceDocument.documentElement?.outerHTML?.trim() ?? '';
   if (!sourceHtml) {
@@ -37,11 +59,12 @@ export async function extractAndStageCurrentTabText(
   const extractionDocument = parseHtmlToDocument(sourceHtml);
   extractionDocument.querySelector(SPEAKEASY_OVERLAY_ROOT_SELECTOR)?.remove();
 
+  const sourceUrl = resolveSourceUrl(dependencies.sourceUrl, sourceDocument);
   const createDefuddle =
     dependencies.createDefuddle ??
     ((doc: Document, options: DefuddleOptions) => new Defuddle(doc, options));
   const extracted = createDefuddle(extractionDocument, {
-    url: resolveSourceUrl(dependencies.sourceUrl, sourceDocument),
+    url: sourceUrl,
     markdown: true,
   }).parse();
 
@@ -50,12 +73,12 @@ export async function extractAndStageCurrentTabText(
     throw new Error('Defuddle returned no readable text for this page.');
   }
 
-  const textFile = toExtractedTextFile({
+  const sourceTitle = resolveSourceTitle(dependencies.sourceTitle, sourceDocument);
+  return {
     markdown,
-    title: extracted.title,
-  });
-  dependencies.stageFromFiles([textFile]);
-  return textFile;
+    title: sourceTitle,
+    url: sourceUrl,
+  };
 }
 
 export function toExtractedTextFile(input: ExtractedTextFileInput): File {
@@ -81,20 +104,42 @@ function resolveSourceUrl(explicitSourceUrl: string | undefined, sourceDocument:
 
 function normalizeExtractedTextFileName(title: string | undefined): string {
   const normalizedBaseName = sanitizeTitleForFileName(title);
-  if (!normalizedBaseName) {
-    return DEFAULT_EXTRACTED_TEXT_FILE_NAME;
-  }
-
-  const truncatedBaseName = normalizedBaseName.slice(0, MAX_EXTRACTED_TEXT_FILE_NAME_LENGTH);
-  return `${truncatedBaseName}.md`;
+  return `${normalizedBaseName}.md`;
 }
 
 function sanitizeTitleForFileName(title: string | undefined): string {
-  return (
-    title
-      ?.trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') ?? ''
-  );
+  const collapsedWhitespace = (title ?? '').replace(/\s+/g, ' ').trim();
+  const withoutControlCharacters = stripAsciiControlCharacters(collapsedWhitespace);
+  const sanitized = withoutControlCharacters
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/\.+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!sanitized) {
+    return DEFAULT_EXTRACTED_TEXT_FILE_BASENAME;
+  }
+
+  const truncated = sanitized.slice(0, MAX_EXTRACTED_TEXT_FILE_NAME_LENGTH).trim();
+  return truncated || DEFAULT_EXTRACTED_TEXT_FILE_BASENAME;
+}
+
+function resolveSourceTitle(
+  explicitSourceTitle: string | undefined,
+  sourceDocument: Document,
+): string {
+  const explicit = explicitSourceTitle?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  return sourceDocument.title?.trim() ?? '';
+}
+
+function stripAsciiControlCharacters(input: string): string {
+  let result = '';
+  for (const ch of input) {
+    const code = ch.charCodeAt(0);
+    result += code <= 0x1f || code === 0x7f ? ' ' : ch;
+  }
+  return result;
 }

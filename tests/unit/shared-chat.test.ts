@@ -4,6 +4,7 @@ import {
   captureTabFullPageScreenshotById,
   createNewChat,
   deleteChatById,
+  extractTabTextById,
   forkChat,
   listChatSessions,
   listOpenTabsForMention,
@@ -634,6 +635,26 @@ describe('shared chat client', () => {
       fileName: 'selected-tab.png',
       width: 1110,
       height: 2900,
+    });
+  });
+
+  it('requests tab text extraction for explicit tab ids from background runtime', async () => {
+    queueRuntimeResponses({
+      ok: true,
+      payload: {
+        markdown: '# Extracted page',
+        title: 'Example Page',
+        url: 'https://example.com/page',
+      },
+    });
+
+    const payload = await extractTabTextById(88);
+
+    expect(runtimeRequests).toEqual([{ type: 'tab/extract-text-by-id', tabId: 88 }]);
+    expect(payload).toEqual({
+      markdown: '# Extracted page',
+      title: 'Example Page',
+      url: 'https://example.com/page',
     });
   });
 });

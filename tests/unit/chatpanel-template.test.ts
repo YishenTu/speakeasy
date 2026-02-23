@@ -72,13 +72,22 @@ describe('chatpanel template', () => {
     expect(template).not.toContain('<radialGradient id="a"');
   });
 
-  it('renders a full-page screenshot capture button in the input toolbar', () => {
+  it('renders input-toolbar controls with labels and tooltips', () => {
     const template = getChatPanelTemplate();
 
+    expect(template).toContain('id="speakeasy-model-dropup"');
+    expect(template).toContain('title="Select model"');
+    expect(template).toContain('id="speakeasy-thinking-dropup"');
+    expect(template).toContain('title="Select thinking level"');
     expect(template).toContain('id="speakeasy-capture-full-page"');
     expect(template).toContain('aria-label="Capture full-page screenshot"');
+    expect(template).toContain('title="Capture full-page screenshot"');
     expect(template).toContain('id="speakeasy-extract-page-text"');
     expect(template).toContain('aria-label="Extract page text as markdown"');
+    expect(template).toContain('title="Extract page text as markdown"');
+    expect(template).toContain('id="speakeasy-attach"');
+    expect(template).toContain('aria-label="Attach file"');
+    expect(template).toContain('title="Attach file"');
   });
 
   it('renders image preview markup inside the chatpanel container', () => {

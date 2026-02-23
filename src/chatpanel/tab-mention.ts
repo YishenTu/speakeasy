@@ -7,6 +7,8 @@ export interface MentionableTab {
   hostname: string;
 }
 
+export type MentionTabAction = 'extract-text' | 'screenshot';
+
 export interface MentionTokenRange {
   tokenStart: number;
   tokenEnd: number;
@@ -23,7 +25,11 @@ export interface TabMentionControllerDeps {
   menu: HTMLElement;
   list: HTMLElement;
   emptyState: HTMLElement;
-  onSelectTab: (tab: MentionableTab, token: MentionTokenRange) => Promise<void>;
+  onSelectTabAction: (
+    tab: MentionableTab,
+    token: MentionTokenRange,
+    action: MentionTabAction,
+  ) => Promise<void>;
   listTabs: () => Promise<MentionableTab[]>;
   onError: (message: string) => void;
   isBusy: () => boolean;
@@ -36,10 +42,35 @@ export interface TabMentionController {
   dispose(): void;
 }
 
+interface MentionActionOption {
+  action: MentionTabAction;
+  title: string;
+  meta: string;
+}
+
+const MENTION_ACTION_OPTIONS: MentionActionOption[] = [
+  {
+    action: 'extract-text',
+    title: 'Extract text',
+    meta: 'Attach markdown text from this tab',
+  },
+  {
+    action: 'screenshot',
+    title: 'Take screenshot',
+    meta: 'Attach a full-page screenshot from this tab',
+  },
+];
+
 export function createTabMentionController(deps: TabMentionControllerDeps): TabMentionController {
+  type MentionMenuMode = 'tab-list' | 'action-list';
+
   let mentionToken: MentionTokenRange | null = null;
   let filteredTabs: MentionableTab[] = [];
   let activeIndex = -1;
+  let mode: MentionMenuMode = 'tab-list';
+  let actionTargetTab: MentionableTab | null = null;
+  let actionSourceIndex = -1;
+  let actionActiveIndex = 0;
   let isSelecting = false;
   let isDisposed = false;
   let listRequestVersion = 0;
@@ -60,7 +91,17 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
       return;
     }
 
-    void selectTabAtIndex(rowIndex);
+    const itemType = row.dataset.type?.trim();
+    if (itemType === 'action') {
+      void selectActionAtIndex(rowIndex);
+      return;
+    }
+
+    if (itemType !== 'tab') {
+      return;
+    }
+
+    openActionSelectionForTabIndex(rowIndex);
   };
 
   deps.list.addEventListener('click', handleListClick);
@@ -77,6 +118,21 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
       return;
     }
 
+    if (
+      mode === 'action-list' &&
+      actionTargetTab &&
+      mentionToken &&
+      isSameMentionToken(mentionToken, nextMentionToken)
+    ) {
+      mentionToken = nextMentionToken;
+      renderActionList();
+      return;
+    }
+
+    mode = 'tab-list';
+    actionTargetTab = null;
+    actionSourceIndex = -1;
+    actionActiveIndex = 0;
     mentionToken = nextMentionToken;
 
     const requestVersion = listRequestVersion + 1;
@@ -102,6 +158,9 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
           mentionToken.tokenEnd !== latestToken.tokenEnd ||
           mentionToken.query !== latestToken.query;
         mentionToken = latestToken;
+        if (mode === 'action-list') {
+          return;
+        }
         renderForToken(nextTabs, latestToken, resetActiveIndex);
       })
       .catch((error: unknown) => {
@@ -124,30 +183,49 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
         if (event.target === deps.input) {
           event.preventDefault();
         }
-        if (filteredTabs.length > 0) {
+        if (mode === 'action-list') {
+          actionActiveIndex = Math.min(actionActiveIndex + 1, MENTION_ACTION_OPTIONS.length - 1);
+          renderActionList();
+        } else if (filteredTabs.length > 0) {
           activeIndex = Math.min(activeIndex + 1, filteredTabs.length - 1);
-          renderList();
+          renderTabList();
         }
         return true;
       case 'ArrowUp':
         if (event.target === deps.input) {
           event.preventDefault();
         }
-        if (filteredTabs.length > 0) {
+        if (mode === 'action-list') {
+          actionActiveIndex = Math.max(actionActiveIndex - 1, 0);
+          renderActionList();
+        } else if (filteredTabs.length > 0) {
           activeIndex = Math.max(activeIndex - 1, 0);
-          renderList();
+          renderTabList();
         }
         return true;
       case 'Enter':
       case 'Tab':
         event.preventDefault();
-        if (filteredTabs.length === 0 || deps.isBusy() || isSelecting) {
+        if (deps.isBusy() || isSelecting) {
           return true;
         }
-        void selectTabAtIndex(activeIndex >= 0 ? activeIndex : 0);
+
+        if (mode === 'action-list') {
+          void selectActionAtIndex(actionActiveIndex);
+          return true;
+        }
+
+        if (filteredTabs.length === 0) {
+          return true;
+        }
+        openActionSelectionForTabIndex(activeIndex >= 0 ? activeIndex : 0);
         return true;
       case 'Escape':
         event.preventDefault();
+        if (mode === 'action-list') {
+          returnToTabSelection();
+          return true;
+        }
         close();
         return true;
       default:
@@ -168,15 +246,16 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
     } else {
       activeIndex = Math.max(0, Math.min(activeIndex, filteredTabs.length - 1));
     }
-    renderList();
+    renderTabList();
   }
 
-  function renderList(): void {
+  function renderTabList(): void {
     const fragment = document.createDocumentFragment();
     for (const [index, tab] of filteredTabs.entries()) {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'mention-item';
+      row.dataset.type = 'tab';
       row.dataset.index = String(index);
       row.dataset.tabId = String(tab.tabId);
       row.setAttribute('role', 'option');
@@ -199,29 +278,82 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
     deps.menu.hidden = false;
     if (activeIndex >= 0) {
       const selectedRow = deps.list.querySelector<HTMLElement>(
-        `.mention-item[data-index="${activeIndex}"]`,
+        `.mention-item[data-type="tab"][data-index="${activeIndex}"]`,
       );
       selectedRow?.scrollIntoView({ block: 'nearest' });
     }
   }
 
-  async function selectTabAtIndex(index: number): Promise<void> {
-    if (isSelecting || deps.isBusy()) {
-      return;
-    }
-    if (!mentionToken) {
+  function renderActionList(): void {
+    if (!actionTargetTab) {
       return;
     }
 
+    const fragment = document.createDocumentFragment();
+    for (const [index, option] of MENTION_ACTION_OPTIONS.entries()) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'mention-item';
+      row.dataset.type = 'action';
+      row.dataset.index = String(index);
+      row.dataset.action = option.action;
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', index === actionActiveIndex ? 'true' : 'false');
+
+      const title = document.createElement('span');
+      title.className = 'mention-item-title';
+      title.textContent = option.title;
+
+      const meta = document.createElement('span');
+      meta.className = 'mention-item-meta';
+      meta.textContent = option.meta;
+
+      row.append(title, meta);
+      fragment.append(row);
+    }
+
+    deps.list.replaceChildren(fragment);
+    deps.emptyState.hidden = true;
+    deps.menu.hidden = false;
+    if (actionActiveIndex >= 0) {
+      const selectedRow = deps.list.querySelector<HTMLElement>(
+        `.mention-item[data-type="action"][data-index="${actionActiveIndex}"]`,
+      );
+      selectedRow?.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function openActionSelectionForTabIndex(index: number): void {
     const tab = filteredTabs[index];
     if (!tab) {
       return;
     }
 
+    mode = 'action-list';
+    actionTargetTab = tab;
+    actionSourceIndex = index;
+    actionActiveIndex = 0;
+    renderActionList();
+  }
+
+  async function selectActionAtIndex(index: number): Promise<void> {
+    if (isSelecting || deps.isBusy()) {
+      return;
+    }
+    if (!mentionToken || !actionTargetTab) {
+      return;
+    }
+
+    const actionOption = MENTION_ACTION_OPTIONS[index];
+    if (!actionOption) {
+      return;
+    }
+
     const selectionToken: MentionTokenRange = { ...mentionToken };
+    const selectedTab = actionTargetTab;
     isSelecting = true;
     try {
-      await deps.onSelectTab(tab, selectionToken);
+      await deps.onSelectTabAction(selectedTab, selectionToken, actionOption.action);
       close();
     } catch (error: unknown) {
       deps.onError(toErrorMessage(error));
@@ -230,10 +362,28 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
     }
   }
 
+  function returnToTabSelection(): void {
+    mode = 'tab-list';
+    actionTargetTab = null;
+    if (filteredTabs.length === 0) {
+      close();
+      return;
+    }
+
+    activeIndex = clamp(actionSourceIndex, 0, filteredTabs.length - 1);
+    actionSourceIndex = -1;
+    actionActiveIndex = 0;
+    renderTabList();
+  }
+
   function close(): void {
     mentionToken = null;
     filteredTabs = [];
     activeIndex = -1;
+    mode = 'tab-list';
+    actionTargetTab = null;
+    actionSourceIndex = -1;
+    actionActiveIndex = 0;
     deps.menu.hidden = true;
     deps.emptyState.hidden = true;
     deps.list.replaceChildren();
@@ -254,6 +404,14 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
     close,
     dispose,
   };
+}
+
+function isSameMentionToken(left: MentionTokenRange, right: MentionTokenRange): boolean {
+  return (
+    left.tokenStart === right.tokenStart &&
+    left.tokenEnd === right.tokenEnd &&
+    left.query === right.query
+  );
 }
 
 export function findMentionTokenAtCaret(

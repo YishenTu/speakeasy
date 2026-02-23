@@ -1,8 +1,14 @@
-import type { RuntimeRequest, TabCaptureFullPagePayload } from '../../../shared/runtime';
+import type {
+  RuntimeRequest,
+  TabCaptureFullPagePayload,
+  TabExtractTextPayload,
+} from '../../../shared/runtime';
 import type { RuntimeDependencies, RuntimeRequestContext } from '../contracts';
 
 const INVALID_TARGET_TAB_ID_MESSAGE =
   'Full-page screenshot capture requires a valid target tab id.';
+const INVALID_TARGET_EXTRACTION_TAB_ID_MESSAGE =
+  'Tab text extraction requires a valid target tab id.';
 const INVALID_SENDER_TAB_ID_MESSAGE =
   'Full-page screenshot capture requires an active browser tab.';
 
@@ -27,6 +33,17 @@ export async function handleCaptureFullPageScreenshotById(
   }
 
   return dependencies.captureFullPageScreenshot(request.tabId);
+}
+
+export async function handleExtractTextById(
+  request: Extract<RuntimeRequest, { type: 'tab/extract-text-by-id' }>,
+  dependencies: RuntimeDependencies,
+): Promise<TabExtractTextPayload> {
+  if (!isPositiveInteger(request.tabId)) {
+    throw new Error(INVALID_TARGET_EXTRACTION_TAB_ID_MESSAGE);
+  }
+
+  return dependencies.extractTabTextById(request.tabId);
 }
 
 export function isPositiveInteger(value: unknown): value is number {

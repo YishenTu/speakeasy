@@ -14,6 +14,7 @@ import type {
   ChatUploadFilesPayload,
   FileDataAttachmentPayload,
   TabCaptureFullPagePayload,
+  TabExtractTextPayload,
   TabListOpenPayload,
   UploadFileTransportPayload,
 } from './runtime';
@@ -364,6 +365,13 @@ export async function captureTabFullPageScreenshotById(
 ): Promise<TabCaptureFullPagePayload> {
   return sendRuntimeRequest<TabCaptureFullPagePayload>({
     type: 'tab/capture-full-page-by-id',
+    tabId,
+  });
+}
+
+export async function extractTabTextById(tabId: number): Promise<TabExtractTextPayload> {
+  return sendRuntimeRequest<TabExtractTextPayload>({
+    type: 'tab/extract-text-by-id',
     tabId,
   });
 }

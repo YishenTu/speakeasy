@@ -35,6 +35,8 @@ export async function routeRuntimeRequest(
       return input.handleCaptureFullPageScreenshot();
     case 'tab/capture-full-page-by-id':
       return input.handleCaptureFullPageScreenshotById(request);
+    case 'tab/extract-text-by-id':
+      return input.handleExtractTextById(request);
     default:
       return assertNever(request);
   }

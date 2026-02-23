@@ -31,10 +31,12 @@ import { handleUploadFiles } from './runtime/handlers/chat-upload';
 import {
   handleCaptureFullPageScreenshot,
   handleCaptureFullPageScreenshotById,
+  handleExtractTextById,
 } from './runtime/handlers/tab-capture';
 import { handleListOpenTabs } from './runtime/handlers/tab-list';
 import { routeRuntimeRequest } from './runtime/request-router';
 import { generateAndPersistSessionTitle } from './runtime/title-generation';
+import { extractTabTextById } from './tab-text-extraction';
 import { uploadFilesToGemini as uploadFilesToGeminiInBackground } from './uploads';
 import { toErrorMessage } from './utils';
 
@@ -66,6 +68,15 @@ export function registerBackgroundRuntimeHandlers(): void {
   });
 }
 
+const BOOTSTRAP_BYPASS_TYPES: ReadonlySet<string> = new Set([
+  'app/open-options',
+  'chat/get-tab-context',
+  'tab/capture-full-page',
+  'tab/capture-full-page-by-id',
+  'tab/extract-text-by-id',
+  'tab/list-open',
+]);
+
 export function createRuntimeRequestHandler(
   overrides: Partial<RuntimeDependencies> = {},
 ): (request: RuntimeRequest, context?: RuntimeRequestContext) => Promise<RuntimePayload> {
@@ -84,6 +95,7 @@ export function createRuntimeRequestHandler(
       return uploadFilesToGeminiInBackground(files, apiKey, {}, options);
     },
     captureFullPageScreenshot,
+    extractTabTextById,
     openOptionsPage,
     now: () => new Date(),
     ...overrides,
@@ -105,13 +117,7 @@ export function createRuntimeRequestHandler(
     request: RuntimeRequest,
     context?: RuntimeRequestContext,
   ): Promise<RuntimePayload> => {
-    if (
-      request.type !== 'app/open-options' &&
-      request.type !== 'tab/capture-full-page' &&
-      request.type !== 'tab/list-open' &&
-      request.type !== 'tab/capture-full-page-by-id' &&
-      request.type !== 'chat/get-tab-context'
-    ) {
+    if (!BOOTSTRAP_BYPASS_TYPES.has(request.type)) {
       await bootstrapGate.ensureReady();
     }
 
@@ -186,6 +192,8 @@ export function createRuntimeRequestHandler(
         handleCaptureFullPageScreenshot(context, dependencies),
       handleCaptureFullPageScreenshotById: async (captureRequest) =>
         handleCaptureFullPageScreenshotById(captureRequest, dependencies),
+      handleExtractTextById: async (extractRequest) =>
+        handleExtractTextById(extractRequest, dependencies),
     });
   };
 }
