@@ -1,8 +1,10 @@
 import {
   type ChatMessage,
   type ChatTabContext,
+  captureTabFullPageScreenshotById,
   createNewChat,
   forkChat,
+  listOpenTabsForMention,
   loadChatMessages,
   regenerateAssistantMessage,
   resolveChatTabContext,
@@ -19,7 +21,7 @@ import {
 import { canSubmitMessage, createConversationFlowController } from './conversation-flow';
 import { createDeleteSessionConfirmation } from './delete-confirmation';
 import { queryRequiredElement } from './dom';
-import { captureAndStageFullPageScreenshot } from './full-page-screenshot';
+import { captureAndStageFullPageScreenshot, toScreenshotFile } from './full-page-screenshot';
 import { createHistoryDropdownController } from './history-dropdown';
 import { createInputToolbar } from './input-toolbar';
 import { isImageMimeType } from './media-helpers';
@@ -33,6 +35,12 @@ import {
 } from './message-renderer';
 import { findLatestAssistantInteractionId } from './optimistic-message';
 import { createPanelLayoutController } from './panel-layout';
+import {
+  type MentionTokenRange,
+  type MentionableTab,
+  createTabMentionController,
+  removeMentionTokenFromInputText,
+} from './tab-mention';
 import { getChatPanelTemplate } from './template';
 
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
@@ -73,6 +81,18 @@ function mountChatPanel(): void {
   const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
   const fileInput = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-file-input');
   const filePreviews = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-file-previews');
+  const tabMentionMenu = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-tab-mention-menu',
+  );
+  const tabMentionList = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-tab-mention-list',
+  );
+  const tabMentionEmpty = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-tab-mention-empty',
+  );
   const messageList = queryRequiredElement<HTMLOListElement>(shadowRoot, '#speakeasy-messages');
   const imagePreviewOverlay = queryRequiredElement<HTMLElement>(
     shadowRoot,
@@ -138,11 +158,21 @@ function mountChatPanel(): void {
   });
   layoutController.clampAndSync();
 
-  input.addEventListener('input', resizeComposerInput);
+  input.addEventListener('input', () => {
+    resizeComposerInput();
+    tabMentionController.onInputOrCaretChange();
+  });
+  input.addEventListener('click', () => {
+    tabMentionController.onInputOrCaretChange();
+  });
+  input.addEventListener('keyup', () => {
+    tabMentionController.onInputOrCaretChange();
+  });
 
   let isPanelOpen = false;
   let isBusy = false;
   let isCapturingFullPageScreenshot = false;
+  let isCapturingMentionScreenshot = false;
   let isImagePreviewOpen = false;
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
@@ -177,6 +207,25 @@ function mountChatPanel(): void {
     localAttachmentPreviewUrls,
     onResizeComposer: resizeComposerInput,
     onError: appendLocalError,
+  });
+
+  const tabMentionController = createTabMentionController({
+    input,
+    menu: tabMentionMenu,
+    list: tabMentionList,
+    emptyState: tabMentionEmpty,
+    onSelectTab: async (tab, token) => captureMentionTabScreenshot(tab, token),
+    listTabs: async () => {
+      const payload = await listOpenTabsForMention();
+      return payload.tabs.map((tab) => ({
+        tabId: tab.tabId,
+        title: tab.title,
+        url: tab.url,
+        hostname: tab.hostname,
+      }));
+    },
+    onError: appendLocalError,
+    isBusy: () => isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot,
   });
 
   async function ensureChatTabContext(): Promise<ChatTabContext> {
@@ -417,6 +466,21 @@ function mountChatPanel(): void {
     openImagePreview(previewUrl, imageLabel);
   });
 
+  shadowRoot.addEventListener(
+    'keydown',
+    (event) => {
+      if (!('key' in event)) {
+        return;
+      }
+
+      const keyboardEvent = event as KeyboardEvent;
+      if (tabMentionController.onKeyDown(keyboardEvent)) {
+        keyboardEvent.stopPropagation();
+      }
+    },
+    true,
+  );
+
   function appendLocalError(message: string): void {
     appendMessage(
       {
@@ -549,6 +613,7 @@ function mountChatPanel(): void {
     layoutController.cancelInteraction();
     dragEnterDepth = 0;
     form.classList.remove('drop-active');
+    tabMentionController.close();
     closeImagePreview();
     historyDropdown.setOpen(false);
     isPanelOpen = false;
@@ -575,7 +640,10 @@ function mountChatPanel(): void {
 
   function setBusyState(nextBusy: boolean): void {
     isBusy = nextBusy;
-    input.disabled = nextBusy;
+    syncComposerDisabledState();
+    if (nextBusy) {
+      tabMentionController.close();
+    }
     syncToolbarButtonState();
     newChatButton.disabled = nextBusy;
     historyToggleButton.disabled = nextBusy;
@@ -584,9 +652,13 @@ function mountChatPanel(): void {
   }
 
   function syncToolbarButtonState(): void {
-    const toolbarBusy = isBusy || isCapturingFullPageScreenshot;
+    const toolbarBusy = isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot;
     toolbar.attachButton.disabled = toolbarBusy;
     toolbar.captureButton.disabled = toolbarBusy;
+  }
+
+  function syncComposerDisabledState(): void {
+    input.disabled = isBusy || isCapturingMentionScreenshot;
   }
 
   function openImagePreview(imageUrl: string, imageLabel: string): void {
@@ -641,6 +713,34 @@ function mountChatPanel(): void {
         input.focus();
       }
       isCapturingFullPageScreenshot = false;
+      syncToolbarButtonState();
+    }
+  }
+
+  async function captureMentionTabScreenshot(
+    tab: MentionableTab,
+    token: MentionTokenRange,
+  ): Promise<void> {
+    if (isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot) {
+      return;
+    }
+
+    isCapturingMentionScreenshot = true;
+    syncComposerDisabledState();
+    syncToolbarButtonState();
+
+    const nextComposerState = removeMentionTokenFromInputText(input.value, token);
+    try {
+      const screenshotPayload = await captureTabFullPageScreenshotById(tab.tabId);
+      const screenshotFile = toScreenshotFile(screenshotPayload);
+      attachmentManager.stageFromFiles([screenshotFile]);
+      input.value = nextComposerState.text;
+      input.focus();
+      input.setSelectionRange(nextComposerState.caret, nextComposerState.caret);
+      resizeComposerInput();
+    } finally {
+      isCapturingMentionScreenshot = false;
+      syncComposerDisabledState();
       syncToolbarButtonState();
     }
   }

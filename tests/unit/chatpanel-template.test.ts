@@ -128,4 +128,29 @@ describe('chatpanel template', () => {
     expect(template).toContain('.message-attachment-strip {');
     expect(template).not.toContain('.file-chip {');
   });
+
+  it('renders tab mention menu markup inside the composer', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('id="speakeasy-tab-mention-menu"');
+    expect(template).toContain('id="speakeasy-tab-mention-list"');
+    expect(template).toContain('id="speakeasy-tab-mention-empty"');
+    expect(template).toContain('class="mention-menu" hidden');
+  });
+
+  it('includes tab mention style rules for menu, list, and items', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.composer-input-wrap {');
+    expect(template).toContain('position: relative;');
+    expect(template).toContain('.mention-menu {');
+    expect(template).toContain('position: absolute;');
+    expect(template).toContain('bottom: calc(100% + 6px);');
+    expect(template).toContain('.mention-list {');
+    expect(template).toContain('.mention-item {');
+    expect(template).toContain('.mention-item[aria-selected="true"] {');
+    expect(template).toContain('.mention-item-title {');
+    expect(template).toContain('.mention-item-meta {');
+    expect(template).toContain('.mention-empty {');
+  });
 });

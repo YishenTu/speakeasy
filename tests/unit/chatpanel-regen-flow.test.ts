@@ -22,6 +22,17 @@ type UploadFilesRuntimeResponse = {
   };
 };
 
+type CaptureByIdRuntimeResponse = {
+  ok: true;
+  payload: {
+    dataUrl: string;
+    mimeType: string;
+    fileName: string;
+    width: number;
+    height: number;
+  };
+};
+
 function createDeferred<T>(): Deferred<T> {
   let resolve: ((value: T) => void) | undefined;
   let reject: ((reason?: unknown) => void) | undefined;
@@ -63,7 +74,22 @@ describe('chatpanel regenerate flow', () => {
   let forkRequest: Extract<RuntimeRequest, { type: 'chat/fork' }> | null;
   let switchBranchRequest: Extract<RuntimeRequest, { type: 'chat/switch-branch' }> | null;
   let uploadRequests: Extract<RuntimeRequest, { type: 'chat/upload-files' }>[];
+  let listOpenTabRequests: Extract<RuntimeRequest, { type: 'tab/list-open' }>[];
   let fullPageCaptureRequests: Extract<RuntimeRequest, { type: 'tab/capture-full-page' }>[];
+  let fullPageCaptureByIdRequests: Extract<
+    RuntimeRequest,
+    { type: 'tab/capture-full-page-by-id' }
+  >[];
+  let mentionTabsPayload: Array<{
+    tabId: number;
+    windowId: number;
+    active: boolean;
+    title: string;
+    url: string;
+    hostname: string;
+  }>;
+  let captureByIdErrorMessage: string | null;
+  let deferredCaptureByIdResponse: Deferred<CaptureByIdRuntimeResponse> | null;
   let deleteRequests: Extract<RuntimeRequest, { type: 'chat/delete' }>[];
   let deferredUploadResponsesByFileName: Map<string, Deferred<UploadFilesRuntimeResponse>>;
   let loadRequests: Extract<RuntimeRequest, { type: 'chat/load' }>[];
@@ -107,7 +133,29 @@ describe('chatpanel regenerate flow', () => {
     forkRequest = null;
     switchBranchRequest = null;
     uploadRequests = [];
+    listOpenTabRequests = [];
     fullPageCaptureRequests = [];
+    fullPageCaptureByIdRequests = [];
+    mentionTabsPayload = [
+      {
+        tabId: 21,
+        windowId: 1,
+        active: false,
+        title: 'Docs',
+        url: 'https://docs.example.com',
+        hostname: 'docs.example.com',
+      },
+      {
+        tabId: 22,
+        windowId: 1,
+        active: true,
+        title: 'Workspace',
+        url: 'https://workspace.example.com/repo',
+        hostname: 'workspace.example.com',
+      },
+    ];
+    captureByIdErrorMessage = null;
+    deferredCaptureByIdResponse = null;
     deleteRequests = [];
     deferredUploadResponsesByFileName = new Map();
     loadRequests = [];
@@ -275,6 +323,37 @@ describe('chatpanel regenerate flow', () => {
                 fileName: 'mocked-page-title.png',
                 width: 1280,
                 height: 3200,
+              },
+            });
+          }
+          if (request.type === 'tab/list-open') {
+            listOpenTabRequests.push(request);
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                tabs: mentionTabsPayload,
+              },
+            });
+          }
+          if (request.type === 'tab/capture-full-page-by-id') {
+            fullPageCaptureByIdRequests.push(request);
+            if (captureByIdErrorMessage) {
+              return Promise.resolve({
+                ok: false as const,
+                error: captureByIdErrorMessage,
+              });
+            }
+            if (deferredCaptureByIdResponse) {
+              return deferredCaptureByIdResponse.promise;
+            }
+            return Promise.resolve({
+              ok: true as const,
+              payload: {
+                dataUrl: 'data:image/png;base64,bWVudGlvbg==',
+                mimeType: 'image/png',
+                fileName: `tab-${request.tabId}.png`,
+                width: 1600,
+                height: 2400,
               },
             });
           }
@@ -702,6 +781,328 @@ describe('chatpanel regenerate flow', () => {
     document.dispatchEvent(new testWindow.KeyboardEvent('keydown', { key: 'Escape' }));
     await flushMicrotasks();
     expect(overlay.hidden).toBe(true);
+  });
+
+  it('lists tabs for @mention and stages selected tab screenshots with keyboard selection', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const mentionMenu = shadowRoot.querySelector(
+      '#speakeasy-tab-mention-menu',
+    ) as HTMLElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    expect(input).not.toBeNull();
+    expect(mentionMenu).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    if (!input || !mentionMenu || !filePreviewContainer) {
+      throw new Error('Expected mention controls and file preview container.');
+    }
+
+    input.value = 'Summarize @work';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    expect(listOpenTabRequests).toEqual([{ type: 'tab/list-open' }]);
+    expect(mentionMenu.hidden).toBe(false);
+    const mentionRows = shadowRoot.querySelectorAll('.mention-item');
+    expect(mentionRows).toHaveLength(1);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(24);
+
+    expect(fullPageCaptureByIdRequests).toEqual([
+      {
+        type: 'tab/capture-full-page-by-id',
+        tabId: 22,
+      },
+    ]);
+    expect(input.value).toBe('Summarize ');
+    expect(mentionMenu.hidden).toBe(true);
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
+    expect(sendRequest).toBeNull();
+  });
+
+  it('disables composer input while mention screenshot capture is in-flight', async () => {
+    const testWindow = getTestWindow();
+    deferredCaptureByIdResponse = createDeferred<CaptureByIdRuntimeResponse>();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    expect(input).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    if (!input || !filePreviewContainer) {
+      throw new Error('Expected chatpanel input and file preview container.');
+    }
+
+    input.value = 'Summarize @work';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(12);
+
+    expect(fullPageCaptureByIdRequests).toEqual([
+      {
+        type: 'tab/capture-full-page-by-id',
+        tabId: 22,
+      },
+    ]);
+    expect(input.disabled).toBe(true);
+
+    deferredCaptureByIdResponse.resolve({
+      ok: true,
+      payload: {
+        dataUrl: 'data:image/png;base64,bWVudGlvbg==',
+        mimeType: 'image/png',
+        fileName: 'tab-22.png',
+        width: 1600,
+        height: 2400,
+      },
+    });
+    await flushMicrotasks(24);
+
+    expect(input.disabled).toBe(false);
+    expect(input.value).toBe('Summarize ');
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(1);
+  });
+
+  it('appends local errors and keeps mention text when by-id screenshot capture fails', async () => {
+    const testWindow = getTestWindow();
+    captureByIdErrorMessage = 'Unable to capture selected tab';
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    const filePreviewContainer = shadowRoot.querySelector('#speakeasy-file-previews');
+    expect(input).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    expect(filePreviewContainer).not.toBeNull();
+    if (!input || !messageList || !filePreviewContainer) {
+      throw new Error('Expected chatpanel input, message list, and file preview container.');
+    }
+
+    input.value = 'Inspect @work';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(24);
+
+    expect(fullPageCaptureByIdRequests).toEqual([
+      {
+        type: 'tab/capture-full-page-by-id',
+        tabId: 22,
+      },
+    ]);
+    expect(messageList.textContent).toContain('Unable to capture selected tab');
+    expect(input.value).toBe('Inspect @work');
+    expect(filePreviewContainer.querySelectorAll('.file-preview-tile')).toHaveLength(0);
+  });
+
+  it('uses Enter for mention selection while open and message submit when mention menu is closed', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error('Expected chatpanel input.');
+    }
+
+    input.value = 'Ask @work';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const mentionEnterEvent = new testWindow.KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(mentionEnterEvent);
+    await flushMicrotasks(24);
+
+    expect(mentionEnterEvent.defaultPrevented).toBe(true);
+    expect(sendRequest).toBeNull();
+
+    input.value = 'plain submit';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(8);
+
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(24);
+
+    expect(sendRequest?.type).toBe('chat/send');
+    expect(sendRequest?.text).toBe('plain submit');
+  });
+
+  it('handles ArrowDown from mention menu focus and keeps scrolling behavior enabled', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error('Expected chatpanel input.');
+    }
+
+    input.value = 'Scroll @';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const mentionRows = shadowRoot.querySelectorAll('.mention-item');
+    expect(mentionRows.length).toBeGreaterThan(1);
+    const firstRow = mentionRows[0] as HTMLElement | undefined;
+    expect(firstRow).toBeDefined();
+    if (!firstRow) {
+      throw new Error('Expected at least one mention row.');
+    }
+
+    firstRow.focus();
+    const arrowEvent = new testWindow.KeyboardEvent('keydown', {
+      key: 'ArrowDown',
+      bubbles: true,
+      cancelable: true,
+    });
+    firstRow.dispatchEvent(arrowEvent);
+    await flushMicrotasks(12);
+
+    expect(arrowEvent.defaultPrevented).toBe(false);
+    const selectedRow = shadowRoot.querySelector(
+      '.mention-item[aria-selected="true"]',
+    ) as HTMLElement | null;
+    expect(selectedRow?.dataset.tabId).toBe('22');
+  });
+
+  it('keeps mention selection at top and prevents caret movement on ArrowUp from input', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error('Expected chatpanel input.');
+    }
+
+    input.value = 'Scroll @';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    const selectedBeforeArrowUp = shadowRoot.querySelector(
+      '.mention-item[aria-selected="true"]',
+    ) as HTMLElement | null;
+    expect(selectedBeforeArrowUp?.dataset.tabId).toBe('21');
+
+    const selectionStartBeforeArrowUp = input.selectionStart;
+    const arrowUpEvent = new testWindow.KeyboardEvent('keydown', {
+      key: 'ArrowUp',
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(arrowUpEvent);
+    await flushMicrotasks(12);
+
+    expect(arrowUpEvent.defaultPrevented).toBe(true);
+    expect(input.selectionStart).toBe(selectionStartBeforeArrowUp);
+    const selectedAfterArrowUp = shadowRoot.querySelector(
+      '.mention-item[aria-selected="true"]',
+    ) as HTMLElement | null;
+    expect(selectedAfterArrowUp?.dataset.tabId).toBe('21');
+  });
+
+  it('keeps tab-scoped active chat resolution intact after mention runtime calls', async () => {
+    storageState[ACTIVE_CHAT_STORAGE_KEY] = {
+      '11': 'chat-tab-11',
+      '22': 'chat-tab-22',
+      fallback: 'chat-fallback',
+    };
+    currentTabId = 22;
+    const testWindow = getTestWindow();
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error('Expected chatpanel input.');
+    }
+
+    input.value = 'Scope @work';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(24);
+
+    expect(loadRequests.length).toBeGreaterThan(0);
+    expect(loadRequests[0]).toEqual({
+      type: 'chat/load',
+      chatId: 'chat-tab-22',
+    });
+    expect(listOpenTabRequests).toEqual([{ type: 'tab/list-open' }]);
+    expect(fullPageCaptureByIdRequests).toEqual([
+      {
+        type: 'tab/capture-full-page-by-id',
+        tabId: 22,
+      },
+    ]);
+    expect(storageState[ACTIVE_CHAT_STORAGE_KEY]).toEqual({
+      '11': 'chat-tab-11',
+      '22': 'chat-tab-22',
+      fallback: 'chat-fallback',
+    });
   });
 
   it('starts uploading on attach and blocks submit until image upload finishes', async () => {

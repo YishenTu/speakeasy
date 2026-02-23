@@ -1075,6 +1075,10 @@ export function getChatPanelStyles(): string {
         gap: 2px;
       }
 
+      .composer-input-wrap {
+        position: relative;
+      }
+
       .attach-btn,
       .dropup-trigger {
         border: none;
@@ -1272,6 +1276,79 @@ export function getChatPanelStyles(): string {
         to {
           transform: rotate(360deg);
         }
+      }
+
+      .mention-menu {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: calc(100% + 6px);
+        border: 1px solid var(--sp-color-border-base);
+        border-radius: var(--sp-radius-md);
+        background: var(--sp-color-surface-overlay);
+        max-height: 188px;
+        overflow: hidden;
+        z-index: 12;
+      }
+
+      .mention-list {
+        display: flex;
+        flex-direction: column;
+        max-height: 188px;
+        overflow-y: auto;
+      }
+
+      .mention-list::-webkit-scrollbar {
+        width: 6px;
+      }
+
+      .mention-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+      }
+
+      .mention-item {
+        border: none;
+        background: transparent;
+        color: var(--sp-color-text-default);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 7px 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .mention-item:hover,
+      .mention-item[aria-selected="true"] {
+        background: var(--sp-color-surface-hover);
+        color: var(--sp-color-text-primary);
+      }
+
+      .mention-item-title {
+        width: 100%;
+        font-size: 12px;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mention-item-meta {
+        width: 100%;
+        font-size: var(--sp-font-size-xs);
+        line-height: 1.2;
+        color: var(--sp-color-text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .mention-empty {
+        padding: 8px 10px;
+        font-size: var(--sp-font-size-xs);
+        color: var(--sp-color-text-muted);
       }
 
       .input-toolbar {

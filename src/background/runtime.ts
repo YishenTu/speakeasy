@@ -28,6 +28,11 @@ import {
 } from './runtime/handlers/chat-crud';
 import { handleSendMessage } from './runtime/handlers/chat-send';
 import { handleUploadFiles } from './runtime/handlers/chat-upload';
+import {
+  handleCaptureFullPageScreenshot,
+  handleCaptureFullPageScreenshotById,
+} from './runtime/handlers/tab-capture';
+import { handleListOpenTabs } from './runtime/handlers/tab-list';
 import { routeRuntimeRequest } from './runtime/request-router';
 import { generateAndPersistSessionTitle } from './runtime/title-generation';
 import { uploadFilesToGemini as uploadFilesToGeminiInBackground } from './uploads';
@@ -103,6 +108,8 @@ export function createRuntimeRequestHandler(
     if (
       request.type !== 'app/open-options' &&
       request.type !== 'tab/capture-full-page' &&
+      request.type !== 'tab/list-open' &&
+      request.type !== 'tab/capture-full-page-by-id' &&
       request.type !== 'chat/get-tab-context'
     ) {
       await bootstrapGate.ensureReady();
@@ -174,13 +181,11 @@ export function createRuntimeRequestHandler(
       },
       handleUploadFiles: (uploadRequest) =>
         handleUploadFiles(uploadRequest.files, uploadRequest.uploadTimeoutMs, dependencies),
-      handleCaptureFullPageScreenshot: async () => {
-        const tabId = context?.sender?.tab?.id;
-        if (!Number.isInteger(tabId) || !tabId || tabId <= 0) {
-          throw new Error('Full-page screenshot capture requires an active browser tab.');
-        }
-        return dependencies.captureFullPageScreenshot(tabId);
-      },
+      handleListOpenTabs: async () => handleListOpenTabs(),
+      handleCaptureFullPageScreenshot: async () =>
+        handleCaptureFullPageScreenshot(context, dependencies),
+      handleCaptureFullPageScreenshotById: async (captureRequest) =>
+        handleCaptureFullPageScreenshotById(captureRequest, dependencies),
     });
   };
 }

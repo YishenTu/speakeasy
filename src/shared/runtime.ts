@@ -81,6 +81,13 @@ export type RuntimeRequest =
       type: 'tab/capture-full-page';
     }
   | {
+      type: 'tab/list-open';
+    }
+  | {
+      type: 'tab/capture-full-page-by-id';
+      tabId: number;
+    }
+  | {
       type: 'app/open-options';
     };
 
@@ -96,6 +103,8 @@ const RUNTIME_REQUEST_TYPE_LOOKUP: Record<RuntimeRequest['type'], true> = {
   'chat/list': true,
   'chat/upload-files': true,
   'tab/capture-full-page': true,
+  'tab/list-open': true,
+  'tab/capture-full-page-by-id': true,
   'app/open-options': true,
 };
 
@@ -180,6 +189,19 @@ export interface TabCaptureFullPagePayload {
   fileName: string;
   width: number;
   height: number;
+}
+
+export interface OpenTabSummary {
+  tabId: number;
+  windowId: number;
+  active: boolean;
+  title: string;
+  url: string;
+  hostname: string;
+}
+
+export interface TabListOpenPayload {
+  tabs: OpenTabSummary[];
 }
 
 export interface ChatStreamDeltaEvent {
