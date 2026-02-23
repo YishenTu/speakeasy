@@ -13,6 +13,7 @@ import {
   isPdfMimeType,
 } from './media-helpers';
 import { toErrorMessage } from './message-renderer';
+import { attachTextPreview, isMarkdownPreviewCandidate } from './text-preview';
 import { uploadFilesToGemini } from './uploads';
 
 export const MAX_STAGED_FILES = 5;
@@ -27,6 +28,7 @@ export type StagedFile = {
   name: string;
   mimeType: string;
   previewUrl?: string;
+  previewText?: string;
   uploadState: 'uploading' | 'uploaded' | 'failed';
   uploadedAttachment?: FileDataAttachmentPayload;
   uploadError?: string;
@@ -99,7 +101,31 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
     }
     renderStagedFiles();
     for (const staged of nextFiles) {
+      if (isMarkdownPreviewCandidate(staged.name, staged.mimeType)) {
+        void populateMarkdownPreview(staged.id);
+      }
       void uploadStagedFile(staged.id);
+    }
+  }
+
+  async function populateMarkdownPreview(fileId: string): Promise<void> {
+    const staged = stagedFiles.find((candidate) => candidate.id === fileId);
+    if (!staged || staged.previewText) {
+      return;
+    }
+
+    try {
+      const previewText = (await staged.file.text()).trim();
+      if (!previewText || !stagedFiles.some((candidate) => candidate.id === fileId)) {
+        return;
+      }
+
+      stagedFiles = stagedFiles.map((candidate) =>
+        candidate.id === fileId ? { ...candidate, previewText } : candidate,
+      );
+      renderStagedFiles();
+    } catch {
+      // Ignore text-preview read errors; upload flow remains unaffected.
     }
   }
 
@@ -134,6 +160,9 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
         if (isPdfMimeType(staged.mimeType)) {
           generic.classList.add('is-pdf');
         }
+        if (isMarkdownPreviewCandidate(staged.name, staged.mimeType)) {
+          generic.classList.add('is-markdown');
+        }
 
         const fileTypeLabel = document.createElement('span');
         fileTypeLabel.className = 'file-preview-filetype';
@@ -141,6 +170,11 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
 
         generic.append(fileTypeLabel);
         tile.append(generic);
+
+        if (isMarkdownPreviewCandidate(staged.name, staged.mimeType) && staged.previewText) {
+          attachTextPreview(tile, staged.previewText, staged.name);
+          tile.classList.add('previewable-text');
+        }
       }
 
       const removeButton = document.createElement('button');
@@ -457,7 +491,7 @@ export function hasFileDataTransfer(dataTransfer: DataTransfer | null): boolean 
     return false;
   }
 
-  if (Array.from(dataTransfer.types).includes('Files')) {
+  if (dataTransfer.types.includes('Files')) {
     return true;
   }
 

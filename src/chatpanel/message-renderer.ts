@@ -2,6 +2,7 @@ import type { ChatMessage } from '../shared/chat';
 import { toErrorMessage as toSharedErrorMessage } from '../shared/error-message';
 import { renderMarkdownToSafeHtml } from './markdown';
 import { getFilePreviewTypeLabel, isImageMimeType, isPdfMimeType } from './media-helpers';
+import { attachTextPreview, isMarkdownPreviewCandidate } from './text-preview';
 
 export interface MessageRenderOptions {
   onAssistantAction?: (action: 'regen', message: ChatMessage) => void;
@@ -235,6 +236,13 @@ function createUserAttachmentStripNode(
       tile.append(image);
     } else {
       tile.append(createGenericAttachmentPreviewNode(attachment));
+      if (
+        isMarkdownPreviewCandidate(attachment.name, attachment.mimeType) &&
+        attachment.previewText?.trim()
+      ) {
+        attachTextPreview(tile, attachment.previewText, attachment.name);
+        tile.classList.add('previewable-text');
+      }
     }
 
     if (attachment.uploadState === 'uploading') {
@@ -274,6 +282,9 @@ function createGenericAttachmentPreviewNode(
   generic.className = 'file-preview-generic';
   if (isPdfMimeType(attachment.mimeType)) {
     generic.classList.add('is-pdf');
+  }
+  if (isMarkdownPreviewCandidate(attachment.name, attachment.mimeType)) {
+    generic.classList.add('is-markdown');
   }
 
   const fileTypeLabel = document.createElement('span');
@@ -712,11 +723,15 @@ function scrollMessageListToBottom(messageList: HTMLOListElement): void {
 function bindCodeCopyButtons(container: ParentNode): void {
   for (const label of Array.from(container.querySelectorAll('.code-lang'))) {
     const pre = label.closest('pre');
-    if (!pre) continue;
+    if (!pre) {
+      continue;
+    }
 
     label.addEventListener('click', () => {
       const code = pre.querySelector('code');
-      if (!code) return;
+      if (!code) {
+        return;
+      }
 
       const original = label.textContent;
       navigator.clipboard.writeText(code.textContent ?? '').then(

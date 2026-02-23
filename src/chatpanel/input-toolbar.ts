@@ -5,6 +5,7 @@ export interface InputToolbar {
   selectedModel(): string;
   selectedThinkingLevel(): string;
   captureButton: HTMLButtonElement;
+  extractTextButton: HTMLButtonElement;
   attachButton: HTMLButtonElement;
 }
 
@@ -48,6 +49,10 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
   const captureButton = queryRequiredElement<HTMLButtonElement>(
     shadowRoot,
     '#speakeasy-capture-full-page',
+  );
+  const extractTextButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-extract-page-text',
   );
   const attachButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-attach');
 
@@ -122,19 +127,25 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     e.stopPropagation();
     const wasOpen = modelDropup.classList.contains('open');
     closeAllDropups();
-    if (!wasOpen) modelDropup.classList.add('open');
+    if (!wasOpen) {
+      modelDropup.classList.add('open');
+    }
   });
 
   thinkingTrigger.addEventListener('click', (e) => {
     e.stopPropagation();
     const wasOpen = thinkingDropup.classList.contains('open');
     closeAllDropups();
-    if (!wasOpen) thinkingDropup.classList.add('open');
+    if (!wasOpen) {
+      thinkingDropup.classList.add('open');
+    }
   });
 
   modelMenu.addEventListener('click', (e) => {
     const item = (e.target as Element).closest('.dropup-item') as HTMLElement | null;
-    if (!item) return;
+    if (!item) {
+      return;
+    }
     const value = item.dataset.value ?? '';
     const label = item.textContent ?? value;
     selectDropupItem(modelDropup, modelTrigger, value, label);
@@ -144,7 +155,9 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
 
   thinkingMenu.addEventListener('click', (e) => {
     const item = (e.target as Element).closest('.dropup-item') as HTMLElement | null;
-    if (!item) return;
+    if (!item) {
+      return;
+    }
     const value = item.dataset.value ?? '';
     const label = item.textContent ?? value;
     selectDropupItem(thinkingDropup, thinkingTrigger, value, label);
@@ -177,6 +190,7 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
       return thinkingTrigger.dataset.value ?? 'minimal';
     },
     captureButton,
+    extractTextButton,
     attachButton,
   };
 }

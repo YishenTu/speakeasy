@@ -369,6 +369,45 @@ export function getChatPanelStyles(): string {
         display: block;
       }
 
+      .text-preview-view {
+        align-items: stretch;
+        justify-content: stretch;
+        padding: 44px 12px 12px;
+        background: rgba(5, 5, 5, 0.82);
+      }
+
+      .text-preview-body {
+        width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        overflow: auto;
+        overscroll-behavior: contain;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 0;
+        background: rgba(12, 12, 12, 0.92);
+        padding: 12px;
+      }
+
+      .text-preview-title {
+        margin: 0 0 8px;
+        font-size: 12px;
+        line-height: 1.35;
+        color: rgba(255, 255, 255, 0.86);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .text-preview-content {
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        color: rgba(255, 255, 255, 0.9);
+      }
+
       .messages {
         margin: 0;
         padding: 16px 16px var(--sp-messages-bottom-clearance);
@@ -1014,6 +1053,10 @@ export function getChatPanelStyles(): string {
         cursor: zoom-in;
       }
 
+      .previewable-text {
+        cursor: zoom-in;
+      }
+
       .attachment-placeholder {
         display: inline-flex;
         max-width: 100%;
@@ -1213,20 +1256,26 @@ export function getChatPanelStyles(): string {
         padding: 0;
       }
 
+      .file-preview-generic.is-markdown {
+        gap: 0;
+        padding: 0;
+      }
+
       .file-preview-filetype {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-width: 30px;
-        border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.28);
-        background: rgba(255, 255, 255, 0.12);
+        min-width: 0;
+        border: none;
+        border-radius: 0;
+        background: transparent;
         color: rgba(255, 255, 255, 0.96);
         font-size: 10px;
         font-weight: 700;
         letter-spacing: 0.05em;
         line-height: 1;
-        padding: 3px 6px;
+        padding: 0;
+        text-align: center;
       }
 
       .file-preview-name {
@@ -1238,13 +1287,6 @@ export function getChatPanelStyles(): string {
         text-overflow: ellipsis;
         white-space: nowrap;
         text-align: center;
-      }
-
-      .file-preview-generic.is-pdf .file-preview-filetype {
-        border: none;
-        background: transparent;
-        padding: 0;
-        min-width: 0;
       }
 
       @keyframes file-preview-spin {
@@ -1360,6 +1402,13 @@ export function getChatPanelStyles(): string {
         font-size: var(--sp-font-size-sm);
         font-weight: 500;
         outline: none;
+      }
+
+      #speakeasy-model-dropup .dropup-trigger,
+      #speakeasy-model-dropup .dropup-item,
+      #speakeasy-thinking-dropup .dropup-trigger,
+      #speakeasy-thinking-dropup .dropup-item {
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
       }
 
       .dropup-trigger:hover,

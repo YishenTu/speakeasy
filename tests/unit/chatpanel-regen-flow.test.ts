@@ -790,6 +790,130 @@ describe('chatpanel regenerate flow', () => {
     expect(form.hidden).toBe(false);
   });
 
+  it('shows markdown previews as full-panel raw text for staged and message attachments', async () => {
+    const testWindow = getTestWindow();
+    currentMessages = [
+      {
+        id: 'persisted-user-markdown',
+        role: 'user',
+        content: 'Review this note.',
+        attachments: [
+          {
+            name: 'persisted-notes.md',
+            mimeType: 'text/plain',
+            fileUri: 'https://example.invalid/files/persisted-md',
+            previewText: '# Persisted Title\n\n- item one\n- item two',
+          },
+        ],
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        content: 'Looks good.',
+        interactionId: 'interaction-1',
+      },
+    ];
+    listSessionsPayload = [
+      { chatId: 'chat-seed', title: 'Markdown Chat', updatedAt: '2025-01-01T00:00:00.000Z' },
+    ];
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    for (const listener of runtimeMessageListeners) {
+      listener({ type: 'overlay/open' });
+    }
+    await flushMicrotasks(4);
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const fileInput = shadowRoot.querySelector('#speakeasy-file-input') as HTMLInputElement | null;
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    const previewView = shadowRoot.querySelector(
+      '#speakeasy-text-preview-view',
+    ) as HTMLElement | null;
+    const previewTitle = shadowRoot.querySelector(
+      '#speakeasy-text-preview-title',
+    ) as HTMLElement | null;
+    const previewContent = shadowRoot.querySelector(
+      '#speakeasy-text-preview-content',
+    ) as HTMLElement | null;
+    const closeButton = shadowRoot.querySelector(
+      '#speakeasy-text-preview-close',
+    ) as HTMLButtonElement | null;
+
+    expect(fileInput).not.toBeNull();
+    expect(form).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    expect(previewView).not.toBeNull();
+    expect(previewTitle).not.toBeNull();
+    expect(previewContent).not.toBeNull();
+    expect(closeButton).not.toBeNull();
+    if (
+      !fileInput ||
+      !form ||
+      !messageList ||
+      !previewView ||
+      !previewTitle ||
+      !previewContent ||
+      !closeButton
+    ) {
+      throw new Error('Expected markdown preview controls.');
+    }
+
+    const stagedMarkdownFile = new File(['# Staged Title\n\nstaged body'], 'staged-notes.md', {
+      type: 'text/plain',
+    });
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [stagedMarkdownFile],
+    });
+    fileInput.dispatchEvent(new Event('change'));
+    await flushMicrotasks(20);
+
+    const stagedPreviewTile = shadowRoot.querySelector(
+      '#speakeasy-file-previews .file-preview-tile.previewable-text[data-speakeasy-preview-text="true"]',
+    ) as HTMLElement | null;
+    expect(stagedPreviewTile).not.toBeNull();
+    expect(stagedPreviewTile?.querySelector('.file-preview-generic.is-markdown')).not.toBeNull();
+
+    stagedPreviewTile?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(previewView.hidden).toBe(false);
+    expect(previewTitle.textContent).toBe('staged-notes.md');
+    expect(previewContent.textContent).toBe('# Staged Title\n\nstaged body');
+    expect(messageList.hidden).toBe(false);
+    expect(form.hidden).toBe(false);
+
+    closeButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+    expect(previewView.hidden).toBe(true);
+    expect(previewTitle.textContent).toBe('');
+    expect(previewContent.textContent).toBe('');
+
+    const persistedPreviewTile = shadowRoot.querySelector(
+      '.message-attachment-strip .file-preview-tile.previewable-text[data-speakeasy-preview-text="true"]',
+    ) as HTMLElement | null;
+    expect(persistedPreviewTile).not.toBeNull();
+    expect(persistedPreviewTile?.querySelector('.file-preview-generic.is-markdown')).not.toBeNull();
+
+    persistedPreviewTile?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks();
+
+    expect(previewView.hidden).toBe(false);
+    expect(previewTitle.textContent).toBe('persisted-notes.md');
+    expect(previewContent.textContent).toBe('# Persisted Title\n\n- item one\n- item two');
+
+    document.dispatchEvent(new testWindow.KeyboardEvent('keydown', { key: 'Escape' }));
+    await flushMicrotasks();
+    expect(previewView.hidden).toBe(true);
+    expect(previewTitle.textContent).toBe('');
+    expect(previewContent.textContent).toBe('');
+    expect(messageList.hidden).toBe(false);
+    expect(form.hidden).toBe(false);
+  });
+
   it('lists tabs for @mention and stages selected tab screenshots with keyboard selection', async () => {
     const testWindow = getTestWindow();
     await importFreshChatpanelModule();

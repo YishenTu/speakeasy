@@ -263,6 +263,11 @@ describe('chatpanel messages', () => {
             previewUrl: 'data:image/png;base64,cA==',
           },
           {
+            name: 'notes.md',
+            mimeType: 'text/plain',
+            previewText: '# Notes\n\n- Item 1',
+          },
+          {
             name: 'spec.pdf',
             mimeType: 'application/pdf',
           },
@@ -280,12 +285,20 @@ describe('chatpanel messages', () => {
     expect(strip).not.toBeNull();
     expect(messageText).not.toBeNull();
     expect(strip?.classList.contains('file-preview-strip')).toBe(true);
-    expect(strip?.querySelectorAll('.file-preview-tile')).toHaveLength(2);
-    expect(strip?.querySelectorAll('.file-preview-name')).toHaveLength(2);
+    expect(strip?.querySelectorAll('.file-preview-tile')).toHaveLength(3);
+    expect(strip?.querySelectorAll('.file-preview-name')).toHaveLength(3);
     expect(strip?.querySelector('.file-preview-generic.is-pdf')).not.toBeNull();
     const previewImage = strip?.querySelector('.file-preview-image') as HTMLImageElement | null;
+    const markdownPreviewTile = strip?.querySelector(
+      '.file-preview-tile.previewable-text[data-speakeasy-preview-text="true"]',
+    ) as HTMLDivElement | null;
+    const markdownGeneric = markdownPreviewTile?.querySelector(
+      '.file-preview-generic.is-markdown',
+    ) as HTMLDivElement | null;
     expect(previewImage?.classList.contains('previewable-image')).toBe(true);
     expect(previewImage?.dataset.speakeasyPreviewImage).toBe('true');
+    expect(markdownPreviewTile).not.toBeNull();
+    expect(markdownGeneric).not.toBeNull();
     expect(bubble?.querySelector('.attachment-list')).toBeNull();
     expect(row?.firstElementChild).toBe(strip);
     expect(strip?.nextElementSibling).toBe(bubble);

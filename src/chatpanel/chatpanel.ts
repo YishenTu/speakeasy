@@ -34,6 +34,7 @@ import {
   toErrorMessage,
 } from './message-renderer';
 import { findLatestAssistantInteractionId } from './optimistic-message';
+import { extractAndStageCurrentTabText } from './page-text-extraction';
 import { createPanelLayoutController } from './panel-layout';
 import {
   type MentionTokenRange,
@@ -42,9 +43,11 @@ import {
   removeMentionTokenFromInputText,
 } from './tab-mention';
 import { getChatPanelTemplate } from './template';
+import { readAttachedTextPreview } from './text-preview';
 
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
 const INPUT_MAX_PANEL_HEIGHT_RATIO = 1 / 3;
+const BRAND_LOGO_ASSET_PATH = 'icons/gemini-logo.svg';
 
 if (window.top === window) {
   mountChatPanel();
@@ -60,7 +63,7 @@ function mountChatPanel(): void {
   document.documentElement.append(host);
 
   const shadowRoot = host.attachShadow({ mode: 'open' });
-  shadowRoot.innerHTML = getChatPanelTemplate();
+  shadowRoot.innerHTML = getChatPanelTemplate(resolveExtensionAssetUrl(BRAND_LOGO_ASSET_PATH));
 
   const shell = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-shell');
   const dragHandle = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-drag-handle');
@@ -106,18 +109,34 @@ function mountChatPanel(): void {
     shadowRoot,
     '#speakeasy-image-preview-close',
   );
+  const textPreviewView = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-text-preview-view',
+  );
+  const textPreviewTitle = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-text-preview-title',
+  );
+  const textPreviewContent = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-text-preview-content',
+  );
+  const textPreviewCloseButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-text-preview-close',
+  );
   const toolbar = createInputToolbar(shadowRoot);
   const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
   if (resizeHandles.length === 0) {
     throw new Error('Missing resize zones in chat panel template.');
   }
 
-  const parseCssPixels = (value: string, fallbackValue: number): number => {
+  function parseCssPixels(value: string, fallbackValue: number): number {
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : fallbackValue;
-  };
+  }
 
-  const getComposerInputMinimumHeight = (): number => {
+  function getComposerInputMinimumHeight(): number {
     const computed = window.getComputedStyle(input);
     const declaredRows = Number.parseInt(input.getAttribute('rows') ?? '1', 10);
     const rows = Number.isFinite(declaredRows) && declaredRows > 0 ? declaredRows : 1;
@@ -129,9 +148,9 @@ function mountChatPanel(): void {
       parseCssPixels(computed.borderTopWidth, 0) + parseCssPixels(computed.borderBottomWidth, 0);
 
     return Math.max(1, Math.ceil(rows * lineHeight + verticalPadding + verticalBorder));
-  };
+  }
 
-  const resizeComposerInput = (): void => {
+  function resizeComposerInput(): void {
     const minInputHeight = getComposerInputMinimumHeight();
     const panelHeight = shell.clientHeight || layoutController.getLayout().height;
     const maxInputHeight = Math.max(
@@ -143,7 +162,7 @@ function mountChatPanel(): void {
     input.style.height = 'auto';
     const nextHeight = Math.max(input.scrollHeight, minInputHeight);
     input.style.height = `${Math.min(nextHeight, maxInputHeight)}px`;
-  };
+  }
 
   const layoutController = createPanelLayoutController({
     shell,
@@ -167,14 +186,17 @@ function mountChatPanel(): void {
   let isPanelOpen = false;
   let isBusy = false;
   let isCapturingFullPageScreenshot = false;
+  let isExtractingPageText = false;
   let isCapturingMentionScreenshot = false;
   let isImagePreviewOpen = false;
+  let isTextPreviewOpen = false;
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
   const chatTabContext: ChatTabContext = {};
   let hasResolvedChatTabContext = false;
   let lastAssistantInteractionId: string | undefined;
   const localAttachmentPreviewUrls = new Map<string, string>();
+  const localAttachmentPreviewTextByFileUri = new Map<string, string>();
   let conversationFlow: ReturnType<typeof createConversationFlowController> | null = null;
   const messageRenderOptions: MessageRenderOptions = {
     onAssistantAction: (action, message) => {
@@ -227,7 +249,11 @@ function mountChatPanel(): void {
       }));
     },
     onError: appendLocalError,
-    isBusy: () => isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot,
+    isBusy: () =>
+      isBusy ||
+      isCapturingFullPageScreenshot ||
+      isExtractingPageText ||
+      isCapturingMentionScreenshot,
   });
 
   async function ensureChatTabContext(): Promise<ChatTabContext> {
@@ -359,11 +385,19 @@ function mountChatPanel(): void {
   });
 
   toolbar.captureButton.addEventListener('click', () => {
-    if (isBusy || isCapturingFullPageScreenshot) {
+    if (isBusy || isCapturingFullPageScreenshot || isExtractingPageText) {
       return;
     }
 
     void captureFullPageScreenshotIntoAttachments();
+  });
+
+  toolbar.extractTextButton.addEventListener('click', () => {
+    if (isBusy || isCapturingFullPageScreenshot || isExtractingPageText) {
+      return;
+    }
+
+    void extractCurrentTabTextIntoAttachments();
   });
 
   fileInput.addEventListener('change', () => {
@@ -441,10 +475,27 @@ function mountChatPanel(): void {
       return;
     }
 
+    if ((target as Element).closest('.file-preview-remove')) {
+      return;
+    }
+
     const image = (target as Element).closest<HTMLImageElement>(
       '[data-speakeasy-preview-image="true"]',
     );
     if (!image || imagePreviewView.contains(image)) {
+      const textTarget = (target as Element).closest<HTMLElement>(
+        '[data-speakeasy-preview-text="true"]',
+      );
+      if (!textTarget || textPreviewView.contains(textTarget)) {
+        return;
+      }
+
+      const textPreview = readAttachedTextPreview(textTarget);
+      if (!textPreview) {
+        return;
+      }
+
+      openTextPreview(textPreview.title, textPreview.text);
       return;
     }
 
@@ -497,6 +548,10 @@ function mountChatPanel(): void {
 
   imagePreviewCloseButton.addEventListener('click', () => {
     closeImagePreview();
+  });
+
+  textPreviewCloseButton.addEventListener('click', () => {
+    closeTextPreview();
   });
 
   settingsButton.addEventListener('click', () => {
@@ -577,6 +632,10 @@ function mountChatPanel(): void {
         closeImagePreview();
         return;
       }
+      if (isTextPreviewOpen) {
+        closeTextPreview();
+        return;
+      }
       if (historyDropdown.isOpen()) {
         historyDropdown.setOpen(false);
         return;
@@ -611,6 +670,7 @@ function mountChatPanel(): void {
     form.classList.remove('drop-active');
     tabMentionController.close();
     closeImagePreview();
+    closeTextPreview();
     historyDropdown.setOpen(false);
     isPanelOpen = false;
     shell.hidden = true;
@@ -652,9 +712,14 @@ function mountChatPanel(): void {
   }
 
   function syncToolbarButtonState(): void {
-    const toolbarBusy = isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot;
+    const toolbarBusy =
+      isBusy ||
+      isCapturingFullPageScreenshot ||
+      isExtractingPageText ||
+      isCapturingMentionScreenshot;
     toolbar.attachButton.disabled = toolbarBusy;
     toolbar.captureButton.disabled = toolbarBusy;
+    toolbar.extractTextButton.disabled = toolbarBusy;
   }
 
   function syncComposerDisabledState(): void {
@@ -662,6 +727,7 @@ function mountChatPanel(): void {
   }
 
   function openImagePreview(imageUrl: string, imageLabel: string): void {
+    closeTextPreview();
     imagePreviewElement.src = imageUrl;
     imagePreviewElement.alt = imageLabel || 'Image preview';
     tabMentionController.close();
@@ -678,6 +744,27 @@ function mountChatPanel(): void {
     imagePreviewElement.removeAttribute('src');
     imagePreviewElement.alt = '';
     isImagePreviewOpen = false;
+    resizeComposerInput();
+  }
+
+  function openTextPreview(title: string, text: string): void {
+    closeImagePreview();
+    textPreviewTitle.textContent = title.trim() || 'Markdown preview';
+    textPreviewContent.textContent = text;
+    tabMentionController.close();
+    textPreviewView.hidden = false;
+    isTextPreviewOpen = true;
+  }
+
+  function closeTextPreview(): void {
+    if (!isTextPreviewOpen && textPreviewView.hidden) {
+      return;
+    }
+
+    textPreviewView.hidden = true;
+    textPreviewTitle.textContent = '';
+    textPreviewContent.textContent = '';
+    isTextPreviewOpen = false;
     resizeComposerInput();
   }
 
@@ -708,11 +795,32 @@ function mountChatPanel(): void {
     }
   }
 
+  async function extractCurrentTabTextIntoAttachments(): Promise<void> {
+    isExtractingPageText = true;
+    syncToolbarButtonState();
+
+    try {
+      await extractAndStageCurrentTabText({
+        stageFromFiles: (files) => attachmentManager.stageFromFiles(files),
+      });
+    } catch (error: unknown) {
+      appendLocalError(toErrorMessage(error));
+    } finally {
+      isExtractingPageText = false;
+      syncToolbarButtonState();
+    }
+  }
+
   async function captureMentionTabScreenshot(
     tab: MentionableTab,
     token: MentionTokenRange,
   ): Promise<void> {
-    if (isBusy || isCapturingFullPageScreenshot || isCapturingMentionScreenshot) {
+    if (
+      isBusy ||
+      isCapturingFullPageScreenshot ||
+      isExtractingPageText ||
+      isCapturingMentionScreenshot
+    ) {
       return;
     }
 
@@ -739,27 +847,32 @@ function mountChatPanel(): void {
   function rememberLocalAttachmentPreviews(message: ChatMessage): void {
     for (const attachment of message.attachments ?? []) {
       const fileUri = attachment.fileUri?.trim() ?? '';
+      if (fileUri) {
+        const previewText = attachment.previewText?.trim() ?? '';
+        if (previewText) {
+          localAttachmentPreviewTextByFileUri.set(fileUri, previewText);
+        }
+      }
+
       const previewUrl = attachment.previewUrl?.trim() ?? '';
-      if (!fileUri || !previewUrl || !isImageMimeType(attachment.mimeType)) {
-        continue;
+      if (fileUri && previewUrl && isImageMimeType(attachment.mimeType)) {
+        const existing = localAttachmentPreviewUrls.get(fileUri);
+        if (existing) {
+          if (existing === previewUrl) {
+            continue;
+          }
+
+          // Keep local blob previews because they preserve original fidelity for in-session rehydration.
+          if (isBlobObjectUrl(existing) && !isBlobObjectUrl(previewUrl)) {
+            continue;
+          }
+
+          if (isBlobObjectUrl(existing)) {
+            URL.revokeObjectURL(existing);
+          }
+        }
+        localAttachmentPreviewUrls.set(fileUri, previewUrl);
       }
-
-      const existing = localAttachmentPreviewUrls.get(fileUri);
-      if (existing) {
-        if (existing === previewUrl) {
-          continue;
-        }
-
-        // Keep local blob previews because they preserve original fidelity for in-session rehydration.
-        if (isBlobObjectUrl(existing) && !isBlobObjectUrl(previewUrl)) {
-          continue;
-        }
-
-        if (isBlobObjectUrl(existing)) {
-          URL.revokeObjectURL(existing);
-        }
-      }
-      localAttachmentPreviewUrls.set(fileUri, previewUrl);
     }
   }
 
@@ -772,29 +885,39 @@ function mountChatPanel(): void {
 
       let changed = false;
       const nextAttachments = attachments.map((attachment) => {
-        if (!isImageMimeType(attachment.mimeType)) {
-          return attachment;
-        }
         const fileUri = attachment.fileUri?.trim() ?? '';
         if (!fileUri) {
           return attachment;
         }
 
-        const localPreviewUrl = localAttachmentPreviewUrls.get(fileUri);
-        if (!localPreviewUrl) {
-          return attachment;
+        let nextAttachment = attachment;
+        if (isImageMimeType(attachment.mimeType)) {
+          const localPreviewUrl = localAttachmentPreviewUrls.get(fileUri);
+          if (localPreviewUrl) {
+            const currentPreviewUrl = attachment.previewUrl?.trim() ?? '';
+            if (currentPreviewUrl !== localPreviewUrl) {
+              nextAttachment = {
+                ...nextAttachment,
+                previewUrl: localPreviewUrl,
+              };
+              changed = true;
+            }
+          }
         }
 
-        const currentPreviewUrl = attachment.previewUrl?.trim() ?? '';
-        if (currentPreviewUrl === localPreviewUrl) {
-          return attachment;
+        const localPreviewText = localAttachmentPreviewTextByFileUri.get(fileUri);
+        if (localPreviewText) {
+          const currentPreviewText = nextAttachment.previewText?.trim() ?? '';
+          if (currentPreviewText !== localPreviewText) {
+            nextAttachment = {
+              ...nextAttachment,
+              previewText: localPreviewText,
+            };
+            changed = true;
+          }
         }
 
-        changed = true;
-        return {
-          ...attachment,
-          previewUrl: localPreviewUrl,
-        };
+        return nextAttachment;
       });
 
       if (!changed) {
@@ -809,21 +932,29 @@ function mountChatPanel(): void {
   }
 
   function pruneLocalAttachmentPreviews(messages: ChatMessage[]): void {
-    const previewByUri = new Map<string, string>();
+    const previewUrlByUri = new Map<string, string>();
+    const previewTextByUri = new Map<string, string>();
     for (const message of messages) {
       for (const attachment of message.attachments ?? []) {
         const fileUri = attachment.fileUri?.trim() ?? '';
-        if (!fileUri || !isImageMimeType(attachment.mimeType)) {
+        if (!fileUri) {
           continue;
         }
 
-        const previewUrl = attachment.previewUrl?.trim() ?? '';
-        previewByUri.set(fileUri, previewUrl);
+        if (isImageMimeType(attachment.mimeType)) {
+          const previewUrl = attachment.previewUrl?.trim() ?? '';
+          previewUrlByUri.set(fileUri, previewUrl);
+        }
+
+        const previewText = attachment.previewText?.trim() ?? '';
+        if (previewText) {
+          previewTextByUri.set(fileUri, previewText);
+        }
       }
     }
 
     for (const [fileUri, previewUrl] of localAttachmentPreviewUrls) {
-      const renderedPreviewUrl = previewByUri.get(fileUri);
+      const renderedPreviewUrl = previewUrlByUri.get(fileUri);
       if (renderedPreviewUrl && renderedPreviewUrl === previewUrl) {
         continue;
       }
@@ -831,6 +962,13 @@ function mountChatPanel(): void {
         URL.revokeObjectURL(previewUrl);
       }
       localAttachmentPreviewUrls.delete(fileUri);
+    }
+
+    for (const [fileUri, previewText] of localAttachmentPreviewTextByFileUri) {
+      if (previewTextByUri.get(fileUri) === previewText) {
+        continue;
+      }
+      localAttachmentPreviewTextByFileUri.delete(fileUri);
     }
   }
 }
@@ -843,6 +981,22 @@ function waitForNextPaint(): Promise<void> {
   return new Promise((resolve) => {
     window.requestAnimationFrame(() => resolve());
   });
+}
+
+function resolveExtensionAssetUrl(assetPath: string): string {
+  const chromeApi = globalThis as {
+    chrome?: {
+      runtime?: {
+        getURL?: (path: string) => string;
+      };
+    };
+  };
+  const getUrl = chromeApi.chrome?.runtime?.getURL;
+  if (typeof getUrl === 'function') {
+    return getUrl(assetPath);
+  }
+
+  return assetPath;
 }
 
 async function openSettings(

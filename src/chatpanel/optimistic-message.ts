@@ -1,10 +1,12 @@
 import type { ChatMessage } from '../shared/chat';
 import type { FileDataAttachmentPayload } from '../shared/runtime';
+import { isMarkdownPreviewCandidate } from './text-preview';
 
 export interface OptimisticMessageFile {
   file: File;
   name: string;
   mimeType: string;
+  previewText?: string;
   uploadState?: 'uploading' | 'uploaded' | 'failed';
 }
 
@@ -16,28 +18,8 @@ export function buildOptimisticUserMessage(
 ): ChatMessage {
   const attachments =
     uploadedAttachments.length > 0
-      ? uploadedAttachments.map((uploaded, index) => {
-          const staged = files[index];
-          const mimeType = uploaded.mimeType || staged?.mimeType || 'application/octet-stream';
-          const name = uploaded.name || staged?.name || 'attachment';
-          const isImage = mimeType.toLowerCase().startsWith('image/');
-          const previewUrl = resolveUploadedPreviewUrl(uploaded, staged, isImage);
-          return {
-            name,
-            mimeType,
-            fileUri: uploaded.fileUri,
-            ...(previewUrl ? { previewUrl } : {}),
-          };
-        })
-      : files.map((staged) => {
-          const isImage = staged.mimeType.toLowerCase().startsWith('image/');
-          return {
-            name: staged.name,
-            mimeType: staged.mimeType,
-            ...(isImage ? { previewUrl: URL.createObjectURL(staged.file) } : {}),
-            ...(staged.uploadState ? { uploadState: staged.uploadState } : {}),
-          };
-        });
+      ? buildUploadedAttachments(uploadedAttachments, files)
+      : buildStagedAttachments(files);
   const normalizedPreviousInteractionId = normalizeInteractionId(previousInteractionId);
 
   return {
@@ -49,6 +31,55 @@ export function buildOptimisticUserMessage(
       : {}),
     ...(attachments.length > 0 ? { attachments } : {}),
   };
+}
+
+function buildUploadedAttachments(
+  uploadedAttachments: readonly FileDataAttachmentPayload[],
+  files: readonly OptimisticMessageFile[],
+): NonNullable<ChatMessage['attachments']> {
+  return uploadedAttachments.map((uploaded, index) => {
+    const staged = files[index];
+    const mimeType = uploaded.mimeType || staged?.mimeType || 'application/octet-stream';
+    const name = uploaded.name || staged?.name || 'attachment';
+    const isImage = mimeType.toLowerCase().startsWith('image/');
+    const previewUrl = resolveUploadedPreviewUrl(uploaded, staged, isImage);
+    const previewText = resolvePreviewText(name, mimeType, staged?.previewText);
+    return {
+      name,
+      mimeType,
+      fileUri: uploaded.fileUri,
+      ...(previewUrl ? { previewUrl } : {}),
+      ...(previewText ? { previewText } : {}),
+    };
+  });
+}
+
+function buildStagedAttachments(
+  files: readonly OptimisticMessageFile[],
+): NonNullable<ChatMessage['attachments']> {
+  return files.map((staged) => {
+    const isImage = staged.mimeType.toLowerCase().startsWith('image/');
+    const previewText = resolvePreviewText(staged.name, staged.mimeType, staged.previewText);
+    return {
+      name: staged.name,
+      mimeType: staged.mimeType,
+      ...(isImage ? { previewUrl: URL.createObjectURL(staged.file) } : {}),
+      ...(previewText ? { previewText } : {}),
+      ...(staged.uploadState ? { uploadState: staged.uploadState } : {}),
+    };
+  });
+}
+
+function resolvePreviewText(
+  name: string,
+  mimeType: string,
+  rawPreviewText: string | undefined,
+): string | undefined {
+  if (!isMarkdownPreviewCandidate(name, mimeType)) {
+    return undefined;
+  }
+
+  return rawPreviewText?.trim() || undefined;
 }
 
 export function findLatestAssistantInteractionId(

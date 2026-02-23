@@ -29,6 +29,12 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/gemini-logo.svg"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "options_page": "options.html",
   "permissions": ["storage", "debugger", "tabs"],
   "host_permissions": ["https://generativelanguage.googleapis.com/*"],

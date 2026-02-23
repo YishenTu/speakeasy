@@ -38,6 +38,17 @@ export function getComposerTemplate(): string {
               </div>
               <div class="input-toolbar-actions">
                 <button
+                  id="speakeasy-extract-page-text"
+                  class="attach-btn"
+                  type="button"
+                  aria-label="Extract page text as markdown">
+                  <svg class="attach-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M9 13h6M9 17h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <button
                   id="speakeasy-capture-full-page"
                   class="attach-btn"
                   type="button"

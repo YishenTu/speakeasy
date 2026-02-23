@@ -63,11 +63,22 @@ describe('chatpanel template', () => {
     expect(thinkingDropupIndex).toBeGreaterThan(labelIndex);
   });
 
+  it('renders the header brand logo as an image asset', () => {
+    const logoUrl = 'chrome-extension://test-id/icons/gemini-logo.svg';
+    const template = getChatPanelTemplate(logoUrl);
+
+    expect(template).toContain('id="speakeasy-brand-logo"');
+    expect(template).toContain(`src="${logoUrl}"`);
+    expect(template).not.toContain('<radialGradient id="a"');
+  });
+
   it('renders a full-page screenshot capture button in the input toolbar', () => {
     const template = getChatPanelTemplate();
 
     expect(template).toContain('id="speakeasy-capture-full-page"');
     expect(template).toContain('aria-label="Capture full-page screenshot"');
+    expect(template).toContain('id="speakeasy-extract-page-text"');
+    expect(template).toContain('aria-label="Extract page text as markdown"');
   });
 
   it('renders image preview markup inside the chatpanel container', () => {
@@ -76,6 +87,10 @@ describe('chatpanel template', () => {
     expect(template).toContain('id="speakeasy-image-preview-view"');
     expect(template).toContain('id="speakeasy-image-preview-image"');
     expect(template).toContain('id="speakeasy-image-preview-close"');
+    expect(template).toContain('id="speakeasy-text-preview-view"');
+    expect(template).toContain('id="speakeasy-text-preview-title"');
+    expect(template).toContain('id="speakeasy-text-preview-content"');
+    expect(template).toContain('id="speakeasy-text-preview-close"');
     expect(template).not.toContain('id="speakeasy-image-preview-overlay"');
     expect(template).not.toContain('id="speakeasy-image-preview-caption"');
   });
@@ -91,6 +106,8 @@ describe('chatpanel template', () => {
     expect(template).not.toContain('.image-preview-dialog {');
     expect(template).toContain('.image-preview-close {');
     expect(template).not.toContain('background: rgba(5, 5, 5, 0.72);');
+    expect(template).toContain('.text-preview-view {');
+    expect(template).toContain('.text-preview-content {');
   });
 
   it('renders image preview media at full in-panel width and height', () => {
@@ -125,6 +142,9 @@ describe('chatpanel template', () => {
     expect(template).toContain('.attach-icon {');
     expect(template).toContain('width: 18px;');
     expect(template).toContain('height: 18px;');
+    expect(template).toContain('#speakeasy-model-dropup .dropup-trigger,');
+    expect(template).toContain('#speakeasy-thinking-dropup .dropup-item {');
+    expect(template).toContain("font-family: 'IBM Plex Mono'");
   });
 
   it('uses square staged-file previews and removes legacy chip styling', () => {

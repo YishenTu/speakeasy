@@ -39,13 +39,7 @@ const staticFileCopies: ReadonlyArray<[string, string]> = [
 ];
 
 const iconDir = 'src/icons';
-const iconFiles = [
-  'gemini-icon-logo.svg',
-  'icon-16.png',
-  'icon-32.png',
-  'icon-48.png',
-  'icon-128.png',
-];
+const iconFiles = ['gemini-logo.svg', 'icon-16.png', 'icon-32.png', 'icon-48.png', 'icon-128.png'];
 
 async function buildTypeScript(outDir: string): Promise<void> {
   const result = await Bun.build({

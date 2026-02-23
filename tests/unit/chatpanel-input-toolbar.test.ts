@@ -44,6 +44,7 @@ describe('chatpanel input toolbar', () => {
     );
     expect(customModelButton).not.toBeNull();
     expect(toolbar.captureButton.id).toBe('speakeasy-capture-full-page');
+    expect(toolbar.extractTextButton.id).toBe('speakeasy-extract-page-text');
     expect(toolbar.attachButton.id).toBe('speakeasy-attach');
 
     customModelButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
@@ -275,6 +276,7 @@ describe('chatpanel input toolbar', () => {
         </div>
       </div>
       <button id="speakeasy-capture-full-page" type="button">Capture</button>
+      <button id="speakeasy-extract-page-text" type="button">TXT</button>
       <button id="speakeasy-attach" type="button">Attach</button>
     `;
     return shadowRoot;
