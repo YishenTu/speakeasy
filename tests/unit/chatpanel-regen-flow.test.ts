@@ -389,6 +389,43 @@ describe('chatpanel regenerate flow', () => {
     });
   });
 
+  it('reloads conversation history when reopening the panel', async () => {
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(messageList).not.toBeNull();
+    expect(messageList?.textContent).toContain('Original flash answer');
+
+    const onMessageListener = runtimeMessageListeners[0];
+    expect(typeof onMessageListener).toBe('function');
+
+    onMessageListener?.({ type: 'overlay/open' });
+    await flushMicrotasks(10);
+    const loadCountAfterFirstOpen = loadRequests.length;
+
+    onMessageListener?.({ type: 'overlay/close' });
+    await flushMicrotasks(4);
+
+    currentMessages = [
+      { id: 'user-1', role: 'user', content: 'Tell me a joke.' },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        content: 'Reloaded after reopen',
+        interactionId: 'interaction-2',
+      },
+    ];
+
+    onMessageListener?.({ type: 'overlay/open' });
+    await flushMicrotasks(20);
+
+    expect(loadRequests.length).toBe(loadCountAfterFirstOpen + 1);
+    expect(messageList?.textContent).toContain('Reloaded after reopen');
+    expect(messageList?.textContent).not.toContain('Original flash answer');
+  });
+
   it('shows a local error message when opening settings fails', async () => {
     const testWindow = getTestWindow();
     openOptionsErrorMessage = 'Failed to open settings';

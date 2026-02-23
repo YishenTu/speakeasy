@@ -144,7 +144,6 @@ function mountChatPanel(): void {
   let isBusy = false;
   let isCapturingFullPageScreenshot = false;
   let isImagePreviewOpen = false;
-  let hasLoadedHistory = false;
   let dragEnterDepth = 0;
   let activeChatId: string | null = null;
   const chatTabContext: ChatTabContext = {};
@@ -541,10 +540,7 @@ function mountChatPanel(): void {
     isPanelOpen = true;
     shell.hidden = false;
     layoutController.clampAndSync();
-
-    if (!hasLoadedHistory) {
-      await loadConversationHistory();
-    }
+    await loadConversationHistory();
 
     input.focus();
   }
@@ -565,7 +561,6 @@ function mountChatPanel(): void {
       activeChatId = history.chatId;
       renderMessages(history.messages);
       await historyDropdown.refresh();
-      hasLoadedHistory = true;
     } catch (error: unknown) {
       renderMessages([
         {
@@ -574,7 +569,6 @@ function mountChatPanel(): void {
           content: toErrorMessage(error),
         },
       ]);
-      hasLoadedHistory = false;
       activeChatId = null;
     }
   }
