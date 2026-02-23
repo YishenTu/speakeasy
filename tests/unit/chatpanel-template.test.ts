@@ -84,7 +84,9 @@ describe('chatpanel template', () => {
     expect(template).toContain('.image-preview-overlay {');
     expect(template).toContain('padding: 0;');
     expect(template).toContain('.image-preview-dialog {');
+    expect(template).toMatch(/\.image-preview-dialog\s*{[^}]*background:\s*transparent;/);
     expect(template).toContain('border: none;');
+    expect(template).not.toContain('background: rgba(15, 15, 15, 0.94);');
     expect(template).not.toContain('border: 1px solid rgba(255, 255, 255, 0.16);');
   });
 

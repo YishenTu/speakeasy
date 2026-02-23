@@ -340,7 +340,7 @@ export function getChatPanelStyles(): string {
         height: 100%;
         border-radius: var(--sp-radius-panel);
         border: none;
-        background: rgba(15, 15, 15, 0.94);
+        background: transparent;
         overflow-y: auto;
         overflow-x: hidden;
         display: flex;
