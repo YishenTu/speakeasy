@@ -212,7 +212,7 @@ function mountChatPanel(): void {
     menu: tabMentionMenu,
     list: tabMentionList,
     emptyState: tabMentionEmpty,
-    onSelectTab: async (tab, token) => captureMentionTabScreenshot(tab, token),
+    onSelectTab: captureMentionTabScreenshot,
     listTabs: async () => {
       const payload = await listOpenTabsForMention();
       return payload.tabs.map((tab) => ({
@@ -825,9 +825,7 @@ function isBlobObjectUrl(value: string): boolean {
 
 function waitForNextPaint(): Promise<void> {
   return new Promise((resolve) => {
-    window.requestAnimationFrame(() => {
-      resolve();
-    });
+    window.requestAnimationFrame(() => resolve());
   });
 }
 

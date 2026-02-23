@@ -152,6 +152,7 @@ export function getChatPanelStyles(): string {
         width: min(300px, 58vw);
         max-height: 260px;
         overflow: auto;
+        overscroll-behavior: contain;
         z-index: 16;
         border: 1px solid rgba(255, 255, 255, 0.14);
         border-radius: var(--sp-radius-panel);
@@ -328,7 +329,7 @@ export function getChatPanelStyles(): string {
         justify-content: center;
         overflow-y: auto;
         overflow-x: hidden;
-        padding: 0;
+        overscroll-behavior: contain;
         box-sizing: border-box;
       }
 
@@ -338,7 +339,6 @@ export function getChatPanelStyles(): string {
 
       .image-preview-image {
         width: 100%;
-        max-width: 100%;
         height: auto;
         min-height: 100%;
         max-height: none;
@@ -350,6 +350,7 @@ export function getChatPanelStyles(): string {
         margin: 0;
         padding: 16px 16px var(--sp-messages-bottom-clearance);
         overflow: auto;
+        overscroll-behavior: contain;
         list-style: none;
         display: flex;
         flex-direction: column;
@@ -887,7 +888,6 @@ export function getChatPanelStyles(): string {
       }
 
       .message-actions-assistant {
-        margin-top: 0;
         justify-content: flex-start;
       }
 
@@ -1248,6 +1248,7 @@ export function getChatPanelStyles(): string {
         flex-direction: column;
         max-height: 188px;
         overflow-y: auto;
+        overscroll-behavior: contain;
       }
 
       .mention-list::-webkit-scrollbar {
@@ -1412,6 +1413,7 @@ export function getChatPanelStyles(): string {
         font-family: inherit;
         max-height: 200px;
         overflow-y: auto;
+        overscroll-behavior: contain;
       }
 
       .input::-webkit-scrollbar {

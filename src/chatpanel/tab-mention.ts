@@ -270,10 +270,6 @@ export function findMentionTokenAtCaret(
     return null;
   }
 
-  if (tokenStart > 0 && !isTokenBoundary(inputText[tokenStart - 1])) {
-    return null;
-  }
-
   let tokenEnd = tokenStart;
   while (tokenEnd < inputText.length && !isTokenBoundary(inputText[tokenEnd])) {
     tokenEnd += 1;

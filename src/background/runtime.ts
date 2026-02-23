@@ -181,7 +181,7 @@ export function createRuntimeRequestHandler(
       },
       handleUploadFiles: (uploadRequest) =>
         handleUploadFiles(uploadRequest.files, uploadRequest.uploadTimeoutMs, dependencies),
-      handleListOpenTabs: async () => handleListOpenTabs(),
+      handleListOpenTabs: () => handleListOpenTabs(),
       handleCaptureFullPageScreenshot: async () =>
         handleCaptureFullPageScreenshot(context, dependencies),
       handleCaptureFullPageScreenshotById: async (captureRequest) =>

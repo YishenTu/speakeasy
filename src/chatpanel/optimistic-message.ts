@@ -86,10 +86,5 @@ function resolveUploadedPreviewUrl(
     return URL.createObjectURL(staged.file);
   }
 
-  const previewDataUrl = uploaded.previewDataUrl?.trim();
-  if (previewDataUrl) {
-    return previewDataUrl;
-  }
-
-  return undefined;
+  return uploaded.previewDataUrl?.trim() || undefined;
 }

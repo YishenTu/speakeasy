@@ -105,6 +105,16 @@ describe('chatpanel template', () => {
     );
   });
 
+  it('contains wheel and touch overscroll within chatpanel scroll regions', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toMatch(/\.history-menu\s*{[^}]*overscroll-behavior:\s*contain;/);
+    expect(template).toMatch(/\.image-preview-view\s*{[^}]*overscroll-behavior:\s*contain;/);
+    expect(template).toMatch(/\.messages\s*{[^}]*overscroll-behavior:\s*contain;/);
+    expect(template).toMatch(/\.mention-list\s*{[^}]*overscroll-behavior:\s*contain;/);
+    expect(template).toMatch(/\.input\s*{[^}]*overscroll-behavior:\s*contain;/);
+  });
+
   it('uses enlarged input toolbar controls and wider capture-action spacing', () => {
     const template = getChatPanelTemplate();
 

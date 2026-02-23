@@ -71,10 +71,6 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
     onLayoutApplied();
   };
 
-  const onWindowResize = (): void => {
-    syncLayout();
-  };
-
   const onDragHandlePointerDown = (event: PointerEvent): void => {
     if (event.button !== 0) {
       return;
@@ -194,7 +190,7 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
     resizePointerDownHandlers.push({ handle: resizeHandle, handler });
   }
 
-  window.addEventListener('resize', onWindowResize);
+  window.addEventListener('resize', syncLayout);
   dragHandle.addEventListener('pointerdown', onDragHandlePointerDown);
   shell.addEventListener('pointermove', onShellPointerMove);
   shell.addEventListener('pointerup', onShellPointerEnd);
@@ -214,7 +210,7 @@ export function createPanelLayoutController(deps: PanelLayoutDeps): PanelLayoutC
     dispose(): void {
       cancelInteraction();
 
-      window.removeEventListener('resize', onWindowResize);
+      window.removeEventListener('resize', syncLayout);
       dragHandle.removeEventListener('pointerdown', onDragHandlePointerDown);
       shell.removeEventListener('pointermove', onShellPointerMove);
       shell.removeEventListener('pointerup', onShellPointerEnd);
