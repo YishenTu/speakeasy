@@ -51,16 +51,16 @@ describe('chatpanel template', () => {
     expect(template).not.toContain('white-space: pre;');
   });
 
-  it('shows a Thinking label before the thinking-level selector', () => {
+  it('shows a separator before the thinking-level selector', () => {
     const template = getChatPanelTemplate();
 
-    const labelMarkup = '<span class="input-toolbar-label">Thinking</span>';
-    expect(template).toContain(labelMarkup);
+    const separatorMarkup = '<span class="input-toolbar-separator" aria-hidden="true">|</span>';
+    expect(template).toContain(separatorMarkup);
 
-    const labelIndex = template.indexOf(labelMarkup);
+    const separatorIndex = template.indexOf(separatorMarkup);
     const thinkingDropupIndex = template.indexOf('id="speakeasy-thinking-dropup"');
-    expect(labelIndex).toBeGreaterThan(-1);
-    expect(thinkingDropupIndex).toBeGreaterThan(labelIndex);
+    expect(separatorIndex).toBeGreaterThan(-1);
+    expect(thinkingDropupIndex).toBeGreaterThan(separatorIndex);
   });
 
   it('renders the header brand logo as an image asset', () => {
@@ -78,7 +78,7 @@ describe('chatpanel template', () => {
     expect(template).toContain('id="speakeasy-model-dropup"');
     expect(template).toContain('title="Select model"');
     expect(template).toContain('id="speakeasy-thinking-dropup"');
-    expect(template).toContain('title="Select thinking level"');
+    expect(template).toContain('title="Select effort level"');
     expect(template).toContain('id="speakeasy-capture-full-page"');
     expect(template).toContain('aria-label="Capture full-page screenshot"');
     expect(template).toContain('title="Capture full-page screenshot"');
@@ -162,12 +162,15 @@ describe('chatpanel template', () => {
     expect(template).toContain('gap: 8px;');
     expect(template).toContain('.input-toolbar-actions {');
     expect(template).toContain('gap: 10px;');
+    expect(template).toMatch(
+      /\.input-toolbar-separator,\s*\.input-toolbar \.dropup-trigger\s*{[^}]*font-family:\s*inherit;[^}]*font-size:\s*var\(--sp-font-size-sm\);[^}]*font-weight:\s*500;[^}]*font-style:\s*normal;/,
+    );
     expect(template).toContain('.attach-icon {');
     expect(template).toContain('width: 18px;');
     expect(template).toContain('height: 18px;');
-    expect(template).toContain('#speakeasy-model-dropup .dropup-trigger,');
-    expect(template).toContain('#speakeasy-thinking-dropup .dropup-item {');
-    expect(template).toContain("font-family: 'IBM Plex Mono'");
+    expect(template).not.toContain('#speakeasy-model-dropup .dropup-trigger,');
+    expect(template).not.toContain('#speakeasy-thinking-dropup .dropup-item {');
+    expect(template).not.toContain(".input-toolbar-separator {\n        font-family: 'IBM Plex Mono'");
   });
 
   it('uses square staged-file previews and removes legacy chip styling', () => {

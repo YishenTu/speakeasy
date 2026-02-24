@@ -1410,8 +1410,15 @@ export function getChatPanelStyles(): string {
         padding: 4px 10px 6px;
       }
 
-      .input-toolbar-label {
+      .input-toolbar-separator,
+      .input-toolbar .dropup-trigger {
+        font-family: inherit;
         font-size: var(--sp-font-size-sm);
+        font-weight: 500;
+        font-style: normal;
+      }
+
+      .input-toolbar-separator {
         color: rgba(255, 255, 255, 0.5);
         user-select: none;
       }
@@ -1432,17 +1439,7 @@ export function getChatPanelStyles(): string {
       }
 
       .dropup-trigger {
-        font-family: inherit;
-        font-size: var(--sp-font-size-sm);
-        font-weight: 500;
         outline: none;
-      }
-
-      #speakeasy-model-dropup .dropup-trigger,
-      #speakeasy-model-dropup .dropup-item,
-      #speakeasy-thinking-dropup .dropup-trigger,
-      #speakeasy-thinking-dropup .dropup-item {
-        font-family: 'IBM Plex Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
       }
 
       .dropup-trigger:hover,

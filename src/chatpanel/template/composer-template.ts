@@ -26,9 +26,9 @@ export function getComposerTemplate(): string {
                   <button type="button" class="dropup-item" data-value="gemini-3.1-pro-preview">Pro</button>
                 </div>
               </div>
-              <span class="input-toolbar-label">Thinking</span>
+              <span class="input-toolbar-separator" aria-hidden="true">|</span>
               <div class="dropup" id="speakeasy-thinking-dropup">
-                <button type="button" class="dropup-trigger" data-value="minimal" title="Select thinking level">Min</button>
+                <button type="button" class="dropup-trigger" data-value="minimal" title="Select effort level">Min</button>
                 <div class="dropup-menu">
                   <button type="button" class="dropup-item" data-value="high">High</button>
                   <button type="button" class="dropup-item" data-value="medium">Med</button>
