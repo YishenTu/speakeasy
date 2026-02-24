@@ -127,7 +127,6 @@ describe('options form state', () => {
 
     expect(state).toEqual({
       apiKey: 'key-123',
-      model: 'gemini-3-flash-preview',
       customModels: ['gemini-3.2-custom', 'gemini-3.2-beta'],
       modelThinkingLevelMap: {
         'gemini-3-flash-preview': 'low',

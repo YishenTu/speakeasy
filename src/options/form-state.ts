@@ -1,7 +1,6 @@
 import {
   CUSTOM_MODEL_THINKING_LEVELS,
   DEFAULT_CUSTOM_MODEL_THINKING_LEVEL,
-  DEFAULT_GEMINI_MODEL,
   type GeminiSettings,
   type ThinkingLevel,
   getBuiltinGeminiModelByKey,
@@ -110,7 +109,6 @@ export function readFormState(dom: OptionsDom): Partial<GeminiSettings> {
 
   return {
     apiKey: dom.apiKeyInput.value.trim(),
-    model: DEFAULT_GEMINI_MODEL,
     customModels,
     modelThinkingLevelMap,
     systemInstruction: dom.systemInstructionInput.value.trim(),

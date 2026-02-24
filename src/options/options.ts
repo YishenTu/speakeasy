@@ -9,6 +9,7 @@ import {
 import { validateSettings } from './validation';
 
 const dom = getOptionsDom();
+let currentSettings = normalizeGeminiSettings(undefined);
 
 dom.versionNode.textContent = chrome.runtime.getManifest().version;
 void initializeForm();
@@ -32,7 +33,10 @@ dom.customModelRowsContainer.addEventListener('click', (event) => {
 dom.form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const nextSettings = normalizeGeminiSettings(readFormState(dom));
+  const nextSettings = normalizeGeminiSettings({
+    ...currentSettings,
+    ...readFormState(dom),
+  });
   const validationError = validateSettings(nextSettings);
   if (validationError) {
     setStatus(dom.statusNode, validationError, 'error');
@@ -42,6 +46,7 @@ dom.form.addEventListener('submit', async (event) => {
   await chrome.storage.local.set({
     [GEMINI_SETTINGS_STORAGE_KEY]: nextSettings,
   });
+  currentSettings = nextSettings;
 
   setStatus(dom.statusNode, 'Saved Gemini settings.', 'success');
 });
@@ -49,6 +54,7 @@ dom.form.addEventListener('submit', async (event) => {
 async function initializeForm(): Promise<void> {
   const stored = await chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY);
   const settings = normalizeGeminiSettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
+  currentSettings = settings;
   applySettingsToForm(dom, settings);
   setStatus(dom.statusNode, 'Ready.', 'info');
 }

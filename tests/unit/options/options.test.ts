@@ -145,6 +145,87 @@ describe('options page bootstrap', () => {
     expect(document.getElementById('save-status')?.textContent).toBe('Saved Gemini settings.');
   });
 
+  it('persists MCP settings when a Gemini 2.5 custom model is configured', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeOptionsMock();
+    await importFreshOptionsModule();
+    await flushTasks();
+
+    (document.getElementById('api-key') as HTMLInputElement).value = 'live-key';
+    (document.getElementById('tool-google-search') as HTMLInputElement).checked = false;
+    (document.getElementById('tool-code-execution') as HTMLInputElement).checked = false;
+    (document.getElementById('tool-url-context') as HTMLInputElement).checked = false;
+    (document.getElementById('tool-mcp-servers') as HTMLInputElement).checked = true;
+    (document.getElementById('mcp-server-urls') as HTMLInputElement).value =
+      'https://mcp.example.com/stream';
+
+    const addButton = document.getElementById('add-custom-model') as HTMLButtonElement;
+    addButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    const customRows = getCustomModelRows();
+    const firstCustomRow = customRows[0];
+    if (!firstCustomRow) {
+      throw new Error('Expected one custom model row.');
+    }
+    firstCustomRow.modelInput.value = 'gemini-2.5-flash';
+    firstCustomRow.thinkingLevelInput.value = 'high';
+
+    const form = document.getElementById('settings-form') as HTMLFormElement;
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushTasks();
+
+    expect(savedItems).toHaveLength(1);
+    const persisted = savedItems[0]?.[GEMINI_SETTINGS_STORAGE_KEY] as
+      | {
+          customModels?: string[];
+          tools?: { mcpServers?: boolean };
+          mcpServerUrls?: string[];
+        }
+      | undefined;
+    expect(persisted?.customModels).toEqual(['gemini-2.5-flash']);
+    expect(persisted?.tools?.mcpServers).toBe(true);
+    expect(persisted?.mcpServerUrls).toEqual(['https://mcp.example.com/stream']);
+    expect(document.getElementById('save-status')?.textContent).toBe('Saved Gemini settings.');
+  });
+
+  it('preserves the stored active model because options form does not edit it directly', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    storedSettings = {
+      apiKey: 'init-key',
+      model: 'gemini-2.5-flash',
+      customModels: ['gemini-2.5-flash'],
+      modelThinkingLevelMap: {
+        'gemini-3-flash-preview': 'minimal',
+        'gemini-3.1-pro-preview': 'high',
+        'gemini-2.5-flash': 'medium',
+      },
+    };
+    installChromeOptionsMock();
+    await importFreshOptionsModule();
+    await flushTasks();
+
+    (document.getElementById('api-key') as HTMLInputElement).value = 'updated-key';
+    const form = document.getElementById('settings-form') as HTMLFormElement;
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushTasks();
+
+    const persisted = savedItems[0]?.[GEMINI_SETTINGS_STORAGE_KEY] as
+      | {
+          model?: string;
+          apiKey?: string;
+        }
+      | undefined;
+    expect(persisted?.apiKey).toBe('updated-key');
+    expect(persisted?.model).toBe('gemini-2.5-flash');
+  });
+
   it('removes a custom model row when remove is clicked', async () => {
     const testWindow = dom?.window;
     if (!testWindow) {
