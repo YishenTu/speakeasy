@@ -90,6 +90,16 @@ describe('validateSettings', () => {
     );
   });
 
+  it('allows MCP when a non-Gemini 3 custom model is configured', () => {
+    const settings = createValidSettings();
+    settings.model = 'gemini-3-flash-preview';
+    settings.customModels = ['gemini-2.5-flash'];
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    expect(validateSettings(settings)).toBeNull();
+  });
+
   it('requires both or neither map coordinates', () => {
     const onlyLatitude = createValidSettings();
     onlyLatitude.mapsLatitude = 37.422;

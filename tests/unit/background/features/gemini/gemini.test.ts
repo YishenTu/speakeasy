@@ -207,6 +207,18 @@ describe('buildGeminiRequestToolSelection', () => {
     );
   });
 
+  it('rejects mcp server usage on selected gemini 3 models even with gemini 2.5 custom models', () => {
+    const settings = createSettingsForToolTests();
+    settings.model = 'gemini-3-flash-preview';
+    settings.customModels = ['gemini-2.5-flash'];
+    settings.tools.mcpServers = true;
+    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
+
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
+      /remote mcp is not supported on gemini 3/i,
+    );
+  });
+
   it('builds a computer_use tool payload with excluded actions', () => {
     const settings = createSettingsForToolTests();
     settings.model = 'gemini-2.5-computer-use-preview-10-2025';

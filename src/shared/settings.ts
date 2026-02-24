@@ -13,9 +13,75 @@ export const PAGE_TEXT_EXTRACTION_ENGINES = ['defuddle', 'readability'] as const
 export type PageTextExtractionEngine = (typeof PAGE_TEXT_EXTRACTION_ENGINES)[number];
 export const DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE: PageTextExtractionEngine = 'defuddle';
 
+export const THINKING_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+export const CUSTOM_MODEL_THINKING_LEVELS = [
+  'low',
+  'medium',
+  'high',
+] as const satisfies readonly ThinkingLevel[];
+export const DEFAULT_CUSTOM_MODEL_THINKING_LEVEL: ThinkingLevel = 'high';
+
+export type BuiltinGeminiModelKey = 'flash' | 'pro';
+
+export interface BuiltinGeminiModelCatalogEntry {
+  key: BuiltinGeminiModelKey;
+  model: string;
+  label: string;
+  thinkingLevels: readonly ThinkingLevel[];
+  defaultThinkingLevel: ThinkingLevel;
+}
+
+export const BUILTIN_GEMINI_MODEL_CATALOG: readonly BuiltinGeminiModelCatalogEntry[] = [
+  {
+    key: 'flash',
+    model: 'gemini-3-flash-preview',
+    label: 'Flash',
+    thinkingLevels: ['minimal', 'low', 'medium', 'high'],
+    defaultThinkingLevel: 'minimal',
+  },
+  {
+    key: 'pro',
+    model: 'gemini-3.1-pro-preview',
+    label: 'Pro',
+    thinkingLevels: ['low', 'medium', 'high'],
+    defaultThinkingLevel: 'high',
+  },
+];
+
+export const DEFAULT_GEMINI_MODEL =
+  BUILTIN_GEMINI_MODEL_CATALOG[0]?.model ?? 'gemini-3-flash-preview';
+
+const DEFAULT_MODEL_THINKING_LEVEL_MAP: Record<string, string> = Object.fromEntries(
+  BUILTIN_GEMINI_MODEL_CATALOG.map((entry) => [entry.model, entry.defaultThinkingLevel]),
+) as Record<string, string>;
+
+export function getBuiltinGeminiModelByKey(
+  key: BuiltinGeminiModelKey,
+): BuiltinGeminiModelCatalogEntry {
+  const entry = BUILTIN_GEMINI_MODEL_CATALOG.find((e) => e.key === key);
+  if (!entry) {
+    throw new Error(`Built-in Gemini model config is missing for key "${key}".`);
+  }
+  return entry;
+}
+
+function findBuiltinGeminiModel(model: string): BuiltinGeminiModelCatalogEntry | undefined {
+  return BUILTIN_GEMINI_MODEL_CATALOG.find((entry) => entry.model === model);
+}
+
+export function getModelDisplayLabel(model: string): string {
+  return findBuiltinGeminiModel(model)?.label ?? model;
+}
+
+export function getModelThinkingLevels(model: string): readonly ThinkingLevel[] {
+  return findBuiltinGeminiModel(model)?.thinkingLevels ?? CUSTOM_MODEL_THINKING_LEVELS;
+}
+
 export interface GeminiSettings {
   apiKey: string;
   model: string;
+  modelThinkingLevelMap: Record<string, string>;
   systemInstruction: string;
   storeInteractions: boolean;
   maxToolRoundTrips: number;
@@ -36,7 +102,8 @@ export const CHAT_STORAGE_SCHEMA_VERSION_STORAGE_KEY = 'chatStorageSchemaVersion
 
 const DEFAULT_SETTINGS: GeminiSettings = {
   apiKey: '',
-  model: 'gemini-3-flash-preview',
+  model: DEFAULT_GEMINI_MODEL,
+  modelThinkingLevelMap: { ...DEFAULT_MODEL_THINKING_LEVEL_MAP },
   systemInstruction: '',
   storeInteractions: true,
   maxToolRoundTrips: 6,
@@ -113,6 +180,29 @@ function sanitizeStringList(value: unknown): string[] {
   return [...unique];
 }
 
+function sanitizeModelThinkingLevelMap(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  const normalized: Record<string, string> = {};
+  for (const [rawModel, rawLevel] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawLevel !== 'string') {
+      continue;
+    }
+
+    const model = rawModel.trim();
+    const thinkingLevel = rawLevel.trim();
+    if (!model || !thinkingLevel) {
+      continue;
+    }
+
+    normalized[model] = thinkingLevel;
+  }
+
+  return normalized;
+}
+
 function toPageTextExtractionEngineOrDefault(
   value: unknown,
   fallback: PageTextExtractionEngine,
@@ -140,16 +230,21 @@ export function parseCommaSeparatedList(raw: string): string[] {
 
 export function normalizeGeminiSettings(value: unknown): GeminiSettings {
   if (!value || typeof value !== 'object') {
-    return { ...DEFAULT_SETTINGS };
+    return defaultGeminiSettings();
   }
 
   const settings = value as Partial<GeminiSettings> & { tools?: Partial<GeminiToolSettings> };
   const tools: Partial<GeminiToolSettings> =
     settings.tools && typeof settings.tools === 'object' ? settings.tools : {};
+  const modelThinkingLevelMap = sanitizeModelThinkingLevelMap(settings.modelThinkingLevelMap);
 
   return {
     apiKey: toStringOrEmpty(settings.apiKey).trim(),
     model: toStringOrEmpty(settings.model).trim() || DEFAULT_SETTINGS.model,
+    modelThinkingLevelMap: {
+      ...DEFAULT_SETTINGS.modelThinkingLevelMap,
+      ...modelThinkingLevelMap,
+    },
     systemInstruction: toStringOrEmpty(settings.systemInstruction).trim(),
     storeInteractions: toBooleanOrDefault(
       settings.storeInteractions,
@@ -188,5 +283,9 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
 }
 
 export function defaultGeminiSettings(): GeminiSettings {
-  return { ...DEFAULT_SETTINGS, tools: { ...DEFAULT_SETTINGS.tools } };
+  return {
+    ...DEFAULT_SETTINGS,
+    modelThinkingLevelMap: { ...DEFAULT_SETTINGS.modelThinkingLevelMap },
+    tools: { ...DEFAULT_SETTINGS.tools },
+  };
 }

@@ -3,7 +3,13 @@ export interface OptionsDom {
   versionNode: HTMLElement;
   statusNode: HTMLElement;
   apiKeyInput: HTMLInputElement;
-  modelInput: HTMLInputElement;
+  modelFlashNameInput: HTMLInputElement;
+  modelFlashThinkingLevelSelect: HTMLSelectElement;
+  modelProNameInput: HTMLInputElement;
+  modelProThinkingLevelSelect: HTMLSelectElement;
+  customModelRowsContainer: HTMLElement;
+  addCustomModelButton: HTMLButtonElement;
+  customModelRowTemplate: HTMLTemplateElement;
   systemInstructionInput: HTMLTextAreaElement;
   storeInteractionsInput: HTMLInputElement;
   maxToolRoundTripsInput: HTMLInputElement;
@@ -29,7 +35,17 @@ export function getOptionsDom(): OptionsDom {
     versionNode: queryRequiredElement<HTMLElement>('#version'),
     statusNode: queryRequiredElement<HTMLElement>('#save-status'),
     apiKeyInput: queryRequiredElement<HTMLInputElement>('#api-key'),
-    modelInput: queryRequiredElement<HTMLInputElement>('#model'),
+    modelFlashNameInput: queryRequiredElement<HTMLInputElement>('#model-name-flash'),
+    modelFlashThinkingLevelSelect: queryRequiredElement<HTMLSelectElement>(
+      '#model-thinking-level-flash',
+    ),
+    modelProNameInput: queryRequiredElement<HTMLInputElement>('#model-name-pro'),
+    modelProThinkingLevelSelect: queryRequiredElement<HTMLSelectElement>(
+      '#model-thinking-level-pro',
+    ),
+    customModelRowsContainer: queryRequiredElement<HTMLElement>('#custom-model-rows'),
+    addCustomModelButton: queryRequiredElement<HTMLButtonElement>('#add-custom-model'),
+    customModelRowTemplate: queryRequiredElement<HTMLTemplateElement>('#custom-model-row-template'),
     systemInstructionInput: queryRequiredElement<HTMLTextAreaElement>('#system-instruction'),
     storeInteractionsInput: queryRequiredElement<HTMLInputElement>('#store-interactions'),
     maxToolRoundTripsInput: queryRequiredElement<HTMLInputElement>('#max-tool-round-trips'),

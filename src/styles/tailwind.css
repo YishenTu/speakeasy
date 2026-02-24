@@ -112,6 +112,10 @@
     @apply bg-white/90 px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-black transition-colors hover:bg-white focus:outline-none;
   }
 
+  .settings-inline-button {
+    @apply border border-white/20 bg-black/30 px-3 py-2 text-xs uppercase tracking-widest text-white/80 transition-colors hover:border-white/40 hover:text-white focus:outline-none;
+  }
+
   .settings-status {
     @apply text-xs tracking-wider text-white/50;
   }

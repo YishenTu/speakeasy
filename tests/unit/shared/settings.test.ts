@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  BUILTIN_GEMINI_MODEL_CATALOG,
+  DEFAULT_GEMINI_MODEL,
   defaultGeminiSettings,
+  getBuiltinGeminiModelByKey,
+  getModelDisplayLabel,
+  getModelThinkingLevels,
   normalizeGeminiSettings,
   parseCommaSeparatedList,
 } from '../../../src/shared/settings';
@@ -13,6 +18,10 @@ describe('defaultGeminiSettings', () => {
     expect(first).toEqual({
       apiKey: '',
       model: 'gemini-3-flash-preview',
+      modelThinkingLevelMap: {
+        'gemini-3-flash-preview': 'minimal',
+        'gemini-3.1-pro-preview': 'high',
+      },
       systemInstruction: '',
       storeInteractions: true,
       maxToolRoundTrips: 6,
@@ -40,6 +49,33 @@ describe('defaultGeminiSettings', () => {
   });
 });
 
+describe('model catalog', () => {
+  it('provides a single source for built-in models and thinking defaults', () => {
+    expect(BUILTIN_GEMINI_MODEL_CATALOG).toEqual([
+      {
+        key: 'flash',
+        model: 'gemini-3-flash-preview',
+        label: 'Flash',
+        thinkingLevels: ['minimal', 'low', 'medium', 'high'],
+        defaultThinkingLevel: 'minimal',
+      },
+      {
+        key: 'pro',
+        model: 'gemini-3.1-pro-preview',
+        label: 'Pro',
+        thinkingLevels: ['low', 'medium', 'high'],
+        defaultThinkingLevel: 'high',
+      },
+    ]);
+
+    expect(getBuiltinGeminiModelByKey('flash').model).toBe(DEFAULT_GEMINI_MODEL);
+    expect(getModelDisplayLabel('gemini-3.1-pro-preview')).toBe('Pro');
+    expect(getModelDisplayLabel('gemini-3.2-custom')).toBe('gemini-3.2-custom');
+    expect(getModelThinkingLevels('gemini-3.1-pro-preview')).toEqual(['low', 'medium', 'high']);
+    expect(getModelThinkingLevels('gemini-3.2-custom')).toEqual(['low', 'medium', 'high']);
+  });
+});
+
 describe('normalizeGeminiSettings', () => {
   it('normalizes malformed input into safe defaults', () => {
     const normalized = normalizeGeminiSettings({
@@ -64,6 +100,11 @@ describe('normalizeGeminiSettings', () => {
       mapsLatitude: ' 41.5 ',
       mapsLongitude: 'not-a-number',
       computerUseExcludedActions: [' click ', 'drag', '', 'click'],
+      modelThinkingLevelMap: {
+        ' custom-model ': ' low ',
+        '': 'high',
+        'gemini-3.1-pro-preview': 9,
+      },
     });
 
     expect(normalized.apiKey).toBe('');
@@ -87,6 +128,11 @@ describe('normalizeGeminiSettings', () => {
     expect(normalized.mapsLatitude).toBe(41.5);
     expect(normalized.mapsLongitude).toBeNull();
     expect(normalized.computerUseExcludedActions).toEqual(['click', 'drag']);
+    expect(normalized.modelThinkingLevelMap).toEqual({
+      'gemini-3-flash-preview': 'minimal',
+      'gemini-3.1-pro-preview': 'high',
+      'custom-model': 'low',
+    });
   });
 
   it('clamps and coerces numeric boundaries', () => {

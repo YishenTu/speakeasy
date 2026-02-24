@@ -173,6 +173,45 @@ describe('chatpanel input toolbar', () => {
     ).toBe('false');
   });
 
+  it('uses mapped thinking defaults from settings', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeStorageMock({
+      [GEMINI_SETTINGS_STORAGE_KEY]: {
+        customModels: [],
+        modelThinkingLevelMap: {
+          'gemini-3.1-pro-preview': 'medium',
+        },
+      },
+    });
+
+    const shadowRoot = createToolbarShadowRoot();
+    const toolbar = createInputToolbar(shadowRoot);
+    await Promise.resolve();
+
+    const proModelButton = queryRequiredElement<HTMLElement>(
+      shadowRoot,
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+    );
+    proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+
+    const thinkingTrigger = queryRequiredElement<HTMLElement>(
+      shadowRoot,
+      '#speakeasy-thinking-dropup .dropup-trigger',
+    );
+    expect(toolbar.selectedThinkingLevel()).toBe('medium');
+    expect(thinkingTrigger.dataset.value).toBe('medium');
+    expect(thinkingTrigger.textContent?.trim()).toBe('Med');
+    expect(
+      shadowRoot
+        .querySelector<HTMLElement>('#speakeasy-thinking-dropup .dropup-item[data-value="medium"]')
+        ?.getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
   it('updates selected thinking level when a menu item is clicked', async () => {
     const testWindow = dom?.window;
     if (!testWindow) {
@@ -216,6 +255,84 @@ describe('chatpanel input toolbar', () => {
         .querySelector<HTMLElement>('#speakeasy-thinking-dropup .dropup-item[data-value="minimal"]')
         ?.getAttribute('aria-selected'),
     ).toBe('false');
+  });
+
+  it('resolves thinking level from model defaults when trigger state is empty', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeStorageMock({
+      [GEMINI_SETTINGS_STORAGE_KEY]: {
+        customModels: [],
+        modelThinkingLevelMap: {
+          'gemini-3.1-pro-preview': 'medium',
+        },
+      },
+    });
+
+    const shadowRoot = createToolbarShadowRoot();
+    const toolbar = createInputToolbar(shadowRoot);
+    await Promise.resolve();
+
+    const proModelButton = queryRequiredElement<HTMLElement>(
+      shadowRoot,
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+    );
+    proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+
+    const thinkingTrigger = queryRequiredElement<HTMLElement>(
+      shadowRoot,
+      '#speakeasy-thinking-dropup .dropup-trigger',
+    );
+    thinkingTrigger.removeAttribute('data-value');
+
+    expect(toolbar.selectedThinkingLevel()).toBe('medium');
+  });
+
+  it('keeps selected thinking level after live settings updates', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeStorageMock({
+      [GEMINI_SETTINGS_STORAGE_KEY]: {
+        customModels: [],
+      },
+    });
+
+    const shadowRoot = createToolbarShadowRoot();
+    const toolbar = createInputToolbar(shadowRoot);
+    await Promise.resolve();
+
+    const proModelButton = queryRequiredElement<HTMLElement>(
+      shadowRoot,
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+    );
+    proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+
+    const lowThinkingButton = queryRequiredElement<HTMLElement>(
+      shadowRoot,
+      '#speakeasy-thinking-dropup .dropup-item[data-value="low"]',
+    );
+    lowThinkingButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    expect(toolbar.selectedThinkingLevel()).toBe('low');
+
+    emitChanged?.({
+      [GEMINI_SETTINGS_STORAGE_KEY]: {
+        newValue: {
+          customModels: [],
+          modelThinkingLevelMap: {
+            'gemini-3.1-pro-preview': 'medium',
+          },
+        },
+      },
+    });
+    await Promise.resolve();
+
+    expect(toolbar.selectedThinkingLevel()).toBe('low');
   });
 
   it('ignores unrelated storage change events', async () => {

@@ -1,54 +1,36 @@
-import { describe, expect, it } from 'bun:test';
-import type { OptionsDom } from '../../../src/options/dom';
-import { applySettingsToForm, readFormState } from '../../../src/options/form-state';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { getOptionsDom } from '../../../src/options/dom';
+import {
+  applySettingsToForm,
+  initializeModelThinkingControls,
+  readFormState,
+} from '../../../src/options/form-state';
 import { defaultGeminiSettings } from '../../../src/shared/settings';
-
-function createInput(value = '', checked = false): HTMLInputElement {
-  return { value, checked } as HTMLInputElement;
-}
-
-function createTextArea(value = ''): HTMLTextAreaElement {
-  return { value } as HTMLTextAreaElement;
-}
-
-function createSelect(value = 'defuddle'): HTMLSelectElement {
-  return { value } as HTMLSelectElement;
-}
-
-function createOptionsDomStub(): OptionsDom {
-  return {
-    form: {} as HTMLFormElement,
-    versionNode: {} as HTMLElement,
-    statusNode: {} as HTMLElement,
-    apiKeyInput: createInput(),
-    modelInput: createInput(),
-    systemInstructionInput: createTextArea(),
-    storeInteractionsInput: createInput('', false),
-    maxToolRoundTripsInput: createInput(),
-    pageTextExtractionEngineInput: createSelect(),
-    toolGoogleSearch: createInput('', false),
-    toolGoogleMaps: createInput('', false),
-    toolCodeExecution: createInput('', false),
-    toolUrlContext: createInput('', false),
-    toolFileSearch: createInput('', false),
-    toolMcpServers: createInput('', false),
-    toolFunctionCalling: createInput('', false),
-    toolComputerUse: createInput('', false),
-    fileSearchStoreNamesInput: createInput(),
-    mcpServerUrlsInput: createInput(),
-    mapsLatitudeInput: createInput(),
-    mapsLongitudeInput: createInput(),
-    computerUseExcludedActionsInput: createInput(),
-  };
-}
+import { type InstalledDomEnvironment, installDomTestEnvironment } from '../helpers/dom-test-env';
 
 describe('options form state', () => {
-  it('applies settings into form fields', () => {
-    const dom = createOptionsDomStub();
+  let installedDom: InstalledDomEnvironment | null = null;
+
+  beforeEach(() => {
+    installedDom = installDomTestEnvironment(buildOptionsFixtureHtml());
+  });
+
+  afterEach(() => {
+    installedDom?.restore();
+    installedDom = null;
+  });
+
+  it('applies settings into form fields including multiple custom models', () => {
+    const dom = getOptionsDom();
     const settings = defaultGeminiSettings();
     settings.apiKey = 'api-key';
-    settings.model = 'gemini-2.5-pro';
-    settings.customModels = ['gemini-2.5-pro'];
+    settings.customModels = ['gemini-3.2-custom', 'gemini-3.2-beta'];
+    settings.modelThinkingLevelMap = {
+      'gemini-3-flash-preview': 'medium',
+      'gemini-3.1-pro-preview': 'low',
+      'gemini-3.2-custom': 'high',
+      'gemini-3.2-beta': 'low',
+    };
     settings.systemInstruction = 'Be direct.';
     settings.storeInteractions = false;
     settings.maxToolRoundTrips = 9;
@@ -70,7 +52,18 @@ describe('options form state', () => {
     applySettingsToForm(dom, settings);
 
     expect(dom.apiKeyInput.value).toBe('api-key');
-    expect(dom.modelInput.value).toBe('gemini-2.5-pro');
+    expect(dom.modelFlashNameInput.value).toBe('gemini-3-flash-preview');
+    expect(dom.modelFlashThinkingLevelSelect.value).toBe('medium');
+    expect(dom.modelProNameInput.value).toBe('gemini-3.1-pro-preview');
+    expect(dom.modelProThinkingLevelSelect.value).toBe('low');
+
+    const customRows = getCustomRows(dom);
+    expect(customRows).toHaveLength(2);
+    expect(customRows[0]?.modelInput.value).toBe('gemini-3.2-custom');
+    expect(customRows[0]?.thinkingLevelInput.value).toBe('high');
+    expect(customRows[1]?.modelInput.value).toBe('gemini-3.2-beta');
+    expect(customRows[1]?.thinkingLevelInput.value).toBe('low');
+
     expect(dom.systemInstructionInput.value).toBe('Be direct.');
     expect(dom.storeInteractionsInput.checked).toBe(false);
     expect(dom.maxToolRoundTripsInput.value).toBe('9');
@@ -91,7 +84,7 @@ describe('options form state', () => {
   });
 
   it('writes empty map coordinate fields when settings hold null coordinates', () => {
-    const dom = createOptionsDomStub();
+    const dom = getOptionsDom();
     const settings = defaultGeminiSettings();
     settings.mapsLatitude = null;
     settings.mapsLongitude = null;
@@ -102,10 +95,16 @@ describe('options form state', () => {
     expect(dom.mapsLongitudeInput.value).toBe('');
   });
 
-  it('reads and normalizes form values into partial settings', () => {
-    const dom = createOptionsDomStub();
+  it('reads and normalizes multiple custom model rows into partial settings', () => {
+    const dom = getOptionsDom();
+    initializeModelThinkingControls(dom);
     dom.apiKeyInput.value = '  key-123  ';
-    dom.modelInput.value = '  gemini-2.5-flash  ';
+    dom.modelFlashThinkingLevelSelect.value = 'low';
+    dom.modelProThinkingLevelSelect.value = 'high';
+    appendCustomModelRow(dom, '  gemini-3.2-custom  ', 'medium');
+    appendCustomModelRow(dom, 'gemini-3.2-beta', 'low');
+    appendCustomModelRow(dom, 'gemini-3.2-custom', 'high');
+    appendCustomModelRow(dom, '   ', 'high');
     dom.systemInstructionInput.value = '  Use tools when needed. ';
     dom.storeInteractionsInput.checked = true;
     dom.maxToolRoundTripsInput.value = '7';
@@ -128,8 +127,13 @@ describe('options form state', () => {
 
     expect(state).toEqual({
       apiKey: 'key-123',
-      model: 'gemini-2.5-flash',
-      customModels: ['gemini-2.5-flash'],
+      customModels: ['gemini-3.2-custom', 'gemini-3.2-beta'],
+      modelThinkingLevelMap: {
+        'gemini-3-flash-preview': 'low',
+        'gemini-3.1-pro-preview': 'high',
+        'gemini-3.2-custom': 'medium',
+        'gemini-3.2-beta': 'low',
+      },
       systemInstruction: 'Use tools when needed.',
       storeInteractions: true,
       maxToolRoundTrips: 7,
@@ -153,7 +157,8 @@ describe('options form state', () => {
   });
 
   it('parses empty or invalid coordinates as null', () => {
-    const dom = createOptionsDomStub();
+    const dom = getOptionsDom();
+    initializeModelThinkingControls(dom);
     dom.mapsLatitudeInput.value = ' ';
     dom.mapsLongitudeInput.value = 'Infinity';
 
@@ -162,4 +167,132 @@ describe('options form state', () => {
     expect(state.mapsLatitude).toBeNull();
     expect(state.mapsLongitude).toBeNull();
   });
+
+  it('falls back to model defaults when select values are unsupported', () => {
+    const dom = getOptionsDom();
+    initializeModelThinkingControls(dom);
+    dom.modelFlashThinkingLevelSelect.value = 'ultra';
+    dom.modelProThinkingLevelSelect.value = 'ultra';
+    appendCustomModelRow(dom, 'gemini-3.2-custom', 'ultra');
+    const customRows = getCustomRows(dom);
+    const firstCustomRow = customRows[0];
+    if (!firstCustomRow) {
+      throw new Error('Expected one custom model row.');
+    }
+    firstCustomRow.thinkingLevelInput.replaceChildren(
+      createOption('ultra', 'Ultra'),
+      createOption('high', 'High'),
+    );
+    firstCustomRow.thinkingLevelInput.value = 'ultra';
+
+    const state = readFormState(dom);
+
+    expect(state.modelThinkingLevelMap).toEqual({
+      'gemini-3-flash-preview': 'minimal',
+      'gemini-3.1-pro-preview': 'high',
+      'gemini-3.2-custom': 'high',
+    });
+  });
 });
+
+function getCustomRows(dom: ReturnType<typeof getOptionsDom>): CustomModelRow[] {
+  return Array.from(
+    dom.customModelRowsContainer.querySelectorAll<HTMLElement>('[data-custom-model-row]'),
+  ).map(
+    (row): CustomModelRow => ({
+      row,
+      modelInput: requireInRow<HTMLInputElement>(row, '[data-custom-model-input]'),
+      thinkingLevelInput: requireInRow<HTMLSelectElement>(
+        row,
+        '[data-custom-model-thinking-level]',
+      ),
+    }),
+  );
+}
+
+function appendCustomModelRow(
+  dom: ReturnType<typeof getOptionsDom>,
+  model: string,
+  thinkingLevel: string,
+): void {
+  const templateRoot = dom.customModelRowTemplate.content.firstElementChild as HTMLElement | null;
+  if (!templateRoot) {
+    throw new Error('custom model row template is missing root element');
+  }
+
+  const row = templateRoot.cloneNode(true) as HTMLElement;
+  const modelInput = requireInRow<HTMLInputElement>(row, '[data-custom-model-input]');
+  const thinkingLevelInput = requireInRow<HTMLSelectElement>(
+    row,
+    '[data-custom-model-thinking-level]',
+  );
+  modelInput.value = model;
+  thinkingLevelInput.value = thinkingLevel;
+  dom.customModelRowsContainer.appendChild(row);
+}
+
+function requireInRow<TElement extends Element>(row: HTMLElement, selector: string): TElement {
+  const element = row.querySelector<TElement>(selector);
+  if (!element) {
+    throw new Error(`custom model row is missing ${selector}`);
+  }
+  return element;
+}
+
+function createOption(value: string, label: string): HTMLOptionElement {
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = label;
+  return option;
+}
+
+interface CustomModelRow {
+  row: HTMLElement;
+  modelInput: HTMLInputElement;
+  thinkingLevelInput: HTMLSelectElement;
+}
+
+function buildOptionsFixtureHtml(): string {
+  return `
+    <!doctype html>
+    <html>
+      <body>
+        <form id="settings-form">
+          <input id="api-key" />
+          <input id="model-name-flash" />
+          <select id="model-thinking-level-flash"></select>
+          <input id="model-name-pro" />
+          <select id="model-thinking-level-pro"></select>
+          <div id="custom-model-rows"></div>
+          <button id="add-custom-model" type="button">Add custom model</button>
+          <template id="custom-model-row-template">
+            <div data-custom-model-row>
+              <input data-custom-model-input />
+              <select data-custom-model-thinking-level></select>
+              <button type="button" data-remove-custom-model>Remove</button>
+            </div>
+          </template>
+          <textarea id="system-instruction"></textarea>
+          <input id="store-interactions" type="checkbox" />
+          <input id="max-tool-round-trips" />
+          <input id="page-text-extraction-engine" />
+          <input id="tool-google-search" type="checkbox" />
+          <input id="tool-google-maps" type="checkbox" />
+          <input id="tool-code-execution" type="checkbox" />
+          <input id="tool-url-context" type="checkbox" />
+          <input id="tool-file-search" type="checkbox" />
+          <input id="tool-mcp-servers" type="checkbox" />
+          <input id="tool-function-calling" type="checkbox" />
+          <input id="tool-computer-use" type="checkbox" />
+          <input id="file-search-store-names" />
+          <input id="mcp-server-urls" />
+          <input id="maps-latitude" />
+          <input id="maps-longitude" />
+          <input id="computer-use-excluded-actions" />
+          <span id="version"></span>
+          <p id="save-status"></p>
+        </form>
+      </body>
+    </html>
+  `;
+}
