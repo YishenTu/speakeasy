@@ -19,7 +19,6 @@ export interface AssistantResponseStats {
   cachedTokens?: number;
   totalTokens?: number;
   outputTokensPerSecond?: number;
-  totalTokensPerSecond?: number;
   hasStreamingToken: boolean;
 }
 

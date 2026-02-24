@@ -340,7 +340,6 @@ function createStatsDisclosure(
     ['TTFT', `${Math.round(stats.timeToFirstTokenMs)} ms`],
     ['Duration', `${Math.round(stats.requestDurationMs)} ms`],
     ['Output TPS', formatTokensPerSecond(stats.outputTokensPerSecond)],
-    ['Total TPS', formatTokensPerSecond(stats.totalTokensPerSecond)],
     ['Output Tokens', formatTokenCount(stats.outputTokens)],
     ['Input Tokens', formatTokenCount(stats.inputTokens)],
     ['Thought Tokens', formatTokenCount(stats.thoughtTokens)],

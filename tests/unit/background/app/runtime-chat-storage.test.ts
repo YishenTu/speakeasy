@@ -260,7 +260,6 @@ describe('runtime chat storage handler', () => {
               outputTokens: 90,
               totalTokens: 200,
               outputTokensPerSecond: 85.71,
-              totalTokensPerSecond: 166.67,
               hasStreamingToken: true,
             },
           },
@@ -292,7 +291,6 @@ describe('runtime chat storage handler', () => {
           outputTokens: 90,
           totalTokens: 200,
           outputTokensPerSecond: 85.71,
-          totalTokensPerSecond: 166.67,
           hasStreamingToken: true,
         },
       },
@@ -308,7 +306,6 @@ describe('runtime chat storage handler', () => {
         outputTokens: 90,
         totalTokens: 200,
         outputTokensPerSecond: 85.71,
-        totalTokensPerSecond: 166.67,
         hasStreamingToken: true,
       },
     });

@@ -44,7 +44,6 @@ describe('sessions', () => {
               outputTokens: 40,
               totalTokens: 90,
               outputTokensPerSecond: 58.5,
-              totalTokensPerSecond: 112.5,
               hasStreamingToken: true,
             },
           },
@@ -98,7 +97,6 @@ describe('sessions', () => {
         outputTokens: 40,
         totalTokens: 90,
         outputTokensPerSecond: 58.5,
-        totalTokensPerSecond: 112.5,
         hasStreamingToken: true,
       },
     });
@@ -554,7 +552,6 @@ describe('sessions', () => {
           outputTokens: 44,
           totalTokens: 95,
           outputTokensPerSecond: 54.32,
-          totalTokensPerSecond: 100,
           hasStreamingToken: true,
         },
       },
@@ -567,7 +564,6 @@ describe('sessions', () => {
       outputTokens: 44,
       totalTokens: 95,
       outputTokensPerSecond: 54.32,
-      totalTokensPerSecond: 100,
       hasStreamingToken: true,
     });
     expect(message.interactionId).toBe('interaction-stats-1');

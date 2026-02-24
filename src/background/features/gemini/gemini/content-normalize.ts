@@ -379,12 +379,6 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
     'outputTokensPerSecond',
     'output_tokens_per_second',
   );
-  const totalTokensPerSecond = readNonNegativeNumberField(
-    value,
-    'totalTokensPerSecond',
-    'total_tokens_per_second',
-  );
-
   const stats: AssistantResponseStats = {
     requestDurationMs,
     timeToFirstTokenMs,
@@ -410,9 +404,6 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
   }
   if (outputTokensPerSecond !== undefined) {
     stats.outputTokensPerSecond = outputTokensPerSecond;
-  }
-  if (totalTokensPerSecond !== undefined) {
-    stats.totalTokensPerSecond = totalTokensPerSecond;
   }
 
   return stats;
