@@ -95,7 +95,12 @@ export interface StreamedToolOutputDelta {
   output: Record<string, unknown>;
 }
 
-const STREAMED_TOOL_OUTPUT_TYPES = new Set(['google_search_call', 'google_search_result']);
+const STREAMED_TOOL_OUTPUT_TYPES = new Set([
+  'google_search_call',
+  'google_search_result',
+  'code_execution_call',
+  'code_execution_result',
+]);
 
 export function collectStreamedToolOutputDelta(
   event: Record<string, unknown>,
@@ -112,24 +117,74 @@ export function collectStreamedToolOutputDelta(
   }
 
   const streamIndex = readStreamContentIndex(event);
-  const id =
-    type === 'google_search_call'
-      ? readStringField(delta, 'id')
-      : readStringField(delta, 'call_id') || readStringField(delta, 'id');
+  const id = readToolOutputDeltaId(type, delta);
   const key =
-    id ||
+    (id ? `${type}:${id}` : '') ||
     (streamIndex === null ? `${type}:order:${toolOutputDeltas.size}` : `${type}:${streamIndex}`);
 
   const existing = toolOutputDeltas.get(key);
-  const output: Record<string, unknown> = {
-    ...(existing?.output ?? {}),
-    ...delta,
-    type,
-  };
+  const output = mergeStreamedToolOutput(existing?.output, delta, type);
   toolOutputDeltas.set(key, {
     order: existing?.order ?? toolOutputDeltas.size,
     output,
   });
+}
+
+function readToolOutputDeltaId(type: string, delta: Record<string, unknown>): string {
+  switch (type) {
+    case 'google_search_call':
+    case 'code_execution_call':
+      return readStringField(delta, 'id');
+    case 'google_search_result':
+      return readStringField(delta, 'call_id', 'id');
+    case 'code_execution_result':
+      return readStringField(delta, 'call_id', 'callId', 'id');
+    default:
+      return '';
+  }
+}
+
+function mergeStreamedToolOutput(
+  existingOutput: Record<string, unknown> | undefined,
+  delta: Record<string, unknown>,
+  type: string,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = {
+    ...(existingOutput ?? {}),
+    ...delta,
+    type,
+  };
+
+  if (type === 'code_execution_result') {
+    mergeStreamedStringField(existingOutput, delta, merged, 'result');
+    mergeStreamedStringField(existingOutput, delta, merged, 'output');
+  }
+
+  return merged;
+}
+
+function mergeStreamedStringField(
+  existingOutput: Record<string, unknown> | undefined,
+  delta: Record<string, unknown>,
+  mergedOutput: Record<string, unknown>,
+  field: string,
+): void {
+  const nextValue = delta[field];
+  if (typeof nextValue !== 'string') {
+    return;
+  }
+
+  const previousValue = existingOutput?.[field];
+  if (
+    typeof previousValue === 'string' &&
+    previousValue.length > 0 &&
+    !nextValue.startsWith(previousValue)
+  ) {
+    mergedOutput[field] = `${previousValue}${nextValue}`;
+    return;
+  }
+
+  mergedOutput[field] = nextValue;
 }
 
 export function buildStreamedFunctionCallOutputs(

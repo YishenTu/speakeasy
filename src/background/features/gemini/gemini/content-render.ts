@@ -24,10 +24,14 @@ export function renderContentForChat(content: GeminiContent): string {
       'code_execution_result',
     );
     if (codeExecutionResult) {
-      const output =
-        typeof codeExecutionResult.output === 'string' ? codeExecutionResult.output.trim() : '';
+      let output = '';
+      if (typeof codeExecutionResult.output === 'string') {
+        output = codeExecutionResult.output.trim();
+      } else if (typeof codeExecutionResult.result === 'string') {
+        output = codeExecutionResult.result.trim();
+      }
       if (output) {
-        blocks.push(`Code output:\n${output}`);
+        blocks.push(`Code output:\n${createFencedCodeBlock(output, 'text')}`);
       }
       continue;
     }
@@ -58,6 +62,12 @@ export function renderContentForChat(content: GeminiContent): string {
   }
 
   return blocks.join('\n\n');
+}
+
+function createFencedCodeBlock(code: string, language: string): string {
+  const longestBacktickRun = Math.max(...(code.match(/`+/g)?.map((run) => run.length) ?? [0]));
+  const fence = '`'.repeat(Math.max(3, longestBacktickRun + 1));
+  return `${fence}${language}\n${code}\n${fence}`;
 }
 
 export function renderThinkingSummaryForChat(content: GeminiContent): string {

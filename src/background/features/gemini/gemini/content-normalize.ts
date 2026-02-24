@@ -9,7 +9,9 @@ import type { AssistantResponseStats, GroundingSource } from '../../../../shared
 import { isRecord } from '../../../core/utils';
 import type { GeminiContent, GeminiPart } from '../../session/types';
 import {
+  readBooleanField,
   readNonNegativeIntegerField,
+  readNonNegativeNumberField,
   readPartRecord,
   readStringField,
   summarizeInteractionOutput,
@@ -130,16 +132,52 @@ function normalizeGeminiPart(rawPart: Record<string, unknown>): GeminiPart | nul
     'code_execution_result',
   );
   if (codeExecutionResult) {
-    const output = typeof codeExecutionResult.output === 'string' ? codeExecutionResult.output : '';
-    return { codeExecutionResult: { output } };
+    let output: string | undefined;
+    if (typeof codeExecutionResult.output === 'string') {
+      output = codeExecutionResult.output;
+    } else if (typeof codeExecutionResult.result === 'string') {
+      output = codeExecutionResult.result;
+    }
+    const outcome = readStringField(codeExecutionResult, 'outcome');
+    const callId = readStringField(codeExecutionResult, 'callId', 'call_id');
+    const isError = readBooleanField(codeExecutionResult, 'isError', 'is_error');
+    const signature = readStringField(codeExecutionResult, 'signature');
+    const normalizedCodeExecutionResult: {
+      output?: string;
+      outcome?: string;
+      callId?: string;
+      isError?: boolean;
+      signature?: string;
+    } = {};
+    if (typeof output === 'string') {
+      normalizedCodeExecutionResult.output = output;
+    }
+    if (outcome) {
+      normalizedCodeExecutionResult.outcome = outcome;
+    }
+    if (callId) {
+      normalizedCodeExecutionResult.callId = callId;
+    }
+    if (isError !== undefined) {
+      normalizedCodeExecutionResult.isError = isError;
+    }
+    if (signature) {
+      normalizedCodeExecutionResult.signature = signature;
+    }
+
+    return { codeExecutionResult: normalizedCodeExecutionResult };
   }
 
   const executableCode = readPartRecord(rawPart, 'executableCode', 'executable_code');
   if (executableCode) {
+    const id = readStringField(executableCode, 'id');
     const language =
       typeof executableCode.language === 'string' ? executableCode.language : undefined;
     const code = typeof executableCode.code === 'string' ? executableCode.code : undefined;
-    const normalizedExecutableCode: { language?: string; code?: string } = {};
+    const normalizedExecutableCode: { id?: string; language?: string; code?: string } = {};
+    if (id) {
+      normalizedExecutableCode.id = id;
+    }
     if (language) {
       normalizedExecutableCode.language = language;
     }
@@ -378,28 +416,4 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
   }
 
   return stats;
-}
-
-function readBooleanField(record: Record<string, unknown>, ...keys: string[]): boolean | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'boolean') {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function readNonNegativeNumberField(
-  record: Record<string, unknown>,
-  ...keys: string[]
-): number | undefined {
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      return value;
-    }
-  }
-
-  return undefined;
 }

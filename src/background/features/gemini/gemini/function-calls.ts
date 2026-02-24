@@ -4,6 +4,7 @@ import type { GeminiContent, GeminiFunctionCall, GeminiPart } from '../../sessio
 import {
   inferMediaTypeFromMimeType,
   normalizeFunctionCallArgs,
+  readBooleanField,
   readPartRecord,
   readStringField,
   summarizeInteractionOutput,
@@ -108,14 +109,49 @@ function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart
       };
     }
     case 'code_execution_result': {
-      const result = typeof output.result === 'string' ? output.result : '';
+      let result: string | undefined;
+      if (typeof output.result === 'string') {
+        result = output.result;
+      } else if (typeof output.output === 'string') {
+        result = output.output;
+      }
+      const outcome = readStringField(output, 'outcome');
+      const callId = readStringField(output, 'call_id', 'callId');
+      const isError = readBooleanField(output, 'is_error', 'isError');
+      const signature = readStringField(output, 'signature');
+      const normalizedCodeExecutionResult: {
+        output?: string;
+        outcome?: string;
+        callId?: string;
+        isError?: boolean;
+        signature?: string;
+      } = {};
+      if (typeof result === 'string') {
+        normalizedCodeExecutionResult.output = result;
+      }
+      if (outcome) {
+        normalizedCodeExecutionResult.outcome = outcome;
+      }
+      if (callId) {
+        normalizedCodeExecutionResult.callId = callId;
+      }
+      if (isError !== undefined) {
+        normalizedCodeExecutionResult.isError = isError;
+      }
+      if (signature) {
+        normalizedCodeExecutionResult.signature = signature;
+      }
+
+      if (Object.keys(normalizedCodeExecutionResult).length === 0) {
+        return { interactionOutput: { type: 'code_execution_result' } };
+      }
+
       return {
-        codeExecutionResult: {
-          output: result,
-        },
+        codeExecutionResult: normalizedCodeExecutionResult,
       };
     }
     case 'code_execution_call': {
+      const id = readStringField(output, 'id');
       const args = isRecord(output.arguments) ? output.arguments : null;
       const code = args && typeof args.code === 'string' ? args.code : '';
       if (!code) {
@@ -123,11 +159,19 @@ function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart
       }
 
       const language = args && typeof args.language === 'string' ? args.language : 'text';
+      const normalizedExecutableCode: {
+        id?: string;
+        language: string;
+        code: string;
+      } = {
+        language,
+        code,
+      };
+      if (id) {
+        normalizedExecutableCode.id = id;
+      }
       return {
-        executableCode: {
-          language,
-          code,
-        },
+        executableCode: normalizedExecutableCode,
       };
     }
     case 'image':

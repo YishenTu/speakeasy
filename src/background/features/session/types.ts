@@ -41,12 +41,20 @@ interface GeminiInlineDataPartPayload extends GeminiPartBase {
 }
 
 interface GeminiExecutableCodePartPayload extends GeminiPartBase {
+  id?: string;
   language?: string;
   code?: string;
 }
 
 interface GeminiCodeExecutionResultPartPayload extends GeminiPartBase {
+  outcome?: string;
   output?: string;
+  result?: string;
+  callId?: string;
+  call_id?: string;
+  isError?: boolean;
+  is_error?: boolean;
+  signature?: string;
 }
 
 interface GeminiInteractionOutputPartPayload extends GeminiPartBase {

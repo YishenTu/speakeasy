@@ -111,6 +111,19 @@ export function inferAttachmentNameFromMimeType(mimeType: string): string {
   return 'attachment';
 }
 
+export function readBooleanField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'boolean') {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 export function readNonNegativeIntegerField(
   record: Record<string, unknown>,
   ...keys: string[]
@@ -119,6 +132,19 @@ export function readNonNegativeIntegerField(
     const value = record[key];
     if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
       return Math.round(value);
+    }
+  }
+  return undefined;
+}
+
+export function readNonNegativeNumberField(
+  record: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      return value;
     }
   }
   return undefined;

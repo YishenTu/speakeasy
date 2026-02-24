@@ -266,7 +266,7 @@ describe('buildGeminiRequestToolSelection', () => {
 });
 
 describe('renderContentForChat', () => {
-  it('renders text, code execution output, and executable code blocks', () => {
+  it('renders text, code execution output blocks, and executable code blocks', () => {
     const content: GeminiContent = {
       role: 'model',
       parts: [
@@ -281,9 +281,9 @@ describe('renderContentForChat', () => {
     const rendered = renderContentForChat(content);
 
     expect(rendered).toContain('Result summary');
-    expect(rendered).toContain('Code output:\n42');
+    expect(rendered).toContain('Code output:\n```text\n42\n```');
     expect(rendered).toContain('```python\nprint(42)\n```');
-    expect(rendered).toContain('Code output:\nfrom snake case');
+    expect(rendered).toContain('Code output:\n```text\nfrom snake case\n```');
     expect(rendered).toContain('```javascript\nconsole.log(7);\n```');
   });
 
@@ -298,6 +298,23 @@ describe('renderContentForChat', () => {
     };
 
     expect(renderContentForChat(content)).toBe('```text\nx = 1\n```');
+  });
+
+  it('uses a longer fence when code output includes triple backticks', () => {
+    const content: GeminiContent = {
+      role: 'model',
+      parts: [
+        {
+          codeExecutionResult: {
+            output: 'before\n```json\n{"ok":true}\n```\nafter',
+          },
+        },
+      ],
+    };
+
+    expect(renderContentForChat(content)).toBe(
+      'Code output:\n````text\nbefore\n```json\n{"ok":true}\n```\nafter\n````',
+    );
   });
 
   it('keeps thought summaries out of assistant text rendering', () => {
@@ -522,6 +539,49 @@ describe('normalizeContent', () => {
       type: 'unknown_part',
       keys: ['foo'],
     });
+  });
+
+  it('normalizes code execution parts in both camelCase and snake_case forms', () => {
+    const content = normalizeContent({
+      role: 'model',
+      parts: [
+        {
+          executable_code: {
+            id: 'code-call-1',
+            language: 'PYTHON',
+            code: 'print(1)',
+          },
+        },
+        {
+          code_execution_result: {
+            call_id: 'code-call-1',
+            is_error: true,
+            signature: 'sig-1',
+            outcome: 'OUTCOME_FAILED',
+            result: 'Traceback...',
+          },
+        },
+      ],
+    });
+
+    expect(content.parts).toEqual([
+      {
+        executableCode: {
+          id: 'code-call-1',
+          language: 'PYTHON',
+          code: 'print(1)',
+        },
+      },
+      {
+        codeExecutionResult: {
+          callId: 'code-call-1',
+          isError: true,
+          signature: 'sig-1',
+          outcome: 'OUTCOME_FAILED',
+          output: 'Traceback...',
+        },
+      },
+    ]);
   });
 
   it('keeps valid response stats metadata and drops invalid metadata', () => {
@@ -1128,6 +1188,64 @@ describe('completeAssistantTurn', () => {
     expect(content.parts).toEqual([{ text: 'Grounded answer from stream.' }]);
     expect(content.metadata?.groundingSources).toEqual([
       { title: 'Example', url: 'https://example.com' },
+    ]);
+  });
+
+  it('preserves streamed code execution deltas when interaction.complete omits outputs', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        index: 0,
+        delta: {
+          type: 'code_execution_call',
+          id: 'code-call-stream-1',
+          arguments: {
+            language: 'python',
+            code: 'print(3 * 3)',
+          },
+        },
+      },
+      {
+        event_type: 'content.delta',
+        index: 1,
+        delta: {
+          type: 'code_execution_result',
+          call_id: 'code-call-stream-1',
+          is_error: false,
+          signature: 'sig-stream-1',
+          result: '9\n',
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-code-exec',
+          outputs: [],
+        },
+      },
+    );
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    settings.tools.codeExecution = true;
+    const content = await completeAssistantTurn(session, settings, undefined, () => {});
+
+    expect(content.parts).toEqual([
+      {
+        executableCode: {
+          id: 'code-call-stream-1',
+          language: 'python',
+          code: 'print(3 * 3)',
+        },
+      },
+      {
+        codeExecutionResult: {
+          callId: 'code-call-stream-1',
+          isError: false,
+          signature: 'sig-stream-1',
+          output: '9\n',
+        },
+      },
     ]);
   });
 
@@ -1770,10 +1888,19 @@ describe('completeAssistantTurn', () => {
       outputs: [
         {
           type: 'code_execution_call',
+          id: 'code-call-1',
           arguments: {
             language: 'python',
             code: 'print(7)',
           },
+        },
+        {
+          type: 'code_execution_result',
+          call_id: 'code-call-1',
+          is_error: false,
+          signature: 'sig-1',
+          outcome: 'OUTCOME_OK',
+          result: '7\n',
         },
         {
           type: 'unknown_signal',
@@ -1791,8 +1918,18 @@ describe('completeAssistantTurn', () => {
     expect(content.parts).toEqual([
       {
         executableCode: {
+          id: 'code-call-1',
           language: 'python',
           code: 'print(7)',
+        },
+      },
+      {
+        codeExecutionResult: {
+          callId: 'code-call-1',
+          isError: false,
+          signature: 'sig-1',
+          outcome: 'OUTCOME_OK',
+          output: '7\n',
         },
       },
       {
