@@ -8,6 +8,8 @@ import {
 } from '../gemini/gemini';
 import type { ChatBranchNode, ChatBranchTree, ChatSession, GeminiContent } from './types';
 
+const EMPTY_ASSISTANT_RESPONSE_FALLBACK = 'Gemini returned a response with no displayable text.';
+
 export function createSession(): ChatSession {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
@@ -219,23 +221,32 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
       }
     }
 
-    const text = renderContentForChat(content).trim();
+    const renderedText = renderContentForChat(content).trim();
     const thinkingSummary = renderThinkingSummaryForChat(content).trim();
     const attachments = applyAttachmentPreviewMetadata(
       extractAttachments(content),
       content.metadata?.attachmentPreviewByFileUri,
       content.metadata?.attachmentPreviewTextByFileUri,
     );
-    if (!text && !thinkingSummary && attachments.length === 0) {
-      continue;
-    }
-
     const role = content.role === 'user' ? 'user' : 'assistant';
     const stats = role === 'assistant' ? content.metadata?.responseStats : undefined;
     const interactionId =
       role === 'assistant' ? content.metadata?.interactionId?.trim() || undefined : undefined;
     const previousInteractionId = role === 'user' ? lastAssistantInteractionId : undefined;
     const sourceModel = role === 'assistant' ? content.metadata?.sourceModel?.trim() : '';
+    const groundingSources = role === 'assistant' ? content.metadata?.groundingSources : undefined;
+    const hasGroundingSources = !!groundingSources && groundingSources.length > 0;
+    const text =
+      role === 'assistant' &&
+      !renderedText &&
+      !thinkingSummary &&
+      attachments.length === 0 &&
+      hasGroundingSources
+        ? EMPTY_ASSISTANT_RESPONSE_FALLBACK
+        : renderedText;
+    if (!text && !thinkingSummary && attachments.length === 0 && !hasGroundingSources) {
+      continue;
+    }
     const timestamp = parseTimestamp(content.metadata?.createdAt);
 
     let branchContext: AssistantBranchContext | undefined;
@@ -274,6 +285,9 @@ export function mapSessionToChatMessages(session: ChatSession): ChatMessage[] {
     if (timestamp) {
       message.timestamp = timestamp;
     }
+    if (groundingSources && groundingSources.length > 0) {
+      message.groundingSources = groundingSources;
+    }
     if (branchOptionCount > 1) {
       message.branchOptionInteractionIds = branchOptionInteractionIds;
       message.branchOptionCount = branchOptionCount;
@@ -299,15 +313,14 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   const stats = content.metadata?.responseStats;
   const interactionId = content.metadata?.interactionId?.trim() || undefined;
   const sourceModel = content.metadata?.sourceModel?.trim();
+  const groundingSources = content.metadata?.groundingSources;
   const timestamp = parseTimestamp(content.metadata?.createdAt);
   const message: ChatMessage = {
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
       rendered ||
-      (!thinkingSummary && attachments.length === 0
-        ? 'Gemini returned a response with no displayable text.'
-        : ''),
+      (!thinkingSummary && attachments.length === 0 ? EMPTY_ASSISTANT_RESPONSE_FALLBACK : ''),
   };
   if (interactionId) {
     message.interactionId = interactionId;
@@ -326,6 +339,9 @@ export function toAssistantChatMessage(content: GeminiContent): ChatMessage {
   }
   if (timestamp) {
     message.timestamp = timestamp;
+  }
+  if (groundingSources && groundingSources.length > 0) {
+    message.groundingSources = groundingSources;
   }
 
   return message;

@@ -21,7 +21,7 @@ import type {
 import { sendRuntimeRequest } from './runtime-client';
 import { ACTIVE_CHAT_FALLBACK_TAB_SCOPE, ACTIVE_CHAT_STORAGE_KEY } from './settings';
 
-export type { ChatMessage, MessageRole } from './messages';
+export type { ChatMessage, GroundingSource, MessageRole } from './messages';
 
 export interface ChatTabContext {
   tabId?: number | null;

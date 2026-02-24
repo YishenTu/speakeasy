@@ -188,6 +188,57 @@ describe('sessions', () => {
     });
   });
 
+  it('threads groundingSources in mapSessionToChatMessages for assistant entries', () => {
+    const session: ChatSession = {
+      id: 'chat-grounding',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      contents: [
+        { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
+        {
+          id: 'm1',
+          role: 'model',
+          parts: [{ text: 'Answer' }],
+          metadata: {
+            groundingSources: [{ title: 'Example', url: 'https://example.com' }],
+          },
+        },
+      ],
+    };
+
+    const messages = mapSessionToChatMessages(session);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+    ]);
+  });
+
+  it('keeps source-only assistant entries visible when grounding sources exist', () => {
+    const session: ChatSession = {
+      id: 'chat-source-only-grounding',
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+      contents: [
+        { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
+        {
+          id: 'm1',
+          role: 'model',
+          parts: [{ interactionOutput: { type: 'google_search_result' } }],
+          metadata: {
+            groundingSources: [{ title: 'Example', url: 'https://example.com' }],
+          },
+        },
+      ],
+    };
+
+    const messages = mapSessionToChatMessages(session);
+    expect(messages).toHaveLength(2);
+    expect(messages[1]?.content).toBe('Gemini returned a response with no displayable text.');
+    expect(messages[1]?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+    ]);
+  });
+
   it('keeps assistant branch options visible when one branch has tool-call intermediary nodes', () => {
     const session = createSession();
     const rootNodeId = session.branchTree?.rootNodeId ?? '';
@@ -520,6 +571,29 @@ describe('sessions', () => {
       hasStreamingToken: true,
     });
     expect(message.interactionId).toBe('interaction-stats-1');
+  });
+
+  it('threads groundingSources from assistant metadata to ChatMessage', () => {
+    const message = toAssistantChatMessage({
+      id: 'assistant-grounding-1',
+      role: 'model',
+      parts: [{ text: 'Measured answer' }],
+      metadata: {
+        groundingSources: [{ title: 'Example', url: 'https://example.com' }],
+      },
+    });
+
+    expect(message.groundingSources).toEqual([{ title: 'Example', url: 'https://example.com' }]);
+  });
+
+  it('omits groundingSources when assistant metadata has none', () => {
+    const message = toAssistantChatMessage({
+      id: 'assistant-grounding-none',
+      role: 'model',
+      parts: [{ text: 'Measured answer' }],
+    });
+
+    expect(message.groundingSources).toBeUndefined();
   });
 
   it('createSession produces empty content history', () => {

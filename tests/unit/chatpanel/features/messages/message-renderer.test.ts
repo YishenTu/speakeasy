@@ -331,6 +331,97 @@ describe('chatpanel messages', () => {
     expect(firstChild?.className).toBe('thinking-disclosure');
   });
 
+  it('renders a sources list for assistant messages with grounding sources', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-sources',
+        role: 'assistant',
+        content: 'Response text',
+        groundingSources: [
+          { title: 'Example', url: 'https://example.com' },
+          { title: 'Other', url: 'https://other.com' },
+        ],
+      },
+      messageList,
+    );
+
+    const row = messageList.querySelector(
+      'li[data-message-id="assistant-sources"]',
+    ) as HTMLLIElement | null;
+    const sources = row?.querySelector('.message-sources') as HTMLDivElement | null;
+    expect(sources).not.toBeNull();
+    expect(sources?.querySelector('.message-sources-label')?.textContent).toBe('Sources');
+
+    const links = Array.from(sources?.querySelectorAll('a') ?? []);
+    expect(links).toHaveLength(2);
+    expect(links[0]?.textContent).toBe('Example');
+    expect(links[0]?.getAttribute('href')).toBe('https://example.com');
+    expect(links[0]?.getAttribute('target')).toBe('_blank');
+    expect(links[0]?.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(links[1]?.textContent).toBe('Other');
+    expect(links[1]?.getAttribute('href')).toBe('https://other.com');
+  });
+
+  it('does not render sources list when assistant message has no grounding sources', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-no-sources',
+        role: 'assistant',
+        content: 'Response text',
+      },
+      messageList,
+    );
+
+    const row = messageList.querySelector(
+      'li[data-message-id="assistant-no-sources"]',
+    ) as HTMLLIElement | null;
+    expect(row?.querySelector('.message-sources')).toBeNull();
+  });
+
+  it('sanitizes unsafe grounding source links', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-unsafe-sources',
+        role: 'assistant',
+        content: 'Response text',
+        groundingSources: [
+          { title: 'Safe', url: 'https://example.com' },
+          { title: 'Unsafe JS', url: 'javascript:alert(1)' },
+          { title: 'Unsafe Relative', url: '/internal/path' },
+        ],
+      },
+      messageList,
+    );
+
+    const row = messageList.querySelector(
+      'li[data-message-id="assistant-unsafe-sources"]',
+    ) as HTMLLIElement | null;
+    const links = Array.from(row?.querySelectorAll('.message-sources a') ?? []);
+    expect(links).toHaveLength(3);
+
+    const linksByText = new Map(links.map((link) => [link.textContent ?? '', link]));
+    const safe = linksByText.get('Safe');
+    expect(safe?.getAttribute('href')).toBe('https://example.com');
+    expect(safe?.getAttribute('target')).toBe('_blank');
+    expect(safe?.getAttribute('rel')).toBe('noopener noreferrer');
+
+    const unsafeJs = linksByText.get('Unsafe JS');
+    expect(unsafeJs?.hasAttribute('href')).toBe(false);
+    expect(unsafeJs?.hasAttribute('target')).toBe(false);
+    expect(unsafeJs?.hasAttribute('rel')).toBe(false);
+
+    const unsafeRelative = linksByText.get('Unsafe Relative');
+    expect(unsafeRelative?.hasAttribute('href')).toBe(false);
+    expect(unsafeRelative?.hasAttribute('target')).toBe(false);
+    expect(unsafeRelative?.hasAttribute('rel')).toBe(false);
+  });
+
   it('renders markdown and tex in the assistant thinking disclosure', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 

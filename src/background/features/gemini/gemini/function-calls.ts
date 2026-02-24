@@ -1,3 +1,4 @@
+import type { GroundingSource } from '../../../../shared/messages';
 import { isRecord, toErrorMessage } from '../../../core/utils';
 import type { GeminiContent, GeminiFunctionCall, GeminiPart } from '../../session/types';
 import {
@@ -12,7 +13,13 @@ import { LOCAL_FUNCTION_TOOLS } from './local-tools';
 
 export function extractAssistantContent(interaction: GeminiInteraction): GeminiContent {
   const parts: GeminiPart[] = [];
+  let hasGoogleSearchOutput = false;
   for (const rawOutput of interaction.outputs ?? []) {
+    const outputType = typeof rawOutput.type === 'string' ? rawOutput.type.trim() : '';
+    if (outputType === 'google_search_call' || outputType === 'google_search_result') {
+      hasGoogleSearchOutput = true;
+    }
+
     const part = mapInteractionOutputToPart(rawOutput);
     if (part) {
       parts.push(part);
@@ -20,7 +27,11 @@ export function extractAssistantContent(interaction: GeminiInteraction): GeminiC
   }
 
   if (parts.length === 0) {
-    throw new Error('Gemini interaction did not return any outputs.');
+    if (hasGoogleSearchOutput) {
+      parts.push({ interactionOutput: { type: 'google_search_result' } });
+    } else {
+      throw new Error('Gemini interaction did not return any outputs.');
+    }
   }
 
   return {
@@ -28,6 +39,35 @@ export function extractAssistantContent(interaction: GeminiInteraction): GeminiC
     role: 'model',
     parts,
   };
+}
+
+export function extractGroundingSources(interaction: GeminiInteraction): GroundingSource[] {
+  const sources: GroundingSource[] = [];
+  const seenUrls = new Set<string>();
+
+  for (const output of interaction.outputs ?? []) {
+    if (typeof output.type !== 'string' || output.type.trim() !== 'google_search_result') {
+      continue;
+    }
+
+    const results = Array.isArray(output.result) ? output.result : [];
+    for (const entry of results) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+
+      const url = typeof entry.url === 'string' ? entry.url.trim() : '';
+      if (!url || seenUrls.has(url)) {
+        continue;
+      }
+      seenUrls.add(url);
+
+      const title = typeof entry.title === 'string' ? entry.title.trim() : '';
+      sources.push({ title: title || url, url });
+    }
+  }
+
+  return sources;
 }
 
 function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart | null {
@@ -95,6 +135,9 @@ function mapInteractionOutputToPart(output: Record<string, unknown>): GeminiPart
     case 'video':
     case 'document':
       return mapInteractionMediaOutputToPart(output);
+    case 'google_search_call':
+    case 'google_search_result':
+      return null;
     default:
       return {
         interactionOutput: summarizeInteractionOutput(output),

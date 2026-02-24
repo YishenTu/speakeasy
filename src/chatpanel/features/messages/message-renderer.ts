@@ -1,4 +1,4 @@
-import type { ChatMessage } from '../../../shared/chat';
+import type { ChatMessage, GroundingSource } from '../../../shared/chat';
 import { toErrorMessage as toSharedErrorMessage } from '../../../shared/error-message';
 import { isImageMimeType } from '../../core/media-helpers';
 import { formatMessageTimestamp } from '../../core/time-format';
@@ -117,6 +117,11 @@ function createMessageNode(
     bubble.append(createMarkdownNode(message.content, 'message-text'));
   } else if (message.role === 'assistant' && !thinkingSummary && !assistantAttachmentList) {
     bubble.append(createThinkingPlaceholderNode());
+  }
+
+  const groundingSources = message.role === 'assistant' ? message.groundingSources : undefined;
+  if (groundingSources && groundingSources.length > 0) {
+    bubble.append(createSourcesList(groundingSources));
   }
 
   if (assistantAttachmentList) {
@@ -240,6 +245,35 @@ function createThinkingSummaryNode(thinkingSummary: string): HTMLDivElement {
     fallback.textContent = thinkingSummary;
     container.append(fallback);
   }
+  return container;
+}
+
+function createSourcesList(sources: GroundingSource[]): HTMLElement {
+  const container = document.createElement('div');
+  container.className = 'message-sources';
+
+  const label = document.createElement('span');
+  label.className = 'message-sources-label';
+  label.textContent = 'Sources';
+  container.append(label);
+
+  const list = document.createElement('ul');
+  list.className = 'message-sources-list';
+
+  for (const source of sources) {
+    const item = document.createElement('li');
+    const link = document.createElement('a');
+    link.href = source.url.trim();
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = source.title;
+    link.title = source.url;
+    item.append(link);
+    list.append(item);
+  }
+
+  container.append(list);
+  enforceLinkBehavior(container);
   return container;
 }
 

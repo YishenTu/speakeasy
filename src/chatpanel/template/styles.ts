@@ -858,6 +858,46 @@ export function getChatPanelStyles(): string {
         white-space: pre-wrap;
       }
 
+      .message-sources {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid var(--sp-color-border-base);
+      }
+
+      .message-sources-label {
+        display: block;
+        font-size: var(--sp-font-size-xs);
+        color: var(--sp-color-text-muted);
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .message-sources-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+      }
+
+      .message-sources-list li {
+        font-size: var(--sp-font-size-sm);
+        line-height: 1.4;
+      }
+
+      .message-sources-list a {
+        color: var(--sp-color-text-secondary);
+        text-decoration: none;
+        transition: color var(--sp-transition-fast);
+      }
+
+      .message-sources-list a:hover {
+        color: var(--sp-color-text-primary);
+        text-decoration: underline;
+      }
+
       .message-stats {
         margin: 0;
         border: 0;

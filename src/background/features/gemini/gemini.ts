@@ -22,6 +22,7 @@ import {
   executeFunctionCalls,
   extractAssistantContent,
   extractFunctionCalls,
+  extractGroundingSources,
 } from './gemini/function-calls';
 import { callGeminiInteraction, callGeminiInteractionStream } from './gemini/interaction';
 import { getLocalFunctionDeclarations } from './gemini/local-tools';
@@ -32,6 +33,7 @@ import {
   getMonotonicNowMs,
   withAssistantInteractionMetadata,
   withAssistantResponseStats,
+  withGroundingSources,
 } from './gemini/stats';
 import {
   SESSION_TITLE_MODEL,
@@ -95,10 +97,13 @@ export async function completeAssistantTurn(
 
     session.lastInteractionId = interaction.id;
 
-    const candidateContent = withAssistantInteractionMetadata(
-      extractAssistantContent(interaction),
-      interaction.id,
-      settings.model,
+    const candidateContent = withGroundingSources(
+      withAssistantInteractionMetadata(
+        extractAssistantContent(interaction),
+        interaction.id,
+        settings.model,
+      ),
+      extractGroundingSources(interaction),
     );
     session.contents.push(candidateContent);
     latestAssistantContent = candidateContent;
