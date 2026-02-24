@@ -13,6 +13,10 @@ import {
   buildGeminiRequestToolSelection,
   composeGeminiInteractionRequest,
 } from '../../../../../src/background/features/gemini/gemini-request';
+import {
+  extractAssistantContent,
+  extractGroundingSources,
+} from '../../../../../src/background/features/gemini/gemini/function-calls';
 import type {
   ChatSession,
   GeminiContent,
@@ -382,6 +386,110 @@ describe('extractAttachments', () => {
   });
 });
 
+describe('extractGroundingSources', () => {
+  it('returns empty array when no google_search_result outputs exist', () => {
+    const interaction = {
+      id: 'test-id',
+      outputs: [{ type: 'text', text: 'hello' }],
+    };
+
+    expect(extractGroundingSources(interaction)).toEqual([]);
+  });
+
+  it('returns empty array when outputs are undefined', () => {
+    const interaction = { id: 'test-id' };
+    expect(extractGroundingSources(interaction)).toEqual([]);
+  });
+
+  it('extracts title and url from google_search_result outputs', () => {
+    const interaction = {
+      id: 'test-id',
+      outputs: [
+        { type: 'text', text: 'response' },
+        {
+          type: 'google_search_result',
+          result: [
+            { title: 'Example', url: 'https://example.com' },
+            { title: 'Other', url: 'https://other.com' },
+          ],
+        },
+      ],
+    };
+
+    expect(extractGroundingSources(interaction)).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+      { title: 'Other', url: 'https://other.com' },
+    ]);
+  });
+
+  it('skips entries with no url', () => {
+    const interaction = {
+      id: 'test-id',
+      outputs: [
+        {
+          type: 'google_search_result',
+          result: [{ title: 'No URL' }, { title: 'Has URL', url: 'https://example.com' }],
+        },
+      ],
+    };
+
+    expect(extractGroundingSources(interaction)).toEqual([
+      { title: 'Has URL', url: 'https://example.com' },
+    ]);
+  });
+
+  it('deduplicates by url', () => {
+    const interaction = {
+      id: 'test-id',
+      outputs: [
+        {
+          type: 'google_search_result',
+          result: [
+            { title: 'First', url: 'https://example.com' },
+            { title: 'Duplicate', url: 'https://example.com' },
+          ],
+        },
+      ],
+    };
+
+    expect(extractGroundingSources(interaction)).toEqual([
+      { title: 'First', url: 'https://example.com' },
+    ]);
+  });
+
+  it('uses url as title fallback when title is empty', () => {
+    const interaction = {
+      id: 'test-id',
+      outputs: [
+        {
+          type: 'google_search_result',
+          result: [{ title: '  ', url: 'https://example.com' }],
+        },
+      ],
+    };
+
+    expect(extractGroundingSources(interaction)).toEqual([
+      { title: 'https://example.com', url: 'https://example.com' },
+    ]);
+  });
+
+  it('skips google_search_result and google_search_call from assistant parts', () => {
+    const interaction = {
+      id: 'test-id',
+      outputs: [
+        { type: 'text', text: 'hello' },
+        {
+          type: 'google_search_result',
+          result: [{ title: 'X', url: 'https://x.com' }],
+        },
+        { type: 'google_search_call', id: 'call-1', arguments: { query: 'test' } },
+      ],
+    };
+
+    expect(extractAssistantContent(interaction).parts).toEqual([{ text: 'hello' }]);
+  });
+});
+
 describe('normalizeContent', () => {
   it('throws for non-object payloads and empty parts', () => {
     expect(() => normalizeContent(null)).toThrow(/json object/i);
@@ -558,6 +666,35 @@ describe('normalizeContent', () => {
     });
 
     expect(withOnlyInvalidPreviewMetadata.metadata).toBeUndefined();
+  });
+
+  it('normalizes grounding source metadata in camelCase and snake_case forms', () => {
+    const withCamelCaseSources = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        groundingSources: [
+          { title: ' Example ', url: ' https://example.com ' },
+          { title: 'Missing URL' },
+          { url: 'https://fallback.com' },
+        ],
+      },
+    });
+    expect(withCamelCaseSources.metadata?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+      { title: 'https://fallback.com', url: 'https://fallback.com' },
+    ]);
+
+    const withSnakeCaseSources = normalizeContent({
+      role: 'model',
+      parts: [{ text: 'ok' }],
+      metadata: {
+        grounding_sources: [{ title: 'Other', url: 'https://other.com' }],
+      },
+    });
+    expect(withSnakeCaseSources.metadata?.groundingSources).toEqual([
+      { title: 'Other', url: 'https://other.com' },
+    ]);
   });
 });
 
@@ -770,6 +907,59 @@ describe('completeAssistantTurn', () => {
     expect(fetchRequestBodies[0]?.previous_interaction_id).toBeUndefined();
   });
 
+  it('attaches grounding sources from google_search_result outputs', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-grounding-1',
+      outputs: [
+        { type: 'text', text: 'Grounded answer' },
+        { type: 'google_search_call', id: 'search-call-1', arguments: { query: 'test query' } },
+        {
+          type: 'google_search_result',
+          result: [
+            { title: 'Example', url: 'https://example.com' },
+            { title: '   ', url: 'https://fallback-title.com' },
+            { title: 'Duplicate', url: 'https://example.com' },
+            { title: 'Missing URL' },
+          ],
+        },
+      ],
+    });
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const assistantContent = await completeAssistantTurn(session, settings);
+
+    expect(assistantContent.parts).toEqual([{ text: 'Grounded answer' }]);
+    expect(assistantContent.metadata?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+      { title: 'https://fallback-title.com', url: 'https://fallback-title.com' },
+    ]);
+  });
+
+  it('keeps source-only responses without throwing when only google search outputs are present', async () => {
+    enqueueGeminiResponses({
+      id: 'interaction-source-only-1',
+      outputs: [
+        { type: 'google_search_call', id: 'search-call-1', arguments: { query: 'test query' } },
+        {
+          type: 'google_search_result',
+          result: [{ title: 'Example', url: 'https://example.com' }],
+        },
+      ],
+    });
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    const assistantContent = await completeAssistantTurn(session, settings);
+
+    expect(assistantContent.parts).toEqual([
+      { interactionOutput: { type: 'google_search_result' } },
+    ]);
+    expect(assistantContent.metadata?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+    ]);
+  });
+
   it('parses thought outputs into thinking summaries and excludes them from final text', async () => {
     enqueueGeminiResponses({
       id: 'interaction-thought',
@@ -894,6 +1084,51 @@ describe('completeAssistantTurn', () => {
     expect(renderContentForChat(content)).toBe('Partial answer.');
     expect(renderThinkingSummaryForChat(content)).toBe('Checked constraints first.');
     expect(session.lastInteractionId).toBe('interaction-stream-no-outputs');
+  });
+
+  it('preserves streamed google_search_result deltas when interaction.complete omits outputs', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        index: 0,
+        delta: { type: 'text', text: 'Grounded answer from stream.' },
+      },
+      {
+        event_type: 'content.delta',
+        index: 1,
+        delta: {
+          type: 'google_search_call',
+          id: 'search-call-stream-1',
+          arguments: { queries: ['latest ai announcements'] },
+        },
+      },
+      {
+        event_type: 'content.delta',
+        index: 2,
+        delta: {
+          type: 'google_search_result',
+          call_id: 'search-call-stream-1',
+          result: [{ title: 'Example', url: 'https://example.com' }],
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-grounding',
+          outputs: [],
+        },
+      },
+    );
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    settings.tools.googleSearch = true;
+    const content = await completeAssistantTurn(session, settings, undefined, () => {});
+
+    expect(content.parts).toEqual([{ text: 'Grounded answer from stream.' }]);
+    expect(content.metadata?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+    ]);
   });
 
   it('reconstructs streamed function calls from deltas and continues the tool loop', async () => {

@@ -1,4 +1,4 @@
-import type { AssistantResponseStats } from '../../../shared/messages';
+import type { AssistantResponseStats, GroundingSource } from '../../../shared/messages';
 
 export interface GeminiContent {
   id?: string;
@@ -140,6 +140,7 @@ export interface GeminiContentMetadata {
   createdAt?: string;
   attachmentPreviewByFileUri?: Record<string, string>;
   attachmentPreviewTextByFileUri?: Record<string, string>;
+  groundingSources?: GroundingSource[];
 }
 
 export interface GeminiFunctionCall {

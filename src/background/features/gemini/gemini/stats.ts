@@ -1,4 +1,4 @@
-import type { AssistantResponseStats } from '../../../../shared/messages';
+import type { AssistantResponseStats, GroundingSource } from '../../../../shared/messages';
 import type { GeminiContent } from '../../session/types';
 import type { GeminiInteractionUsage, UsageTotals } from './contracts';
 
@@ -145,6 +145,23 @@ export function withAssistantInteractionMetadata(
   return {
     ...content,
     metadata,
+  };
+}
+
+export function withGroundingSources(
+  content: GeminiContent,
+  sources: GroundingSource[],
+): GeminiContent {
+  if (sources.length === 0) {
+    return content;
+  }
+
+  return {
+    ...content,
+    metadata: {
+      ...(content.metadata ?? {}),
+      groundingSources: sources,
+    },
   };
 }
 

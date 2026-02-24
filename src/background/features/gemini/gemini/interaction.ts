@@ -11,9 +11,12 @@ import type {
 import { asInvalidPreviousInteractionIdError } from './errors';
 import { normalizeGeminiInteractionResponse } from './interaction-normalize';
 import {
+  type StreamedToolOutputDelta,
   applyStreamOutputFallback,
   buildStreamedFunctionCallOutputs,
+  buildStreamedToolOutputs,
   collectStreamedFunctionCallDelta,
+  collectStreamedToolOutputDelta,
   extractStreamDelta,
   isAsyncIterable,
 } from './streaming';
@@ -46,6 +49,7 @@ export async function callGeminiInteractionStream(input: {
   const streamedTextChunks: string[] = [];
   const streamedThoughtChunks: string[] = [];
   const streamedFunctionCallDeltas = new Map<string, StreamedFunctionCallDelta>();
+  const streamedToolOutputDeltas = new Map<string, StreamedToolOutputDelta>();
   for await (const rawEvent of stream) {
     if (!isRecord(rawEvent)) {
       continue;
@@ -54,6 +58,7 @@ export async function callGeminiInteractionStream(input: {
     switch (readStringField(rawEvent, 'event_type')) {
       case 'content.delta': {
         collectStreamedFunctionCallDelta(rawEvent, streamedFunctionCallDeltas);
+        collectStreamedToolOutputDelta(rawEvent, streamedToolOutputDeltas);
         const delta = extractStreamDelta(rawEvent);
         if (delta) {
           input.onStreamDelta(delta);
@@ -101,6 +106,7 @@ export async function callGeminiInteractionStream(input: {
     text: streamedTextChunks.join(''),
     thoughtSummary: streamedThoughtChunks.join(''),
     functionCalls: buildStreamedFunctionCallOutputs(streamedFunctionCallDeltas),
+    toolOutputs: buildStreamedToolOutputs(streamedToolOutputDeltas),
   });
 }
 

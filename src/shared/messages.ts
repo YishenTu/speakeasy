@@ -23,6 +23,11 @@ export interface AssistantResponseStats {
   hasStreamingToken: boolean;
 }
 
+export interface GroundingSource {
+  title: string;
+  url: string;
+}
+
 export interface ChatMessage {
   id: string;
   interactionId?: string;
@@ -36,5 +41,6 @@ export interface ChatMessage {
   stats?: AssistantResponseStats;
   attachments?: ChatAttachment[];
   sourceModel?: string;
+  groundingSources?: GroundingSource[];
   timestamp?: number;
 }

@@ -1253,6 +1253,49 @@ describe('chatpanel regenerate flow', () => {
     expect(sendRequest?.text).toBe('plain submit');
   });
 
+  it('does not submit on Enter while input method composition is active', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error('Expected chatpanel input.');
+    }
+
+    input.value = '你好';
+    input.setSelectionRange(input.value.length, input.value.length);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(8);
+
+    input.dispatchEvent(new testWindow.Event('compositionstart', { bubbles: true }));
+    const composingEnterEvent = new testWindow.KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(composingEnterEvent);
+    await flushMicrotasks(16);
+
+    expect(composingEnterEvent.defaultPrevented).toBe(false);
+    expect(sendRequest).toBeNull();
+
+    input.dispatchEvent(new testWindow.Event('compositionend', { bubbles: true }));
+    input.dispatchEvent(
+      new testWindow.KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await flushMicrotasks(24);
+
+    expect(sendRequest?.type).toBe('chat/send');
+    expect(sendRequest?.text).toBe('你好');
+  });
+
   it('handles ArrowDown from mention menu focus and keeps scrolling behavior enabled', async () => {
     const testWindow = getTestWindow();
     await importFreshChatpanelModule();

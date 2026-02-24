@@ -1,4 +1,4 @@
-import type { ChatMessage } from '../../../shared/chat';
+import type { ChatMessage, GroundingSource } from '../../../shared/chat';
 import { toErrorMessage as toSharedErrorMessage } from '../../../shared/error-message';
 import { isImageMimeType } from '../../core/media-helpers';
 import { formatMessageTimestamp } from '../../core/time-format';
@@ -13,6 +13,7 @@ export interface MessageRenderOptions {
 }
 
 const COPY_FEEDBACK_RESET_MS = 1200;
+const MAX_VISIBLE_GROUNDING_SOURCES = 5;
 const messageBlobPreviewUrls = new WeakMap<HTMLLIElement, Set<string>>();
 
 export function renderAll(
@@ -117,6 +118,11 @@ function createMessageNode(
     bubble.append(createMarkdownNode(message.content, 'message-text'));
   } else if (message.role === 'assistant' && !thinkingSummary && !assistantAttachmentList) {
     bubble.append(createThinkingPlaceholderNode());
+  }
+
+  const groundingSources = message.role === 'assistant' ? message.groundingSources : undefined;
+  if (groundingSources && groundingSources.length > 0) {
+    bubble.append(createSourcesList(groundingSources));
   }
 
   if (assistantAttachmentList) {
@@ -241,6 +247,64 @@ function createThinkingSummaryNode(thinkingSummary: string): HTMLDivElement {
     container.append(fallback);
   }
   return container;
+}
+
+function createSourcesList(sources: GroundingSource[]): HTMLElement {
+  const container = document.createElement('div');
+  container.className = 'message-sources';
+
+  const label = document.createElement('span');
+  label.className = 'message-sources-label';
+  label.textContent = 'Source';
+  container.append(label);
+
+  const visibleSources = sources.slice(0, MAX_VISIBLE_GROUNDING_SOURCES);
+  const overflowSources = sources.slice(MAX_VISIBLE_GROUNDING_SOURCES);
+
+  const visibleList = document.createElement('ul');
+  visibleList.className = 'message-sources-list message-sources-list-primary';
+  for (const source of visibleSources) {
+    visibleList.append(createSourceListItem(source));
+  }
+  container.append(visibleList);
+
+  if (overflowSources.length > 0) {
+    const overflowList = document.createElement('ul');
+    overflowList.className = 'message-sources-list message-sources-list-overflow';
+    overflowList.hidden = true;
+    for (const source of overflowSources) {
+      overflowList.append(createSourceListItem(source));
+    }
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'message-sources-toggle';
+    toggle.textContent = `Show ${overflowSources.length} more`;
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', () => {
+      const willExpand = overflowList.hidden;
+      overflowList.hidden = !willExpand;
+      toggle.textContent = willExpand ? 'Show less' : `Show ${overflowSources.length} more`;
+      toggle.setAttribute('aria-expanded', willExpand ? 'true' : 'false');
+    });
+
+    container.append(toggle, overflowList);
+  }
+
+  enforceLinkBehavior(container);
+  return container;
+}
+
+function createSourceListItem(source: GroundingSource): HTMLLIElement {
+  const item = document.createElement('li');
+  const link = document.createElement('a');
+  link.href = source.url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = source.title;
+  link.title = source.url;
+  item.append(link);
+  return item;
 }
 
 function createStatsDisclosure(

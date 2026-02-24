@@ -4,7 +4,12 @@ import type { GeminiInteraction, GeminiStreamDelta, StreamedFunctionCallDelta } 
 
 export function applyStreamOutputFallback(
   interaction: GeminiInteraction,
-  fallback: { text: string; thoughtSummary: string; functionCalls: Array<Record<string, unknown>> },
+  fallback: {
+    text: string;
+    thoughtSummary: string;
+    functionCalls: Array<Record<string, unknown>>;
+    toolOutputs: Array<Record<string, unknown>>;
+  },
 ): GeminiInteraction {
   if (Array.isArray(interaction.outputs) && interaction.outputs.length > 0) {
     return interaction;
@@ -13,6 +18,9 @@ export function applyStreamOutputFallback(
   const fallbackOutputs: Array<Record<string, unknown>> = [];
   if (fallback.functionCalls.length > 0) {
     fallbackOutputs.push(...fallback.functionCalls);
+  }
+  if (fallback.toolOutputs.length > 0) {
+    fallbackOutputs.push(...fallback.toolOutputs);
   }
   if (fallback.thoughtSummary.trim()) {
     fallbackOutputs.push({
@@ -82,6 +90,48 @@ export function collectStreamedFunctionCallDelta(
   functionCallDeltas.set(key, callDelta);
 }
 
+export interface StreamedToolOutputDelta {
+  order: number;
+  output: Record<string, unknown>;
+}
+
+const STREAMED_TOOL_OUTPUT_TYPES = new Set(['google_search_call', 'google_search_result']);
+
+export function collectStreamedToolOutputDelta(
+  event: Record<string, unknown>,
+  toolOutputDeltas: Map<string, StreamedToolOutputDelta>,
+): void {
+  const delta = isRecord(event.delta) ? event.delta : null;
+  if (!delta) {
+    return;
+  }
+
+  const type = readStringField(delta, 'type');
+  if (!STREAMED_TOOL_OUTPUT_TYPES.has(type)) {
+    return;
+  }
+
+  const streamIndex = readStreamContentIndex(event);
+  const id =
+    type === 'google_search_call'
+      ? readStringField(delta, 'id')
+      : readStringField(delta, 'call_id') || readStringField(delta, 'id');
+  const key =
+    id ||
+    (streamIndex === null ? `${type}:order:${toolOutputDeltas.size}` : `${type}:${streamIndex}`);
+
+  const existing = toolOutputDeltas.get(key);
+  const output: Record<string, unknown> = {
+    ...(existing?.output ?? {}),
+    ...delta,
+    type,
+  };
+  toolOutputDeltas.set(key, {
+    order: existing?.order ?? toolOutputDeltas.size,
+    output,
+  });
+}
+
 export function buildStreamedFunctionCallOutputs(
   functionCallDeltas: Map<string, StreamedFunctionCallDelta>,
 ): Array<Record<string, unknown>> {
@@ -102,6 +152,14 @@ export function buildStreamedFunctionCallOutputs(
 
       return output;
     });
+}
+
+export function buildStreamedToolOutputs(
+  toolOutputDeltas: Map<string, StreamedToolOutputDelta>,
+): Array<Record<string, unknown>> {
+  return [...toolOutputDeltas.values()]
+    .sort((left, right) => left.order - right.order)
+    .map((toolOutput) => ({ ...toolOutput.output }));
 }
 
 function readStreamContentIndex(event: Record<string, unknown>): number | null {

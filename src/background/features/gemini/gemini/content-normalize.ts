@@ -5,7 +5,7 @@ import {
   estimateBase64DecodedByteLength,
   parseImageDataUrl,
 } from '../../../../shared/attachment-preview';
-import type { AssistantResponseStats } from '../../../../shared/messages';
+import type { AssistantResponseStats, GroundingSource } from '../../../../shared/messages';
 import { isRecord } from '../../../core/utils';
 import type { GeminiContent, GeminiPart } from '../../session/types';
 import {
@@ -177,6 +177,9 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   const attachmentPreviewTextByFileUri = normalizeAttachmentPreviewTextByFileUri(
     readPartRecord(value, 'attachmentPreviewTextByFileUri', 'attachment_preview_text_by_file_uri'),
   );
+  const groundingSources = normalizeGroundingSources(
+    value.groundingSources ?? value.grounding_sources,
+  );
 
   if (
     !responseStats &&
@@ -184,7 +187,8 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
     !sourceModel &&
     !createdAt &&
     !attachmentPreviewByFileUri &&
-    !attachmentPreviewTextByFileUri
+    !attachmentPreviewTextByFileUri &&
+    !groundingSources
   ) {
     return undefined;
   }
@@ -207,6 +211,9 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   }
   if (attachmentPreviewTextByFileUri) {
     metadata.attachmentPreviewTextByFileUri = attachmentPreviewTextByFileUri;
+  }
+  if (groundingSources) {
+    metadata.groundingSources = groundingSources;
   }
 
   return metadata;
@@ -260,6 +267,29 @@ function normalizeAttachmentPreviewTextByFileUri(
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeGroundingSources(value: unknown): GroundingSource[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+
+  const sources: GroundingSource[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const url = typeof entry.url === 'string' ? entry.url.trim() : '';
+    if (!url) {
+      continue;
+    }
+
+    const title = typeof entry.title === 'string' ? entry.title.trim() : '';
+    sources.push({ title: title || url, url });
+  }
+
+  return sources.length > 0 ? sources : undefined;
 }
 
 function isImageDataUrl(value: string): boolean {

@@ -858,6 +858,78 @@ export function getChatPanelStyles(): string {
         white-space: pre-wrap;
       }
 
+      .message-sources {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid var(--sp-color-border-base);
+      }
+
+      .message-sources-label {
+        display: block;
+        font-size: var(--sp-font-size-xs);
+        color: var(--sp-color-text-muted);
+        margin-bottom: 4px;
+      }
+
+      .message-sources-list {
+        list-style: disc;
+        margin: 0;
+        padding-left: 18px;
+        display: block;
+      }
+
+      .message-sources-list li {
+        font-size: var(--sp-font-size-sm);
+        line-height: 1.4;
+        margin: 2px 0;
+      }
+
+      .message-sources-list[hidden] {
+        display: none;
+      }
+
+      .message-sources-list a {
+        color: var(--sp-color-text-secondary);
+        text-decoration: none;
+        transition: color var(--sp-transition-fast);
+      }
+
+      .message-sources-list a:hover {
+        color: var(--sp-color-text-primary);
+        text-decoration: underline;
+      }
+
+      .message-sources-list-overflow {
+        margin-top: 4px;
+      }
+
+      .message-sources-toggle {
+        cursor: pointer;
+        margin-top: 6px;
+        border: none;
+        padding: 0;
+        background: transparent;
+        color: var(--sp-color-text-muted);
+        font-size: var(--sp-font-size-xs);
+        line-height: 1.4;
+        text-decoration: underline;
+        text-decoration-color: transparent;
+        transition:
+          color var(--sp-transition-fast),
+          text-decoration-color var(--sp-transition-fast);
+      }
+
+      .message-sources-toggle:hover {
+        color: var(--sp-color-text-primary);
+        text-decoration-color: currentColor;
+      }
+
+      .message-sources-toggle:focus-visible {
+        outline: 1px solid var(--sp-color-border-focus);
+        outline-offset: 1px;
+        border-radius: var(--sp-radius-sm);
+      }
+
       .message-stats {
         margin: 0;
         border: 0;

@@ -201,6 +201,7 @@ export function mountChatPanel(): void {
   });
 
   let isBusy = false;
+  let isInputComposing = false;
   let isCapturingFullPageScreenshot = false;
   let isExtractingPageText = false;
   let isProcessingMentionAction = false;
@@ -456,11 +457,26 @@ export function mountChatPanel(): void {
 
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
+      if (isInputComposing || event.isComposing || event.keyCode === 229) {
+        return;
+      }
       event.preventDefault();
       if (!isBusy && canSubmitMessage(input.value.trim(), attachmentManager.getStaged().length)) {
         form.requestSubmit();
       }
     }
+  });
+
+  input.addEventListener('compositionstart', () => {
+    isInputComposing = true;
+  });
+
+  input.addEventListener('compositionend', () => {
+    isInputComposing = false;
+  });
+
+  input.addEventListener('blur', () => {
+    isInputComposing = false;
   });
 
   shell.addEventListener('dragenter', (event) => {
