@@ -608,13 +608,13 @@ describe('chatpanel messages', () => {
       'Response statistics',
     );
     expect(stats?.querySelector('.message-action-icon')).not.toBeNull();
-    expect(stats?.textContent).toContain('TTFT');
+    expect(stats?.textContent).toContain('Turn TTFT');
     expect(stats?.textContent).toContain('240 ms');
-    expect(stats?.textContent).toContain('Output TPS');
+    expect(stats?.textContent).toContain('Turn Output TPS');
     expect(stats?.textContent).toContain('88.89 tok/s');
     expect(stats?.textContent).toContain('Total Tokens');
     expect(stats?.textContent).toContain('225');
-    expect(stats?.textContent).toContain('TTFT Source');
+    expect(stats?.textContent).toContain('Turn TTFT Source');
     expect(stats?.textContent).toContain('stream delta');
   });
 

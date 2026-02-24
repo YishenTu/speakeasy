@@ -337,16 +337,16 @@ function createStatsDisclosure(
   panel.className = 'message-stats-panel';
 
   const rows: Array<[string, string]> = [
-    ['TTFT', `${Math.round(stats.timeToFirstTokenMs)} ms`],
+    ['Turn TTFT', `${Math.round(stats.timeToFirstTokenMs)} ms`],
     ['Duration', `${Math.round(stats.requestDurationMs)} ms`],
-    ['Output TPS', formatTokensPerSecond(stats.outputTokensPerSecond)],
+    ['Turn Output TPS', formatTokensPerSecond(stats.outputTokensPerSecond)],
     ['Output Tokens', formatTokenCount(stats.outputTokens)],
     ['Input Tokens', formatTokenCount(stats.inputTokens)],
     ['Thought Tokens', formatTokenCount(stats.thoughtTokens)],
     ['Tool Tokens', formatTokenCount(stats.toolUseTokens)],
     ['Cached Tokens', formatTokenCount(stats.cachedTokens)],
     ['Total Tokens', formatTokenCount(stats.totalTokens)],
-    ['TTFT Source', stats.hasStreamingToken ? 'stream delta' : 'completion fallback'],
+    ['Turn TTFT Source', stats.hasStreamingToken ? 'stream delta' : 'completion fallback'],
   ];
 
   for (const [labelText, valueText] of rows) {
