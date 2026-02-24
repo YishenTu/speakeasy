@@ -1086,6 +1086,51 @@ describe('completeAssistantTurn', () => {
     expect(session.lastInteractionId).toBe('interaction-stream-no-outputs');
   });
 
+  it('preserves streamed google_search_result deltas when interaction.complete omits outputs', async () => {
+    enqueueGeminiSseEvents(
+      {
+        event_type: 'content.delta',
+        index: 0,
+        delta: { type: 'text', text: 'Grounded answer from stream.' },
+      },
+      {
+        event_type: 'content.delta',
+        index: 1,
+        delta: {
+          type: 'google_search_call',
+          id: 'search-call-stream-1',
+          arguments: { queries: ['latest ai announcements'] },
+        },
+      },
+      {
+        event_type: 'content.delta',
+        index: 2,
+        delta: {
+          type: 'google_search_result',
+          call_id: 'search-call-stream-1',
+          result: [{ title: 'Example', url: 'https://example.com' }],
+        },
+      },
+      {
+        event_type: 'interaction.complete',
+        interaction: {
+          id: 'interaction-stream-grounding',
+          outputs: [],
+        },
+      },
+    );
+
+    const session = createSession();
+    const settings = createSettingsForToolTests();
+    settings.tools.googleSearch = true;
+    const content = await completeAssistantTurn(session, settings, undefined, () => {});
+
+    expect(content.parts).toEqual([{ text: 'Grounded answer from stream.' }]);
+    expect(content.metadata?.groundingSources).toEqual([
+      { title: 'Example', url: 'https://example.com' },
+    ]);
+  });
+
   it('reconstructs streamed function calls from deltas and continues the tool loop', async () => {
     enqueueGeminiSseEvents(
       {

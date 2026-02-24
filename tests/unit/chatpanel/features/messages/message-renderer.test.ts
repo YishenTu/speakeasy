@@ -352,7 +352,7 @@ describe('chatpanel messages', () => {
     ) as HTMLLIElement | null;
     const sources = row?.querySelector('.message-sources') as HTMLDivElement | null;
     expect(sources).not.toBeNull();
-    expect(sources?.querySelector('.message-sources-label')?.textContent).toBe('Sources');
+    expect(sources?.querySelector('.message-sources-label')?.textContent).toBe('Source');
 
     const links = Array.from(sources?.querySelectorAll('a') ?? []);
     expect(links).toHaveLength(2);
@@ -380,6 +380,61 @@ describe('chatpanel messages', () => {
       'li[data-message-id="assistant-no-sources"]',
     ) as HTMLLIElement | null;
     expect(row?.querySelector('.message-sources')).toBeNull();
+  });
+
+  it('deduplicates and collapses long source lists with a toggle', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-many-sources',
+        role: 'assistant',
+        content: 'Response text',
+        groundingSources: [
+          { title: 'One', url: 'https://one.example.com' },
+          { title: 'Two', url: 'https://two.example.com' },
+          { title: 'Three', url: 'https://three.example.com' },
+          { title: 'Four', url: 'https://four.example.com' },
+          { title: 'Five', url: 'https://five.example.com' },
+          { title: 'Six', url: 'https://six.example.com' },
+          { title: 'Seven', url: 'https://seven.example.com' },
+          { title: 'Duplicate Two', url: 'https://two.example.com' },
+        ],
+      },
+      messageList,
+    );
+
+    const row = messageList.querySelector(
+      'li[data-message-id="assistant-many-sources"]',
+    ) as HTMLLIElement | null;
+    const primaryLinks = Array.from(
+      row?.querySelectorAll('.message-sources-list-primary a') ?? [],
+    ) as HTMLAnchorElement[];
+    const overflowList = row?.querySelector(
+      '.message-sources-list-overflow',
+    ) as HTMLUListElement | null;
+    const overflowLinks = Array.from(
+      overflowList?.querySelectorAll('a') ?? [],
+    ) as HTMLAnchorElement[];
+    const toggle = row?.querySelector('.message-sources-toggle') as HTMLButtonElement | null;
+
+    expect(primaryLinks).toHaveLength(5);
+    expect(overflowLinks).toHaveLength(2);
+    expect(primaryLinks[0]?.textContent).toBe('One');
+    expect(primaryLinks[4]?.textContent).toBe('Five');
+    expect(overflowLinks[0]?.textContent).toBe('Six');
+    expect(overflowLinks[1]?.textContent).toBe('Seven');
+    expect(toggle?.textContent).toBe('Show 2 more');
+    expect(overflowList?.hidden).toBe(true);
+    expect(overflowList?.hasAttribute('hidden')).toBe(true);
+
+    toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(toggle?.textContent).toBe('Show less');
+    expect(overflowList?.hidden).toBe(false);
+
+    toggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(toggle?.textContent).toBe('Show 2 more');
+    expect(overflowList?.hidden).toBe(true);
   });
 
   it('sanitizes unsafe grounding source links', () => {

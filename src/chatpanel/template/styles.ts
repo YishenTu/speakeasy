@@ -869,22 +869,23 @@ export function getChatPanelStyles(): string {
         font-size: var(--sp-font-size-xs);
         color: var(--sp-color-text-muted);
         margin-bottom: 4px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
       }
 
       .message-sources-list {
-        list-style: none;
+        list-style: disc;
         margin: 0;
-        padding: 0;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px 8px;
+        padding-left: 18px;
+        display: block;
       }
 
       .message-sources-list li {
         font-size: var(--sp-font-size-sm);
         line-height: 1.4;
+        margin: 2px 0;
+      }
+
+      .message-sources-list[hidden] {
+        display: none;
       }
 
       .message-sources-list a {
@@ -896,6 +897,37 @@ export function getChatPanelStyles(): string {
       .message-sources-list a:hover {
         color: var(--sp-color-text-primary);
         text-decoration: underline;
+      }
+
+      .message-sources-list-overflow {
+        margin-top: 4px;
+      }
+
+      .message-sources-toggle {
+        cursor: pointer;
+        margin-top: 6px;
+        border: none;
+        padding: 0;
+        background: transparent;
+        color: var(--sp-color-text-muted);
+        font-size: var(--sp-font-size-xs);
+        line-height: 1.4;
+        text-decoration: underline;
+        text-decoration-color: transparent;
+        transition:
+          color var(--sp-transition-fast),
+          text-decoration-color var(--sp-transition-fast);
+      }
+
+      .message-sources-toggle:hover {
+        color: var(--sp-color-text-primary);
+        text-decoration-color: currentColor;
+      }
+
+      .message-sources-toggle:focus-visible {
+        outline: 1px solid var(--sp-color-border-focus);
+        outline-offset: 1px;
+        border-radius: var(--sp-radius-xs);
       }
 
       .message-stats {
