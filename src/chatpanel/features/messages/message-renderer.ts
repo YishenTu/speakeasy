@@ -258,9 +258,8 @@ function createSourcesList(sources: GroundingSource[]): HTMLElement {
   label.textContent = 'Source';
   container.append(label);
 
-  const normalizedSources = normalizeSourcesForDisplay(sources);
-  const visibleSources = normalizedSources.slice(0, MAX_VISIBLE_GROUNDING_SOURCES);
-  const overflowSources = normalizedSources.slice(MAX_VISIBLE_GROUNDING_SOURCES);
+  const visibleSources = sources.slice(0, MAX_VISIBLE_GROUNDING_SOURCES);
+  const overflowSources = sources.slice(MAX_VISIBLE_GROUNDING_SOURCES);
 
   const visibleList = document.createElement('ul');
   visibleList.className = 'message-sources-list message-sources-list-primary';
@@ -306,23 +305,6 @@ function createSourceListItem(source: GroundingSource): HTMLLIElement {
   link.title = source.url;
   item.append(link);
   return item;
-}
-
-function normalizeSourcesForDisplay(sources: GroundingSource[]): GroundingSource[] {
-  const normalized: GroundingSource[] = [];
-  const seenUrls = new Set<string>();
-  for (const source of sources) {
-    const url = source.url.trim();
-    if (!url || seenUrls.has(url)) {
-      continue;
-    }
-    seenUrls.add(url);
-
-    const title = source.title.trim() || url;
-    normalized.push({ title, url });
-  }
-
-  return normalized;
 }
 
 function createStatsDisclosure(

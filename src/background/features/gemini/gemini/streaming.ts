@@ -90,7 +90,7 @@ export function collectStreamedFunctionCallDelta(
   functionCallDeltas.set(key, callDelta);
 }
 
-interface StreamedToolOutputDelta {
+export interface StreamedToolOutputDelta {
   order: number;
   output: Record<string, unknown>;
 }

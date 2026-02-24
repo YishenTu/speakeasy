@@ -927,7 +927,7 @@ export function getChatPanelStyles(): string {
       .message-sources-toggle:focus-visible {
         outline: 1px solid var(--sp-color-border-focus);
         outline-offset: 1px;
-        border-radius: var(--sp-radius-xs);
+        border-radius: var(--sp-radius-sm);
       }
 
       .message-stats {

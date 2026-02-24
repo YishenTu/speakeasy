@@ -11,6 +11,7 @@ import type {
 import { asInvalidPreviousInteractionIdError } from './errors';
 import { normalizeGeminiInteractionResponse } from './interaction-normalize';
 import {
+  type StreamedToolOutputDelta,
   applyStreamOutputFallback,
   buildStreamedFunctionCallOutputs,
   buildStreamedToolOutputs,
@@ -48,13 +49,7 @@ export async function callGeminiInteractionStream(input: {
   const streamedTextChunks: string[] = [];
   const streamedThoughtChunks: string[] = [];
   const streamedFunctionCallDeltas = new Map<string, StreamedFunctionCallDelta>();
-  const streamedToolOutputDeltas = new Map<
-    string,
-    {
-      order: number;
-      output: Record<string, unknown>;
-    }
-  >();
+  const streamedToolOutputDeltas = new Map<string, StreamedToolOutputDelta>();
   for await (const rawEvent of stream) {
     if (!isRecord(rawEvent)) {
       continue;

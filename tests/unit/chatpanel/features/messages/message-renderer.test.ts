@@ -382,7 +382,7 @@ describe('chatpanel messages', () => {
     expect(row?.querySelector('.message-sources')).toBeNull();
   });
 
-  it('deduplicates and collapses long source lists with a toggle', () => {
+  it('collapses long source lists with a toggle', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 
     appendMessage(
@@ -398,7 +398,6 @@ describe('chatpanel messages', () => {
           { title: 'Five', url: 'https://five.example.com' },
           { title: 'Six', url: 'https://six.example.com' },
           { title: 'Seven', url: 'https://seven.example.com' },
-          { title: 'Duplicate Two', url: 'https://two.example.com' },
         ],
       },
       messageList,
