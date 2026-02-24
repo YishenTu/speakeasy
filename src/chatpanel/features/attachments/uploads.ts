@@ -1,5 +1,5 @@
-import { type UploadChatFilesOptions, uploadChatFiles } from '../shared/chat';
-import type { ChatUploadFilesPayload, FileDataAttachmentPayload } from '../shared/runtime';
+import { type UploadChatFilesOptions, uploadChatFiles } from '../../../shared/chat';
+import type { ChatUploadFilesPayload, FileDataAttachmentPayload } from '../../../shared/runtime';
 
 interface UploadDependencies {
   uploadChatFiles: (

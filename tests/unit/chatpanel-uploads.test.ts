@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { uploadFilesToGemini } from '../../src/chatpanel/uploads';
+import { uploadFilesToGemini } from '../../src/chatpanel/features/attachments/uploads';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 
 describe('chatpanel uploads', () => {

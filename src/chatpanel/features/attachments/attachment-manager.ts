@@ -3,18 +3,14 @@ import {
   ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH,
   ATTACHMENT_PREVIEW_TEXT_MAX_CHARS,
   estimateBase64DecodedByteLength,
-} from '../shared/attachment-preview';
-import { encodeArrayBufferToBase64 } from '../shared/base64';
-import type { FileDataAttachmentPayload } from '../shared/runtime';
-import {
-  formatByteSize,
-  getFilePreviewTypeLabel,
-  isAcceptedMimeType,
-  isImageMimeType,
-  isPdfMimeType,
-} from './media-helpers';
-import { toErrorMessage } from './message-renderer';
-import { attachTextPreview, isMarkdownPreviewCandidate } from './text-preview';
+} from '../../../shared/attachment-preview';
+import { encodeArrayBufferToBase64 } from '../../../shared/base64';
+import { normalizeMimeType } from '../../../shared/mime';
+import type { FileDataAttachmentPayload } from '../../../shared/runtime';
+import { formatByteSize, isAcceptedMimeType, isImageMimeType } from '../../core/media-helpers';
+import { toErrorMessage } from '../messages/message-renderer';
+import { createFilePreviewItem } from './file-preview-item';
+import { isMarkdownPreviewCandidate } from './text-preview';
 import { uploadFilesToGemini } from './uploads';
 
 export const MAX_STAGED_FILES = 5;
@@ -134,84 +130,13 @@ export function createAttachmentManager(deps: AttachmentManagerDeps): Attachment
     const fragment = document.createDocumentFragment();
 
     for (const staged of stagedPreviewsHidden ? [] : stagedFiles) {
-      const previewItem = document.createElement('div');
-      previewItem.className = 'file-preview-item';
-      previewItem.dataset.fileId = staged.id;
-      const tile = document.createElement('div');
-      tile.className = 'file-preview-tile';
-      tile.setAttribute('aria-label', `${staged.name} (${staged.mimeType})`);
-      tile.setAttribute('title', `${staged.name} (${staged.mimeType})`);
-      if (staged.uploadState === 'uploading') {
-        tile.classList.add('is-uploading');
-      } else if (staged.uploadState === 'failed') {
-        tile.classList.add('is-failed');
-      }
-
-      if (isImageMimeType(staged.mimeType) && staged.previewUrl) {
-        const image = document.createElement('img');
-        image.className = 'file-preview-image previewable-image';
-        image.dataset.speakeasyPreviewImage = 'true';
-        image.src = staged.previewUrl;
-        image.alt = staged.name;
-        image.loading = 'lazy';
-        tile.append(image);
-      } else {
-        const generic = document.createElement('div');
-        generic.className = 'file-preview-generic';
-        if (isPdfMimeType(staged.mimeType)) {
-          generic.classList.add('is-pdf');
-        }
-        if (isMarkdownPreviewCandidate(staged.name, staged.mimeType)) {
-          generic.classList.add('is-markdown');
-        }
-
-        const fileTypeLabel = document.createElement('span');
-        fileTypeLabel.className = 'file-preview-filetype';
-        fileTypeLabel.textContent = getFilePreviewTypeLabel(staged);
-
-        generic.append(fileTypeLabel);
-        tile.append(generic);
-
-        if (isMarkdownPreviewCandidate(staged.name, staged.mimeType) && staged.previewText) {
-          attachTextPreview(tile, staged.previewText, staged.name);
-          tile.classList.add('previewable-text');
-        }
-      }
-
-      const removeButton = document.createElement('button');
-      removeButton.className = 'file-preview-remove';
-      removeButton.type = 'button';
-      removeButton.textContent = '\u00d7';
-      removeButton.setAttribute('aria-label', `Remove ${staged.name}`);
-      removeButton.addEventListener('click', () => {
-        removeStagedFile(staged.id);
+      const previewItem = createFilePreviewItem({
+        attachment: staged,
+        onRemove: () => {
+          removeStagedFile(staged.id);
+        },
       });
-      tile.append(removeButton);
-
-      if (staged.uploadState === 'uploading') {
-        const overlay = document.createElement('div');
-        overlay.className = 'file-preview-upload-overlay';
-
-        const spinner = document.createElement('span');
-        spinner.className = 'file-preview-spinner';
-        spinner.setAttribute('aria-hidden', 'true');
-
-        overlay.append(spinner);
-        tile.append(overlay);
-      } else if (staged.uploadState === 'failed') {
-        const failedBadge = document.createElement('span');
-        failedBadge.className = 'file-preview-failed';
-        failedBadge.textContent = '!';
-        failedBadge.setAttribute('aria-label', 'Upload failed');
-        tile.append(failedBadge);
-      }
-
-      const nameLabel = document.createElement('span');
-      nameLabel.className = 'file-preview-name';
-      nameLabel.textContent = staged.name;
-      nameLabel.setAttribute('title', staged.name);
-
-      previewItem.append(tile, nameLabel);
+      previewItem.dataset.fileId = staged.id;
       fragment.append(previewItem);
     }
 
@@ -390,7 +315,7 @@ function normalizeAttachmentPreviewText(value: string | undefined): string | und
 }
 
 async function toImageDataUrl(file: File, mimeType: string): Promise<string | undefined> {
-  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  const normalizedMimeType = normalizeMimeType(mimeType);
   if (!normalizedMimeType.startsWith('image/')) {
     return undefined;
   }

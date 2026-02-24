@@ -5,7 +5,7 @@ import {
   isAcceptedMimeType,
   isImageMimeType,
   isPdfMimeType,
-} from '../../../src/chatpanel/media-helpers';
+} from '../../../src/chatpanel/core/media-helpers';
 
 describe('isImageMimeType', () => {
   test('returns true for image MIME types', () => {

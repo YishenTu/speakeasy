@@ -1,8 +1,10 @@
-import type { ChatMessage } from '../shared/chat';
-import { toErrorMessage as toSharedErrorMessage } from '../shared/error-message';
+import type { ChatMessage } from '../../../shared/chat';
+import { toErrorMessage as toSharedErrorMessage } from '../../../shared/error-message';
+import { isImageMimeType } from '../../core/media-helpers';
+import { formatMessageTimestamp } from '../../core/time-format';
+import { createFilePreviewItem } from '../attachments/file-preview-item';
 import { renderMarkdownToSafeHtml } from './markdown';
-import { getFilePreviewTypeLabel, isImageMimeType, isPdfMimeType } from './media-helpers';
-import { attachTextPreview, isMarkdownPreviewCandidate } from './text-preview';
+import { createMessageActionButton, createMessageActionIcon } from './message-action-primitives';
 
 export interface MessageRenderOptions {
   onAssistantAction?: (action: 'regen', message: ChatMessage) => void;
@@ -210,88 +212,16 @@ function createUserAttachmentStripNode(
   strip.className = 'file-preview-strip message-attachment-strip';
 
   for (const attachment of attachments) {
-    const previewItem = document.createElement('div');
-    previewItem.className = 'file-preview-item';
-    const tile = document.createElement('div');
-    tile.className = 'file-preview-tile';
-    tile.setAttribute('aria-label', `${attachment.name} (${attachment.mimeType})`);
-    tile.setAttribute('title', `${attachment.name} (${attachment.mimeType})`);
-    if (attachment.uploadState === 'uploading') {
-      tile.classList.add('is-uploading');
-    } else if (attachment.uploadState === 'failed') {
-      tile.classList.add('is-failed');
-    }
-
-    if (attachment.previewUrl && isImageMimeType(attachment.mimeType)) {
-      const previewUrl = attachment.previewUrl;
-      const image = document.createElement('img');
-      image.className = 'file-preview-image previewable-image';
-      image.dataset.speakeasyPreviewImage = 'true';
-      image.src = previewUrl;
-      image.alt = attachment.name;
-      image.loading = 'lazy';
-      if (previewUrl.startsWith('blob:')) {
+    const previewItem = createFilePreviewItem({
+      attachment,
+      onBlobPreviewUrl: (previewUrl) => {
         trackBlobPreviewUrl(item, previewUrl);
-      }
-      tile.append(image);
-    } else {
-      tile.append(createGenericAttachmentPreviewNode(attachment));
-      if (
-        isMarkdownPreviewCandidate(attachment.name, attachment.mimeType) &&
-        attachment.previewText?.trim()
-      ) {
-        attachTextPreview(tile, attachment.previewText, attachment.name);
-        tile.classList.add('previewable-text');
-      }
-    }
-
-    if (attachment.uploadState === 'uploading') {
-      const overlay = document.createElement('div');
-      overlay.className = 'file-preview-upload-overlay';
-
-      const spinner = document.createElement('span');
-      spinner.className = 'file-preview-spinner';
-      spinner.setAttribute('aria-hidden', 'true');
-
-      overlay.append(spinner);
-      tile.append(overlay);
-    } else if (attachment.uploadState === 'failed') {
-      const failedBadge = document.createElement('span');
-      failedBadge.className = 'file-preview-failed';
-      failedBadge.textContent = '!';
-      failedBadge.setAttribute('aria-label', 'Upload failed');
-      tile.append(failedBadge);
-    }
-
-    const nameLabel = document.createElement('span');
-    nameLabel.className = 'file-preview-name';
-    nameLabel.textContent = attachment.name;
-    nameLabel.setAttribute('title', attachment.name);
-
-    previewItem.append(tile, nameLabel);
+      },
+    });
     strip.append(previewItem);
   }
 
   return strip;
-}
-
-function createGenericAttachmentPreviewNode(
-  attachment: NonNullable<ChatMessage['attachments']>[number],
-): HTMLDivElement {
-  const generic = document.createElement('div');
-  generic.className = 'file-preview-generic';
-  if (isPdfMimeType(attachment.mimeType)) {
-    generic.classList.add('is-pdf');
-  }
-  if (isMarkdownPreviewCandidate(attachment.name, attachment.mimeType)) {
-    generic.classList.add('is-markdown');
-  }
-
-  const fileTypeLabel = document.createElement('span');
-  fileTypeLabel.className = 'file-preview-filetype';
-  fileTypeLabel.textContent = getFilePreviewTypeLabel(attachment);
-  generic.append(fileTypeLabel);
-  return generic;
 }
 
 function createMarkdownNode(markdown: string, className: string): HTMLDivElement {
@@ -337,7 +267,7 @@ function createStatsDisclosure(
   summary.className = 'message-stats-trigger';
   summary.setAttribute('aria-label', 'Response statistics');
   summary.setAttribute('title', 'Response statistics');
-  summary.append(createStatsGaugeIconNode());
+  summary.append(createMessageActionIcon('stats'));
 
   const panel = document.createElement('div');
   panel.className = 'message-stats-panel';
@@ -410,12 +340,12 @@ function createAssistantActionBar(
 
   if (hasRegenerateAction) {
     actionBar.append(
-      createAssistantActionButton(
-        'message-regen-btn',
-        'Regenerate response',
-        createRefreshIconNode(),
-        () => options.onAssistantAction?.('regen', message),
-      ),
+      createMessageActionButton({
+        className: 'message-regen-btn',
+        title: 'Regenerate response',
+        icon: createMessageActionIcon('refresh'),
+        onClick: () => options.onAssistantAction?.('regen', message),
+      }),
     );
   }
 
@@ -430,7 +360,7 @@ function createAssistantActionBar(
   if (message.timestamp) {
     const time = document.createElement('time');
     time.className = 'message-timestamp';
-    time.textContent = formatMessageTime(message.timestamp);
+    time.textContent = formatMessageTimestamp(message.timestamp);
     actionBar.append(time);
   }
 
@@ -540,12 +470,12 @@ function createUserActionBar(
 
   if (hasForkAction) {
     actionBar.append(
-      createAssistantActionButton(
-        'message-fork-btn',
-        'Edit and retry in branch',
-        createForkIconNode(),
-        () => options.onUserAction?.('fork', message),
-      ),
+      createMessageActionButton({
+        className: 'message-fork-btn',
+        title: 'Edit and retry in branch',
+        icon: createMessageActionIcon('fork'),
+        onClick: () => options.onUserAction?.('fork', message),
+      }),
     );
   }
 
@@ -591,12 +521,11 @@ function buildCopyableUserQuery(message: ChatMessage): string {
 }
 
 function createCopyActionButton(copyText: string, copyLabel: string): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.className = 'message-action-btn message-copy-btn';
-  button.type = 'button';
-  button.setAttribute('aria-label', copyLabel);
-  button.setAttribute('title', copyLabel);
-  button.append(createCopyIconNode());
+  const button = createMessageActionButton({
+    className: 'message-copy-btn',
+    title: copyLabel,
+    icon: createMessageActionIcon('copy'),
+  });
 
   button.addEventListener('click', () => {
     navigator.clipboard.writeText(copyText).then(
@@ -618,102 +547,6 @@ function createCopyActionButton(copyText: string, copyLabel: string): HTMLButton
   });
 
   return button;
-}
-
-function createAssistantActionButton(
-  className: string,
-  title: string,
-  icon: SVGSVGElement,
-  onClick: () => void,
-): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.className = `message-action-btn ${className}`;
-  button.type = 'button';
-  button.setAttribute('title', title);
-  button.setAttribute('aria-label', title);
-  button.append(icon);
-  button.addEventListener('click', onClick);
-  return button;
-}
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-
-function createActionSvg(): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.classList.add('message-action-icon');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.8');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  return svg;
-}
-
-function svgPath(d: string): SVGPathElement {
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', d);
-  return path;
-}
-
-function svgRect(x: number, y: number, w: number, h: number, rx: number): SVGRectElement {
-  const rect = document.createElementNS(SVG_NS, 'rect');
-  rect.setAttribute('x', String(x));
-  rect.setAttribute('y', String(y));
-  rect.setAttribute('width', String(w));
-  rect.setAttribute('height', String(h));
-  rect.setAttribute('rx', String(rx));
-  return rect;
-}
-
-function svgCircle(cx: number, cy: number, r: number): SVGCircleElement {
-  const circle = document.createElementNS(SVG_NS, 'circle');
-  circle.setAttribute('cx', String(cx));
-  circle.setAttribute('cy', String(cy));
-  circle.setAttribute('r', String(r));
-  return circle;
-}
-
-function createStatsGaugeIconNode(): SVGSVGElement {
-  const icon = createActionSvg();
-  icon.append(svgPath('M18 20V10'), svgPath('M12 20V4'), svgPath('M6 20V14'));
-  return icon;
-}
-
-function createCopyIconNode(): SVGSVGElement {
-  const icon = createActionSvg();
-  icon.append(
-    svgRect(9, 9, 13, 13, 2),
-    svgPath('M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1'),
-  );
-  return icon;
-}
-
-function createRefreshIconNode(): SVGSVGElement {
-  const icon = createActionSvg();
-  icon.append(svgPath('M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8'), svgPath('M3 3v5h5'));
-  return icon;
-}
-
-function createForkIconNode(): SVGSVGElement {
-  const icon = createActionSvg();
-  icon.append(
-    svgCircle(12, 18, 3),
-    svgCircle(6, 6, 3),
-    svgCircle(18, 6, 3),
-    svgPath('M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9'),
-    svgPath('M12 12v3'),
-  );
-  return icon;
-}
-
-function formatMessageTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
 }
 
 function formatTokenCount(value: number | undefined): string {

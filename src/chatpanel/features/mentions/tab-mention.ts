@@ -1,4 +1,5 @@
-import { toErrorMessage } from '../shared/error-message';
+import { toErrorMessage } from '../../../shared/error-message';
+import { createTitleMetaButton } from '../../core/list-item-builders';
 
 export interface MentionableTab {
   tabId: number;
@@ -46,6 +47,12 @@ interface MentionActionOption {
   action: MentionTabAction;
   title: string;
   meta: string;
+}
+
+interface MentionListRow {
+  title: string;
+  meta: string;
+  dataset?: Record<string, string | number | undefined>;
 }
 
 const MENTION_ACTION_OPTIONS: MentionActionOption[] = [
@@ -250,38 +257,21 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
   }
 
   function renderTabList(): void {
-    const fragment = document.createDocumentFragment();
-    for (const [index, tab] of filteredTabs.entries()) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'mention-item';
-      row.dataset.type = 'tab';
-      row.dataset.index = String(index);
-      row.dataset.tabId = String(tab.tabId);
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', index === activeIndex ? 'true' : 'false');
-
-      const title = document.createElement('span');
-      title.className = 'mention-item-title';
-      title.textContent = tab.title;
-
-      const meta = document.createElement('span');
-      meta.className = 'mention-item-meta';
-      meta.textContent = tab.hostname || tab.url;
-
-      row.append(title, meta);
-      fragment.append(row);
-    }
-
-    deps.list.replaceChildren(fragment);
-    deps.emptyState.hidden = filteredTabs.length > 0;
-    deps.menu.hidden = false;
-    if (activeIndex >= 0) {
-      const selectedRow = deps.list.querySelector<HTMLElement>(
-        `.mention-item[data-type="tab"][data-index="${activeIndex}"]`,
-      );
-      selectedRow?.scrollIntoView({ block: 'nearest' });
-    }
+    renderMentionListRows({
+      list: deps.list,
+      menu: deps.menu,
+      emptyState: deps.emptyState,
+      rowType: 'tab',
+      selectedIndex: activeIndex,
+      showEmptyStateWhenNoRows: true,
+      rows: filteredTabs.map((tab) => ({
+        title: tab.title,
+        meta: tab.hostname || tab.url,
+        dataset: {
+          tabId: tab.tabId,
+        },
+      })),
+    });
   }
 
   function renderActionList(): void {
@@ -289,38 +279,21 @@ export function createTabMentionController(deps: TabMentionControllerDeps): TabM
       return;
     }
 
-    const fragment = document.createDocumentFragment();
-    for (const [index, option] of MENTION_ACTION_OPTIONS.entries()) {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'mention-item';
-      row.dataset.type = 'action';
-      row.dataset.index = String(index);
-      row.dataset.action = option.action;
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', index === actionActiveIndex ? 'true' : 'false');
-
-      const title = document.createElement('span');
-      title.className = 'mention-item-title';
-      title.textContent = option.title;
-
-      const meta = document.createElement('span');
-      meta.className = 'mention-item-meta';
-      meta.textContent = option.meta;
-
-      row.append(title, meta);
-      fragment.append(row);
-    }
-
-    deps.list.replaceChildren(fragment);
-    deps.emptyState.hidden = true;
-    deps.menu.hidden = false;
-    if (actionActiveIndex >= 0) {
-      const selectedRow = deps.list.querySelector<HTMLElement>(
-        `.mention-item[data-type="action"][data-index="${actionActiveIndex}"]`,
-      );
-      selectedRow?.scrollIntoView({ block: 'nearest' });
-    }
+    renderMentionListRows({
+      list: deps.list,
+      menu: deps.menu,
+      emptyState: deps.emptyState,
+      rowType: 'action',
+      selectedIndex: actionActiveIndex,
+      showEmptyStateWhenNoRows: false,
+      rows: MENTION_ACTION_OPTIONS.map((option) => ({
+        title: option.title,
+        meta: option.meta,
+        dataset: {
+          action: option.action,
+        },
+      })),
+    });
   }
 
   function openActionSelectionForTabIndex(index: number): void {
@@ -412,6 +385,50 @@ function isSameMentionToken(left: MentionTokenRange, right: MentionTokenRange): 
     left.tokenEnd === right.tokenEnd &&
     left.query === right.query
   );
+}
+
+interface RenderMentionListRowsOptions {
+  list: HTMLElement;
+  menu: HTMLElement;
+  emptyState: HTMLElement;
+  rowType: 'tab' | 'action';
+  selectedIndex: number;
+  rows: MentionListRow[];
+  showEmptyStateWhenNoRows: boolean;
+}
+
+function renderMentionListRows(options: RenderMentionListRowsOptions): void {
+  const fragment = document.createDocumentFragment();
+  for (const [index, rowData] of options.rows.entries()) {
+    const row = createTitleMetaButton({
+      buttonClassName: 'mention-item',
+      titleClassName: 'mention-item-title',
+      metaClassName: 'mention-item-meta',
+      titleText: rowData.title,
+      metaText: rowData.meta,
+      role: 'option',
+      selected: index === options.selectedIndex,
+      dataset: {
+        type: options.rowType,
+        index,
+        ...rowData.dataset,
+      },
+    });
+    fragment.append(row);
+  }
+
+  options.list.replaceChildren(fragment);
+  options.emptyState.hidden = !options.showEmptyStateWhenNoRows || options.rows.length > 0;
+  options.menu.hidden = false;
+
+  if (options.selectedIndex < 0) {
+    return;
+  }
+
+  const selectedRow = options.list.querySelector<HTMLElement>(
+    `.mention-item[data-type="${options.rowType}"][data-index="${options.selectedIndex}"]`,
+  );
+  selectedRow?.scrollIntoView({ block: 'nearest' });
 }
 
 export function findMentionTokenAtCaret(

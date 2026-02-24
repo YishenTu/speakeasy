@@ -12,9 +12,10 @@ afterAll(() => {
 });
 
 // Lazy import so `window` is defined when the module first evaluates
-type PanelLayoutModule = typeof import('../../../src/chatpanel/panel-layout');
+type PanelLayoutModule = typeof import('../../../src/chatpanel/features/layout/panel-layout');
 
-const getModule = () => require('../../../src/chatpanel/panel-layout') as PanelLayoutModule;
+const getModule = () =>
+  require('../../../src/chatpanel/features/layout/panel-layout') as PanelLayoutModule;
 
 describe('clampPanelLayout', () => {
   test('clamps width and height to viewport bounds', () => {

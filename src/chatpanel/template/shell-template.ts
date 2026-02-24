@@ -19,7 +19,7 @@ export function getShellTemplate(brandLogoSrc = 'icons/gemini-logo.svg'): string
                   <path d="M12 8v5l3 2" />
                 </svg>
               </button>
-              <div id="speakeasy-history-menu" class="history-menu" role="menu"></div>
+              <div id="speakeasy-history-menu" class="history-menu sp-scrollable" role="menu"></div>
             </div>
             <button id="speakeasy-settings" class="icon-btn" type="button" aria-label="Settings">
               <svg viewBox="0 0 24 24" aria-hidden="true">

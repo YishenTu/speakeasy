@@ -1,3 +1,4 @@
+import { normalizeMimeType } from '../shared/mime';
 import type {
   ChatUploadFailurePayload,
   ChatUploadFilesPayload,
@@ -67,7 +68,7 @@ export async function uploadFilesToGemini(
 
   for (const [index, payload] of files.entries()) {
     const fileName = normalizeFileName(payload.name);
-    const mimeType = normalizeMimeType(payload.mimeType);
+    const mimeType = normalizeMimeType(payload.mimeType, 'application/octet-stream');
     const file = new File([payload.bytes], fileName, { type: mimeType });
 
     try {
@@ -115,15 +116,6 @@ function normalizeUploadTimeoutMs(value: number | undefined): number {
 
 function normalizeFileName(value: string): string {
   return value.trim() || 'attachment';
-}
-
-function normalizeMimeType(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 'application/octet-stream';
-  }
-
-  return trimmed.split(';', 1)[0]?.trim().toLowerCase() || 'application/octet-stream';
 }
 
 async function uploadAndAwaitReady(

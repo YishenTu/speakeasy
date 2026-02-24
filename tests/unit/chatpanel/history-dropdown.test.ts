@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatHistoryTimestamp } from '../../../src/chatpanel/history-dropdown';
+import { formatHistoryTimestamp } from '../../../src/chatpanel/features/history/history-dropdown';
 
 describe('formatHistoryTimestamp', () => {
   test.each([['2025-06-15T14:30:00Z'], ['2025-01-01T00:00:00.000Z']])(

@@ -1,5 +1,6 @@
-import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../shared/settings';
-import { queryRequiredElement } from './dom';
+import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../../../shared/settings';
+import { queryRequiredElement } from '../../core/dom';
+import { createMenuController } from '../../core/menu-controller';
 
 export interface InputToolbar {
   selectedModel(): string;
@@ -55,10 +56,12 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     '#speakeasy-extract-page-text',
   );
   const attachButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-attach');
+  const modelMenuController = createMenuController({ container: modelDropup });
+  const thinkingMenuController = createMenuController({ container: thinkingDropup });
 
   function closeAllDropups(): void {
-    modelDropup.classList.remove('open');
-    thinkingDropup.classList.remove('open');
+    modelMenuController.setOpen(false);
+    thinkingMenuController.setOpen(false);
   }
 
   function selectDropupItem(
@@ -125,19 +128,19 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
 
   modelTrigger.addEventListener('click', (e) => {
     e.stopPropagation();
-    const wasOpen = modelDropup.classList.contains('open');
+    const wasOpen = modelMenuController.isOpen();
     closeAllDropups();
     if (!wasOpen) {
-      modelDropup.classList.add('open');
+      modelMenuController.setOpen(true);
     }
   });
 
   thinkingTrigger.addEventListener('click', (e) => {
     e.stopPropagation();
-    const wasOpen = thinkingDropup.classList.contains('open');
+    const wasOpen = thinkingMenuController.isOpen();
     closeAllDropups();
     if (!wasOpen) {
-      thinkingDropup.classList.add('open');
+      thinkingMenuController.setOpen(true);
     }
   });
 

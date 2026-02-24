@@ -1,4 +1,4 @@
-import { queryRequiredElement } from './dom';
+import { queryRequiredElement } from '../../core/dom';
 import { sanitizeSessionTitleForConfirmation } from './history-confirm';
 
 interface DeleteSessionConfirmation {

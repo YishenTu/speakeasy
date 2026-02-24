@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   extractAndStageCurrentTabText,
   toExtractedTextFile,
-} from '../../../src/chatpanel/page-text-extraction';
+} from '../../../src/chatpanel/features/attachments/page-text-extraction';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from '../helpers/dom-test-env';
 
 describe('chatpanel page text extraction', () => {

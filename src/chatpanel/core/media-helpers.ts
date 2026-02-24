@@ -1,3 +1,5 @@
+import { normalizeMimeType } from '../../shared/mime';
+
 const ACCEPTED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -8,16 +10,15 @@ const ACCEPTED_MIME_TYPES = new Set([
 ]);
 
 export function isAcceptedMimeType(mimeType: string): boolean {
-  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
-  return ACCEPTED_MIME_TYPES.has(normalizedMimeType);
+  return ACCEPTED_MIME_TYPES.has(normalizeMimeType(mimeType));
 }
 
 export function isImageMimeType(mimeType: string): boolean {
-  return mimeType.split(';', 1)[0]?.trim().toLowerCase().startsWith('image/') ?? false;
+  return normalizeMimeType(mimeType).startsWith('image/');
 }
 
 export function isPdfMimeType(mimeType: string): boolean {
-  return mimeType.split(';', 1)[0]?.trim().toLowerCase() === 'application/pdf';
+  return normalizeMimeType(mimeType) === 'application/pdf';
 }
 
 export function getFilePreviewTypeLabel(file: { name: string; mimeType: string }): string {

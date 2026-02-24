@@ -10,7 +10,7 @@ export function getChatPanelTemplate(brandLogoSrc = 'icons/gemini-logo.svg'): st
     <div id="speakeasy-shell" class="shell" hidden>
       <section id="speakeasy-panel" class="panel">${getShellTemplate(brandLogoSrc)}
 
-        <ol id="speakeasy-messages" class="messages"></ol>
+        <ol id="speakeasy-messages" class="messages sp-scrollable"></ol>
 ${getImagePreviewTemplate()}
 ${getComposerTemplate()}
       </section>${getHistoryTemplate()}${getResizeZonesTemplate()}

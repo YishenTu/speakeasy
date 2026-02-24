@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { sanitizeSessionTitleForConfirmation } from '../../src/chatpanel/history-confirm';
+import { sanitizeSessionTitleForConfirmation } from '../../src/chatpanel/features/history/history-confirm';
 
 describe('sanitizeSessionTitleForConfirmation', () => {
   it('strips control formatting from session titles before confirm dialogs', () => {

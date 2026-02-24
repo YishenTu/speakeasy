@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   buildOptimisticUserMessage,
   findLatestAssistantInteractionId,
-} from '../../src/chatpanel/optimistic-message';
+} from '../../src/chatpanel/features/messages/optimistic-message';
 import type { ChatMessage } from '../../src/shared/chat';
 
 describe('chatpanel optimistic message', () => {

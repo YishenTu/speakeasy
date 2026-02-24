@@ -1,11 +1,11 @@
 import { Readability } from '@mozilla/readability';
 import Defuddle, { type DefuddleOptions, type DefuddleResponse } from 'defuddle/full';
 import TurndownService from 'turndown';
-import type { TabExtractTextPayload } from '../shared/runtime';
+import type { TabExtractTextPayload } from '../../../shared/runtime';
 import {
   DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE,
   type PageTextExtractionEngine,
-} from '../shared/settings';
+} from '../../../shared/settings';
 
 const SPEAKEASY_OVERLAY_ROOT_SELECTOR = '#speakeasy-overlay-root';
 const DEFAULT_EXTRACTED_TEXT_FILE_BASENAME = 'speakeasy-page-extract';

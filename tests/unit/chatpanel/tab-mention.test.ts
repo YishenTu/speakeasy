@@ -5,7 +5,7 @@ import {
   type MentionableTab,
   createTabMentionController,
   removeMentionTokenFromInputText,
-} from '../../../src/chatpanel/tab-mention';
+} from '../../../src/chatpanel/features/mentions/tab-mention';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from '../helpers/dom-test-env';
 
 const TABS: MentionableTab[] = [

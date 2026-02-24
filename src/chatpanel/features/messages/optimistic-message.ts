@@ -1,6 +1,6 @@
-import type { ChatMessage } from '../shared/chat';
-import type { FileDataAttachmentPayload } from '../shared/runtime';
-import { isMarkdownPreviewCandidate } from './text-preview';
+import type { ChatMessage } from '../../../shared/chat';
+import type { FileDataAttachmentPayload } from '../../../shared/runtime';
+import { isMarkdownPreviewCandidate } from '../attachments/text-preview';
 
 export interface OptimisticMessageFile {
   file: File;

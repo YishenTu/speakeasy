@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { renderMarkdownToSafeHtml } from '../../src/chatpanel/markdown';
+import { renderMarkdownToSafeHtml } from '../../src/chatpanel/features/messages/markdown';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
 
 describe('chatpanel markdown', () => {

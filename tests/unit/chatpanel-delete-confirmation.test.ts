@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { createDeleteSessionConfirmation } from '../../src/chatpanel/delete-confirmation';
+import { createDeleteSessionConfirmation } from '../../src/chatpanel/features/history/delete-confirmation';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
+import { queryRequiredElement } from './helpers/query-required-element';
+import { createShadowRootFixture } from './helpers/shadow-root-fixture';
 
 describe('chatpanel delete confirmation', () => {
   let dom: InstalledDomEnvironment | null = null;
@@ -139,10 +141,7 @@ describe('chatpanel delete confirmation', () => {
   });
 
   function createDeleteConfirmationShadowRoot(): ShadowRoot {
-    const host = document.createElement('div');
-    document.body.append(host);
-    const shadowRoot = host.attachShadow({ mode: 'open' });
-    shadowRoot.innerHTML = `
+    return createShadowRootFixture(`
       <div id="speakeasy-delete-confirm-overlay" hidden>
         <p id="speakeasy-delete-confirm-text"></p>
         <label>
@@ -151,19 +150,6 @@ describe('chatpanel delete confirmation', () => {
         <button id="speakeasy-delete-confirm-cancel" type="button">Cancel</button>
         <button id="speakeasy-delete-confirm-accept" type="button">Delete</button>
       </div>
-    `;
-    return shadowRoot;
+    `);
   }
 });
-
-function queryRequiredElement<TElement extends Element>(
-  root: ParentNode,
-  selector: string,
-): TElement {
-  const element = root.querySelector<TElement>(selector);
-  if (!element) {
-    throw new Error(`Missing test element: ${selector}`);
-  }
-
-  return element;
-}

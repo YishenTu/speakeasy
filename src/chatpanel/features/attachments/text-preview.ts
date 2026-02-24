@@ -1,3 +1,5 @@
+import { normalizeMimeType } from '../../../shared/mime';
+
 const MARKDOWN_EXTENSION_PATTERN = /\.md(?:own|x|wn|arkdown)?$/i;
 
 type PreviewableTextTarget = HTMLElement & {
@@ -15,8 +17,7 @@ export function isMarkdownPreviewCandidate(name: string, mimeType: string): bool
 }
 
 export function isMarkdownMimeType(mimeType: string): boolean {
-  const normalizedMimeType = mimeType.split(';', 1)[0]?.trim().toLowerCase() ?? '';
-  return normalizedMimeType === 'text/markdown';
+  return normalizeMimeType(mimeType) === 'text/markdown';
 }
 
 export function attachTextPreview(

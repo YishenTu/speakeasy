@@ -12,10 +12,10 @@ export function getComposerTemplate(): string {
             <div class="composer-input-wrap">
               <div id="speakeasy-tab-mention-menu" class="mention-menu" hidden>
                 <div id="speakeasy-tab-mention-empty" class="mention-empty">No matching tabs</div>
-                <div id="speakeasy-tab-mention-list" class="mention-list" role="listbox"></div>
+                <div id="speakeasy-tab-mention-list" class="mention-list sp-scrollable" role="listbox"></div>
               </div>
               <div class="composer-row">
-                <textarea id="speakeasy-input" class="input" placeholder="Ask anything..." rows="3"></textarea>
+                <textarea id="speakeasy-input" class="input sp-scrollable" placeholder="Ask anything..." rows="3"></textarea>
               </div>
             </div>
             <div class="input-toolbar">

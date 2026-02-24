@@ -1,8 +1,9 @@
-import type { ChatMessage } from '../shared/chat';
-import type { FileDataAttachmentPayload } from '../shared/runtime';
-import type { AttachmentManager } from './attachment-manager';
-import { toErrorMessage } from './message-renderer';
-import { buildOptimisticUserMessage } from './optimistic-message';
+import type { ChatMessage } from '../../../shared/chat';
+import type { FileDataAttachmentPayload } from '../../../shared/runtime';
+import { runWithBusyState } from '../../core/busy-state';
+import type { AttachmentManager } from '../attachments/attachment-manager';
+import { toErrorMessage } from '../messages/message-renderer';
+import { buildOptimisticUserMessage } from '../messages/optimistic-message';
 
 type ActiveStreamDraft = {
   assistantMessageId: string;
@@ -270,72 +271,71 @@ export function createConversationFlowController(
     let optimisticUserMessageId: string | undefined = input.optimisticUserMessageId;
     let assistantPlaceholderId: string | undefined;
     let streamRequestId: string | undefined;
-    deps.busyState.setBusy(true);
-
-    try {
-      const selectedModel = deps.toolbar.selectedModel();
-      const selectedThinking = deps.toolbar.selectedThinkingLevel();
-      streamRequestId = crypto.randomUUID();
-      const optimisticUserMessage = buildOptimisticUserMessage(
-        input.userText,
-        input.stagedSnapshot,
-        input.previousInteractionId,
-        input.attachmentsForSend,
-      );
-      deps.previews.rememberLocalAttachmentPreviews(optimisticUserMessage);
-      if (optimisticUserMessageId) {
-        deps.render.replaceMessageById(optimisticUserMessageId, {
-          ...optimisticUserMessage,
-          id: optimisticUserMessageId,
+    await runWithBusyState(deps.busyState, async () => {
+      try {
+        const selectedModel = deps.toolbar.selectedModel();
+        const selectedThinking = deps.toolbar.selectedThinkingLevel();
+        streamRequestId = crypto.randomUUID();
+        const optimisticUserMessage = buildOptimisticUserMessage(
+          input.userText,
+          input.stagedSnapshot,
+          input.previousInteractionId,
+          input.attachmentsForSend,
+        );
+        deps.previews.rememberLocalAttachmentPreviews(optimisticUserMessage);
+        if (optimisticUserMessageId) {
+          deps.render.replaceMessageById(optimisticUserMessageId, {
+            ...optimisticUserMessage,
+            id: optimisticUserMessageId,
+          });
+        } else {
+          optimisticUserMessageId = optimisticUserMessage.id;
+          deps.render.appendMessage(optimisticUserMessage);
+        }
+        assistantPlaceholderId = crypto.randomUUID();
+        deps.render.appendMessage({
+          id: assistantPlaceholderId,
+          role: 'assistant',
+          content: '',
         });
-      } else {
-        optimisticUserMessageId = optimisticUserMessage.id;
-        deps.render.appendMessage(optimisticUserMessage);
-      }
-      assistantPlaceholderId = crypto.randomUUID();
-      deps.render.appendMessage({
-        id: assistantPlaceholderId,
-        role: 'assistant',
-        content: '',
-      });
 
-      if (input.shouldResetComposerText) {
-        deps.composer.setText('');
-      }
-      deps.attachmentManager.clearStage(true);
-      deps.composer.resize();
+        if (input.shouldResetComposerText) {
+          deps.composer.setText('');
+        }
+        deps.attachmentManager.clearStage(true);
+        deps.composer.resize();
 
-      activeStreamDrafts.set(streamRequestId, {
-        assistantMessageId: assistantPlaceholderId,
-        text: '',
-        thinkingSummary: '',
-      });
+        activeStreamDrafts.set(streamRequestId, {
+          assistantMessageId: assistantPlaceholderId,
+          text: '',
+          thinkingSummary: '',
+        });
 
-      const assistantMessage = await deps.runtime.sendMessage(
-        input.userText,
-        selectedModel,
-        selectedThinking,
-        [...input.attachmentsForSend],
-        streamRequestId,
-      );
-      activeStreamDrafts.delete(streamRequestId);
-      deps.render.replaceMessageById(assistantPlaceholderId, assistantMessage);
-      await deps.history.reloadActive();
-    } catch (error: unknown) {
-      if (streamRequestId) {
+        const assistantMessage = await deps.runtime.sendMessage(
+          input.userText,
+          selectedModel,
+          selectedThinking,
+          [...input.attachmentsForSend],
+          streamRequestId,
+        );
         activeStreamDrafts.delete(streamRequestId);
+        deps.render.replaceMessageById(assistantPlaceholderId, assistantMessage);
+        await deps.history.reloadActive();
+      } catch (error: unknown) {
+        if (streamRequestId) {
+          activeStreamDrafts.delete(streamRequestId);
+        }
+        if (assistantPlaceholderId) {
+          deps.render.removeMessageById(assistantPlaceholderId);
+        }
+        if (optimisticUserMessageId) {
+          deps.render.removeMessageById(optimisticUserMessageId);
+        }
+        deps.appendLocalError(toErrorMessage(error));
+      } finally {
+        deps.composer.focus();
       }
-      if (assistantPlaceholderId) {
-        deps.render.removeMessageById(assistantPlaceholderId);
-      }
-      if (optimisticUserMessageId) {
-        deps.render.removeMessageById(optimisticUserMessageId);
-      }
-      deps.appendLocalError(toErrorMessage(error));
-    } finally {
-      deps.busyState.setBusy(false);
-      deps.composer.focus();
-    }
+    });
   }
 
   async function onAttachmentStateChange(): Promise<void> {
@@ -354,64 +354,63 @@ export function createConversationFlowController(
     let regenPlaceholderMessageId: string | undefined;
     let regenStreamRequestId: string | undefined;
 
-    deps.busyState.setBusy(true);
-    try {
-      if (action === 'fork') {
-        if (message.role !== 'user' || !previousInteractionId) {
-          return;
-        }
-        await deps.runtime.forkChat(previousInteractionId);
-        deps.attachmentManager.clearStage(true);
-        if (!deps.composer.getText().trim()) {
-          deps.composer.setText(message.content);
-        }
-        deps.composer.resize();
-      } else {
-        if (message.role !== 'assistant' || !interactionId) {
-          return;
-        }
-        const selectedModel = deps.toolbar.selectedModel();
-        const selectedThinking = deps.toolbar.selectedThinkingLevel();
-        regenPlaceholderMessageId = message.id;
-        deps.render.replaceMessageById(regenPlaceholderMessageId, {
-          id: regenPlaceholderMessageId,
-          role: 'assistant',
-          content: '',
-        });
+    await runWithBusyState(deps.busyState, async () => {
+      try {
+        if (action === 'fork') {
+          if (message.role !== 'user' || !previousInteractionId) {
+            return;
+          }
+          await deps.runtime.forkChat(previousInteractionId);
+          deps.attachmentManager.clearStage(true);
+          if (!deps.composer.getText().trim()) {
+            deps.composer.setText(message.content);
+          }
+          deps.composer.resize();
+        } else {
+          if (message.role !== 'assistant' || !interactionId) {
+            return;
+          }
+          const selectedModel = deps.toolbar.selectedModel();
+          const selectedThinking = deps.toolbar.selectedThinkingLevel();
+          regenPlaceholderMessageId = message.id;
+          deps.render.replaceMessageById(regenPlaceholderMessageId, {
+            id: regenPlaceholderMessageId,
+            role: 'assistant',
+            content: '',
+          });
 
-        regenStreamRequestId = crypto.randomUUID();
-        activeStreamDrafts.set(regenStreamRequestId, {
-          assistantMessageId: regenPlaceholderMessageId,
-          text: '',
-          thinkingSummary: '',
-        });
+          regenStreamRequestId = crypto.randomUUID();
+          activeStreamDrafts.set(regenStreamRequestId, {
+            assistantMessageId: regenPlaceholderMessageId,
+            text: '',
+            thinkingSummary: '',
+          });
 
-        const assistantMessage = await deps.runtime.regenerateAssistantMessage(
-          interactionId,
-          selectedModel,
-          selectedThinking,
-          regenStreamRequestId,
-        );
-        activeStreamDrafts.delete(regenStreamRequestId);
-        regenStreamRequestId = undefined;
-        deps.render.replaceMessageById(regenPlaceholderMessageId, assistantMessage);
-        regenPlaceholderMessageId = undefined;
-      }
+          const assistantMessage = await deps.runtime.regenerateAssistantMessage(
+            interactionId,
+            selectedModel,
+            selectedThinking,
+            regenStreamRequestId,
+          );
+          activeStreamDrafts.delete(regenStreamRequestId);
+          regenStreamRequestId = undefined;
+          deps.render.replaceMessageById(regenPlaceholderMessageId, assistantMessage);
+          regenPlaceholderMessageId = undefined;
+        }
 
-      await deps.history.reloadActive();
-      deps.history.setOpen(false);
-      deps.composer.focus();
-    } catch (error: unknown) {
-      if (regenStreamRequestId) {
-        activeStreamDrafts.delete(regenStreamRequestId);
+        await deps.history.reloadActive();
+        deps.history.setOpen(false);
+        deps.composer.focus();
+      } catch (error: unknown) {
+        if (regenStreamRequestId) {
+          activeStreamDrafts.delete(regenStreamRequestId);
+        }
+        if (regenPlaceholderMessageId) {
+          deps.render.replaceMessageById(regenPlaceholderMessageId, message);
+        }
+        deps.appendLocalError(toErrorMessage(error));
       }
-      if (regenPlaceholderMessageId) {
-        deps.render.replaceMessageById(regenPlaceholderMessageId, message);
-      }
-      deps.appendLocalError(toErrorMessage(error));
-    } finally {
-      deps.busyState.setBusy(false);
-    }
+    });
   }
 
   async function switchAssistantBranch(interactionId: string): Promise<void> {
@@ -426,17 +425,16 @@ export function createConversationFlowController(
       return;
     }
 
-    deps.busyState.setBusy(true);
-    try {
-      await deps.runtime.switchAssistantBranch(normalizedInteractionId);
-      await deps.history.reloadActive();
-      deps.history.setOpen(false);
-      deps.composer.focus();
-    } catch (error: unknown) {
-      deps.appendLocalError(toErrorMessage(error));
-    } finally {
-      deps.busyState.setBusy(false);
-    }
+    await runWithBusyState(deps.busyState, async () => {
+      try {
+        await deps.runtime.switchAssistantBranch(normalizedInteractionId);
+        await deps.history.reloadActive();
+        deps.history.setOpen(false);
+        deps.composer.focus();
+      } catch (error: unknown) {
+        deps.appendLocalError(toErrorMessage(error));
+      }
+    });
   }
 
   return {

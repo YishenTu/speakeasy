@@ -1,6 +1,6 @@
 export function getImagePreviewTemplate(): string {
   return `
-      <div id="speakeasy-image-preview-view" class="image-preview-view" hidden>
+      <div id="speakeasy-image-preview-view" class="image-preview-view sp-scrollable" hidden>
         <button
           id="speakeasy-image-preview-close"
           class="image-preview-close"
@@ -10,7 +10,7 @@ export function getImagePreviewTemplate(): string {
         </button>
         <img id="speakeasy-image-preview-image" class="image-preview-image" alt="" />
       </div>
-      <div id="speakeasy-text-preview-view" class="image-preview-view text-preview-view" hidden>
+      <div id="speakeasy-text-preview-view" class="image-preview-view text-preview-view sp-scrollable" hidden>
         <section class="text-preview-body" aria-live="polite">
           <header class="text-preview-header">
             <h3 id="speakeasy-text-preview-title" class="text-preview-title"></h3>
@@ -22,7 +22,7 @@ export function getImagePreviewTemplate(): string {
               &times;
             </button>
           </header>
-          <pre id="speakeasy-text-preview-content" class="text-preview-content"></pre>
+          <pre id="speakeasy-text-preview-content" class="text-preview-content sp-scrollable"></pre>
         </section>
       </div>`;
 }

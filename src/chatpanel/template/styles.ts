@@ -440,30 +440,22 @@ export function getChatPanelStyles(): string {
         scroll-behavior: smooth;
       }
 
-      .messages,
-      .image-preview-view,
-      .text-preview-content {
+      .sp-scrollable {
         scrollbar-width: thin;
         scrollbar-color: var(--sp-color-border-base) transparent;
       }
 
-      .messages::-webkit-scrollbar,
-      .image-preview-view::-webkit-scrollbar,
-      .text-preview-content::-webkit-scrollbar {
+      .sp-scrollable::-webkit-scrollbar {
         width: 4px;
         height: 4px;
       }
 
-      .messages::-webkit-scrollbar-thumb,
-      .image-preview-view::-webkit-scrollbar-thumb,
-      .text-preview-content::-webkit-scrollbar-thumb {
+      .sp-scrollable::-webkit-scrollbar-thumb {
         background: var(--sp-color-border-base);
         border-radius: 0;
       }
 
-      .messages::-webkit-scrollbar-thumb:hover,
-      .image-preview-view::-webkit-scrollbar-thumb:hover,
-      .text-preview-content::-webkit-scrollbar-thumb:hover {
+      .sp-scrollable::-webkit-scrollbar-thumb:hover {
         background: rgba(255, 255, 255, 0.2);
       }
 
@@ -1363,15 +1355,6 @@ export function getChatPanelStyles(): string {
         overscroll-behavior: contain;
       }
 
-      .mention-list::-webkit-scrollbar {
-        width: 6px;
-      }
-
-      .mention-list::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.18);
-        border-radius: 999px;
-      }
-
       .mention-item {
         border: none;
         background: transparent;
@@ -1530,22 +1513,6 @@ export function getChatPanelStyles(): string {
         max-height: 200px;
         overflow-y: auto;
         overscroll-behavior: contain;
-      }
-
-      .input::-webkit-scrollbar {
-        width: 8px;
-        background: transparent;
-      }
-
-      .input::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.15);
-        border-radius: 4px;
-        border: 2px solid transparent;
-        background-clip: padding-box;
-      }
-
-      .input::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.25);
       }
 
       .input::placeholder {

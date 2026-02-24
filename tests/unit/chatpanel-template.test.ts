@@ -148,18 +148,31 @@ describe('chatpanel template', () => {
     expect(template).toMatch(/\.input\s*{[^}]*overscroll-behavior:\s*contain;/);
   });
 
-  it('uses the same scrollbar style for chat messages and preview panes', () => {
+  it('uses one shared scrollbar style across all scrollable chatpanel regions', () => {
     const template = getChatPanelTemplate();
 
-    expect(template).toContain('.messages::-webkit-scrollbar,');
-    expect(template).toContain('.image-preview-view::-webkit-scrollbar,');
-    expect(template).toContain('.text-preview-content::-webkit-scrollbar {');
-    expect(template).toContain('.messages::-webkit-scrollbar-thumb,');
-    expect(template).toContain('.image-preview-view::-webkit-scrollbar-thumb,');
-    expect(template).toContain('.text-preview-content::-webkit-scrollbar-thumb {');
-    expect(template).toContain('.messages::-webkit-scrollbar-thumb:hover,');
-    expect(template).toContain('.image-preview-view::-webkit-scrollbar-thumb:hover,');
-    expect(template).toContain('.text-preview-content::-webkit-scrollbar-thumb:hover {');
+    expect(template).toContain('.sp-scrollable {');
+    expect(template).toContain('.sp-scrollable::-webkit-scrollbar {');
+    expect(template).toContain('.sp-scrollable::-webkit-scrollbar-thumb {');
+    expect(template).toContain('.sp-scrollable::-webkit-scrollbar-thumb:hover {');
+
+    expect(template).toContain('id="speakeasy-history-menu" class="history-menu sp-scrollable"');
+    expect(template).toContain('id="speakeasy-messages" class="messages sp-scrollable"');
+    expect(template).toContain(
+      'id="speakeasy-image-preview-view" class="image-preview-view sp-scrollable"',
+    );
+    expect(template).toContain(
+      'id="speakeasy-text-preview-view" class="image-preview-view text-preview-view sp-scrollable"',
+    );
+    expect(template).toContain(
+      'id="speakeasy-text-preview-content" class="text-preview-content sp-scrollable"',
+    );
+    expect(template).toContain(
+      'id="speakeasy-tab-mention-list" class="mention-list sp-scrollable"',
+    );
+    expect(template).toContain('id="speakeasy-input" class="input sp-scrollable"');
+    expect(template).not.toContain('.mention-list::-webkit-scrollbar {\n        width: 6px;');
+    expect(template).not.toContain('.input::-webkit-scrollbar {\n        width: 8px;');
   });
 
   it('uses enlarged input toolbar controls and wider capture-action spacing', () => {
@@ -177,7 +190,9 @@ describe('chatpanel template', () => {
     expect(template).toContain('height: 18px;');
     expect(template).not.toContain('#speakeasy-model-dropup .dropup-trigger,');
     expect(template).not.toContain('#speakeasy-thinking-dropup .dropup-item {');
-    expect(template).not.toContain(".input-toolbar-separator {\n        font-family: 'IBM Plex Mono'");
+    expect(template).not.toContain(
+      ".input-toolbar-separator {\n        font-family: 'IBM Plex Mono'",
+    );
   });
 
   it('uses square staged-file previews and removes legacy chip styling', () => {

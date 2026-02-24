@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import {
   createAttachmentManager,
   withAttachmentPreviewDataUrls,
-} from '../../../src/chatpanel/attachment-manager';
+} from '../../../src/chatpanel/features/attachments/attachment-manager';
 import { ATTACHMENT_PREVIEW_MAX_DATA_URL_LENGTH } from '../../../src/shared/attachment-preview';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from '../helpers/dom-test-env';
 

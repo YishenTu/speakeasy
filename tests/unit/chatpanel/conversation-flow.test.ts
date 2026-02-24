@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { StagedFile } from '../../../src/chatpanel/attachment-manager';
-import { createConversationFlowController } from '../../../src/chatpanel/conversation-flow';
+import type { StagedFile } from '../../../src/chatpanel/features/attachments/attachment-manager';
+import { createConversationFlowController } from '../../../src/chatpanel/features/conversation/conversation-flow';
 import type { ChatMessage } from '../../../src/shared/chat';
 import type { FileDataAttachmentPayload } from '../../../src/shared/runtime';
 

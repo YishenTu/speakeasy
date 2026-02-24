@@ -5,6 +5,11 @@ Manifest V3 Chrome extension built with Bun + TypeScript.
 
 - `src/background/`: service worker runtime, Gemini request orchestration, sessions.
 - `src/chatpanel/`: in-page overlay UI/content script.
+  - `app/`: chatpanel bootstrap/composition.
+  - `core/`: reusable chatpanel primitives/utilities.
+  - `features/`: domain modules (`attachments`, `composer`, `conversation`, `history`, `layout`, `messages`, `mentions`, `preview`).
+  - `template/`: chatpanel Shadow DOM templates/styles.
+  - Root `chatpanel.ts` is entrypoint-only; root `template.ts` is template-entrypoint-only.
 - `src/options/`: options page UI, form state, validation.
 - `src/shared/`: cross-layer contracts (`runtime.ts`), settings schema, chat bridge.
 - `tests/unit/`: deterministic unit tests.
@@ -13,6 +18,7 @@ Manifest V3 Chrome extension built with Bun + TypeScript.
 - `dist/`: build output.
 
 Respect boundaries from `.dependency-cruiser.cjs`: `shared` <- (`background` | `chatpanel` | `options`), no circular imports.
+For chatpanel internals, follow: `app -> (features|core|template)`, `features -> (core|shared)`, `core -> shared`.
 
 ## Build, Test, and Development Commands
 - `bun run dev`: watch/rebuild extension artifacts.
@@ -39,7 +45,7 @@ Respect boundaries from `.dependency-cruiser.cjs`: `shared` <- (`background` | `
   - Keep one-off layout tweaks inline only when they are truly local and non-reusable.
   - Reuse tokens from `tailwind.config.js` (colors, fonts) instead of hardcoded ad-hoc values.
 - For `chatpanel` styles:
-  - Keep class names stable because runtime code queries and toggles them (`classList`, selectors in `messages.ts`, `chatpanel.ts`, `input-toolbar.ts`).
+  - Keep class names stable because runtime code queries and toggles them (`classList`, selectors in `features/messages/message-renderer.ts`, `app/bootstrap.ts`, `features/composer/input-toolbar.ts`).
   - Prefer consolidating repeated values with `:host` CSS variables (prefix `--sp-`) and shared selector blocks for repeated control patterns.
   - Do not move chatpanel styles into `tailwind.css`; Shadow DOM styles are intentionally self-contained.
 - When refactoring styles, preserve behavior and visual parity unless a visual change is explicitly requested.

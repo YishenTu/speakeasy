@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { highlightCode } from '../../src/chatpanel/highlight';
+import { highlightCode } from '../../src/chatpanel/features/messages/highlight';
 
 describe('chatpanel highlight', () => {
   it('highlights known languages with hljs token spans', () => {

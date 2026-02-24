@@ -1,6 +1,7 @@
-import { decodeBase64ToArrayBuffer } from '../shared/base64';
-import { captureCurrentTabFullPageScreenshot } from '../shared/chat';
-import type { TabCaptureFullPagePayload } from '../shared/runtime';
+import { decodeBase64ToArrayBuffer } from '../../../shared/base64';
+import { captureCurrentTabFullPageScreenshot } from '../../../shared/chat';
+import { normalizeMimeType } from '../../../shared/mime';
+import type { TabCaptureFullPagePayload } from '../../../shared/runtime';
 
 const DEFAULT_SCREENSHOT_FILE_NAME = 'speakeasy-full-page.png';
 
@@ -21,7 +22,7 @@ export async function captureAndStageFullPageScreenshot(
 }
 
 export function toScreenshotFile(payload: TabCaptureFullPagePayload): File {
-  const normalizedMimeType = payload.mimeType.trim().toLowerCase();
+  const normalizedMimeType = normalizeMimeType(payload.mimeType);
   if (!normalizedMimeType.startsWith('image/')) {
     throw new Error('Screenshot payload must be an image.');
   }
@@ -36,7 +37,7 @@ export function toScreenshotFile(payload: TabCaptureFullPagePayload): File {
     throw new Error('Screenshot payload contains an invalid data URL.');
   }
 
-  const dataUrlMimeType = dataUrlMatch[1]?.trim().toLowerCase();
+  const dataUrlMimeType = normalizeMimeType(dataUrlMatch[1] ?? '');
   const base64Bytes = dataUrlMatch[2]?.trim() ?? '';
   if (!dataUrlMimeType || !base64Bytes) {
     throw new Error('Screenshot payload contains an invalid data URL.');

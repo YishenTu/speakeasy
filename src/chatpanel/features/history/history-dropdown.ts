@@ -6,9 +6,13 @@ import {
   listChatSessions,
   loadChatMessages,
   loadChatMessagesById,
-} from '../shared/chat';
-import type { ChatSessionSummary } from '../shared/runtime';
-import { toErrorMessage } from './message-renderer';
+} from '../../../shared/chat';
+import type { ChatSessionSummary } from '../../../shared/runtime';
+import { runWhenIdle, runWithBusyState } from '../../core/busy-state';
+import { createTitleMetaButton } from '../../core/list-item-builders';
+import { createMenuController } from '../../core/menu-controller';
+import { formatHistoryTimestampValue } from '../../core/time-format';
+import { toErrorMessage } from '../messages/message-renderer';
 
 export interface HistoryDropdownController {
   setOpen(open: boolean): void;
@@ -41,16 +45,22 @@ export interface HistoryDropdownDeps {
 export function createHistoryDropdownController(
   deps: HistoryDropdownDeps,
 ): HistoryDropdownController {
-  let isMenuOpen = false;
   let sessions: ChatSessionSummary[] = [];
-
-  deps.historyToggleButton.setAttribute('aria-expanded', 'false');
-
-  function setOpen(nextOpen: boolean): void {
-    isMenuOpen = nextOpen;
-    deps.historyControl.classList.toggle('open', nextOpen);
-    deps.historyToggleButton.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
-  }
+  const busyState = {
+    isBusy: deps.isBusy,
+    setBusy: deps.setBusy,
+  };
+  const menuController = createMenuController({
+    container: deps.historyControl,
+    trigger: deps.historyToggleButton,
+    closeOnOutsidePointerDown: {
+      target: document,
+      isInside: (event) => {
+        const eventPath = event.composedPath?.() ?? [];
+        return eventPath.includes(deps.historyControl);
+      },
+    },
+  });
 
   function renderMenu(): void {
     const fragment = document.createDocumentFragment();
@@ -72,40 +82,33 @@ export function createHistoryDropdownController(
       item.className = 'history-item';
       item.setAttribute('role', 'none');
 
-      const openButton = document.createElement('button');
-      openButton.className = 'history-item-main';
-      openButton.type = 'button';
-      openButton.setAttribute('role', 'menuitem');
-      openButton.disabled = deps.isBusy();
+      const openButton = createTitleMetaButton({
+        buttonClassName: 'history-item-main',
+        titleClassName: 'history-item-title',
+        metaClassName: 'history-item-meta',
+        titleText: session.title,
+        metaText: formatHistoryTimestamp(session.updatedAt),
+        role: 'menuitem',
+        disabled: deps.isBusy(),
+      });
       if (session.chatId === activeChatId) {
         openButton.classList.add('history-item-active');
       }
-
-      const title = document.createElement('span');
-      title.className = 'history-item-title';
-      title.textContent = session.title;
-
-      const meta = document.createElement('span');
-      meta.className = 'history-item-meta';
-      meta.textContent = formatHistoryTimestamp(session.updatedAt);
-
-      openButton.append(title, meta);
       openButton.addEventListener('click', async () => {
-        if (deps.isBusy() || session.chatId === deps.getActiveChatId()) {
+        if (session.chatId === deps.getActiveChatId()) {
           return;
         }
 
-        deps.cancelQueuedSend();
-        deps.setBusy(true);
-        try {
-          await loadSession(session.chatId);
-          setOpen(false);
-          deps.focusInput();
-        } catch (error: unknown) {
-          deps.appendLocalError(toErrorMessage(error));
-        } finally {
-          deps.setBusy(false);
-        }
+        await runWhenIdle(busyState, async () => {
+          deps.cancelQueuedSend();
+          try {
+            await loadSession(session.chatId);
+            menuController.setOpen(false);
+            deps.focusInput();
+          } catch (error: unknown) {
+            deps.appendLocalError(toErrorMessage(error));
+          }
+        });
       });
 
       const deleteButton = document.createElement('button');
@@ -126,26 +129,25 @@ export function createHistoryDropdownController(
           return;
         }
 
-        deps.cancelQueuedSend();
-        deps.setBusy(true);
-        try {
-          const tabContext = await deps.getChatTabContext();
-          const deleted = await deleteChatById(session.chatId, tabContext);
-          if (deleted && deps.getActiveChatId() === session.chatId) {
-            deps.setActiveChatId((await getActiveChatId(tabContext)) ?? null);
-            deps.clearStagedFiles();
-            deps.renderMessages([]);
+        await runWhenIdle(busyState, async () => {
+          deps.cancelQueuedSend();
+          try {
+            const tabContext = await deps.getChatTabContext();
+            const deleted = await deleteChatById(session.chatId, tabContext);
+            if (deleted && deps.getActiveChatId() === session.chatId) {
+              deps.setActiveChatId((await getActiveChatId(tabContext)) ?? null);
+              deps.clearStagedFiles();
+              deps.renderMessages([]);
+            }
+            await refresh();
+            if (sessions.length === 0) {
+              menuController.setOpen(false);
+            }
+            deps.focusInput();
+          } catch (error: unknown) {
+            deps.appendLocalError(toErrorMessage(error));
           }
-          await refresh();
-          if (sessions.length === 0) {
-            setOpen(false);
-          }
-          deps.focusInput();
-        } catch (error: unknown) {
-          deps.appendLocalError(toErrorMessage(error));
-        } finally {
-          deps.setBusy(false);
-        }
+        });
       });
 
       item.append(openButton, deleteButton);
@@ -174,43 +176,31 @@ export function createHistoryDropdownController(
     await refresh();
   }
 
-  const onOutsidePointerDown = (event: Event): void => {
-    if (!isMenuOpen) {
-      return;
-    }
-    if ((event as PointerEvent).composedPath().includes(deps.historyControl)) {
-      return;
-    }
-    setOpen(false);
-  };
-
   const onToggleClick = async (): Promise<void> => {
     if (deps.isBusy()) {
       return;
     }
 
-    if (isMenuOpen) {
-      setOpen(false);
+    if (menuController.isOpen()) {
+      menuController.setOpen(false);
       return;
     }
 
-    deps.setBusy(true);
-    try {
-      await refresh();
-      setOpen(true);
-    } catch (error: unknown) {
-      deps.appendLocalError(toErrorMessage(error));
-    } finally {
-      deps.setBusy(false);
-    }
+    await runWithBusyState(busyState, async () => {
+      try {
+        await refresh();
+        menuController.setOpen(true);
+      } catch (error: unknown) {
+        deps.appendLocalError(toErrorMessage(error));
+      }
+    });
   };
 
   deps.historyToggleButton.addEventListener('click', onToggleClick);
-  document.addEventListener('pointerdown', onOutsidePointerDown);
 
   return {
-    setOpen,
-    isOpen: () => isMenuOpen,
+    setOpen: menuController.setOpen,
+    isOpen: menuController.isOpen,
     syncMenuState: renderMenu,
     refresh,
     loadSession,
@@ -218,21 +208,11 @@ export function createHistoryDropdownController(
     getSessions: () => sessions,
     dispose(): void {
       deps.historyToggleButton.removeEventListener('click', onToggleClick);
-      document.removeEventListener('pointerdown', onOutsidePointerDown);
+      menuController.dispose();
     },
   };
 }
 
 export function formatHistoryTimestamp(updatedAt: string): string {
-  const timestamp = Date.parse(updatedAt);
-  if (Number.isNaN(timestamp)) {
-    return updatedAt.replace('T', ' ').slice(0, 16);
-  }
-
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatHistoryTimestampValue(updatedAt);
 }

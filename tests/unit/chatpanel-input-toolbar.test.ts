@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { createInputToolbar } from '../../src/chatpanel/input-toolbar';
+import { createInputToolbar } from '../../src/chatpanel/features/composer/input-toolbar';
 import { GEMINI_SETTINGS_STORAGE_KEY } from '../../src/shared/settings';
 import {
   type ChromeStorageChange,
@@ -7,6 +7,8 @@ import {
   createChromeStorageOnChangedMock,
 } from './helpers/chrome-mock';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from './helpers/dom-test-env';
+import { queryRequiredElement } from './helpers/query-required-element';
+import { createShadowRootFixture } from './helpers/shadow-root-fixture';
 
 describe('chatpanel input toolbar', () => {
   let dom: InstalledDomEnvironment | null = null;
@@ -255,10 +257,7 @@ describe('chatpanel input toolbar', () => {
   }
 
   function createToolbarShadowRoot(): ShadowRoot {
-    const host = document.createElement('div');
-    document.body.append(host);
-    const shadowRoot = host.attachShadow({ mode: 'open' });
-    shadowRoot.innerHTML = `
+    return createShadowRootFixture(`
       <div class="dropup" id="speakeasy-model-dropup">
         <button class="dropup-trigger" type="button" data-value="gemini-3-flash-preview">Flash</button>
         <div class="dropup-menu">
@@ -278,19 +277,6 @@ describe('chatpanel input toolbar', () => {
       <button id="speakeasy-capture-full-page" type="button">Capture</button>
       <button id="speakeasy-extract-page-text" type="button">TXT</button>
       <button id="speakeasy-attach" type="button">Attach</button>
-    `;
-    return shadowRoot;
+    `);
   }
 });
-
-function queryRequiredElement<TElement extends Element>(
-  root: ParentNode,
-  selector: string,
-): TElement {
-  const element = root.querySelector<TElement>(selector);
-  if (!element) {
-    throw new Error(`Missing test element: ${selector}`);
-  }
-
-  return element;
-}

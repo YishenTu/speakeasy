@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   captureAndStageFullPageScreenshot,
   toScreenshotFile,
-} from '../../../src/chatpanel/full-page-screenshot';
+} from '../../../src/chatpanel/features/attachments/full-page-screenshot';
 import { type InstalledDomEnvironment, installDomTestEnvironment } from '../helpers/dom-test-env';
 
 describe('chatpanel full-page screenshot', () => {
@@ -50,6 +50,19 @@ describe('chatpanel full-page screenshot', () => {
         height: 2000,
       }),
     ).toThrow(/mime type/i);
+  });
+
+  it('accepts payload mime types with parameters when normalized value matches data URL', async () => {
+    const screenshotFile = toScreenshotFile({
+      dataUrl: 'data:image/png;base64,aGVsbG8=',
+      mimeType: 'IMAGE/PNG; charset=utf-8',
+      fileName: 'captured-page.png',
+      width: 1000,
+      height: 2000,
+    });
+
+    expect(screenshotFile.type).toBe('image/png');
+    expect(await screenshotFile.text()).toBe('hello');
   });
 
   it('rejects screenshots when data URL payload is malformed', () => {

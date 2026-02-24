@@ -1,8 +1,8 @@
 import DOMPurify, { type Config } from 'dompurify';
 import renderMathInElement from 'katex/contrib/auto-render';
 import { Marked, type Tokens } from 'marked';
+import { escapeHtml } from '../../core/html';
 import { highlightCode } from './highlight';
-import { escapeHtml } from './html';
 
 const markdownParser = new Marked({
   gfm: true,

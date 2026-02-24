@@ -28,7 +28,13 @@ regular web pages (`http://*/*`, `https://*/*`).
 ## Project structure
 
 - `src/background/`: service worker runtime, Gemini orchestration, session persistence, uploads.
-- `src/chatpanel/`: content-script overlay UI, message rendering, stream updates, history/actions.
+- `src/chatpanel/`: content-script overlay UI.
+  - `app/`: chatpanel composition/bootstrap.
+  - `core/`: shared chatpanel primitives/utilities.
+  - `features/`: domain modules (`attachments`, `composer`, `conversation`, `history`, `layout`, `messages`, `mentions`, `preview`).
+  - `template/`: Shadow DOM HTML/CSS templates.
+  - `chatpanel.ts`: entrypoint only.
+  - `template.ts`: template composition entrypoint only.
 - `src/options/`: options page UI, form state, validation.
 - `src/shared/`: runtime contracts, settings normalization, chat bridge utilities.
 - `scripts/build.ts`: builds TypeScript + Tailwind, copies static assets, sanitizes JS bundles.
@@ -92,6 +98,9 @@ GEMINI_API_KEY=your-real-gemini-key
 - `src/background` can depend on `src/shared`, never on `src/chatpanel` or `src/options`.
 - `src/chatpanel` can depend on `src/shared`, never on `src/background` or `src/options`.
 - `src/options` can depend on `src/shared`, never on `src/background` or `src/chatpanel`.
+- Inside `src/chatpanel`: `app -> (features|core|template)`, `features -> (core|shared)`, `core -> shared`.
+- `src/chatpanel/features` must not depend on `src/chatpanel/app` or `src/chatpanel/template`.
+- `src/chatpanel/core` must not depend on `src/chatpanel/app`, `src/chatpanel/features`, or `src/chatpanel/template`.
 - Circular dependencies are forbidden globally.
 
 ## Runtime behavior
