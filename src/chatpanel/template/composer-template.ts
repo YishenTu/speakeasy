@@ -1,4 +1,39 @@
+import {
+  BUILTIN_GEMINI_MODEL_CATALOG,
+  type ThinkingLevel,
+  getBuiltinGeminiModelByKey,
+} from '../../shared/settings';
+
+const THINKING_LABELS: Record<ThinkingLevel, string> = {
+  high: 'High',
+  medium: 'Med',
+  low: 'Low',
+  minimal: 'Min',
+};
+
+function renderModelMenuItems(selectedModel: string): string {
+  return BUILTIN_GEMINI_MODEL_CATALOG.map((entry) => {
+    const selected = entry.model === selectedModel ? ' aria-selected="true"' : '';
+    return `<button type="button" class="dropup-item" data-value="${entry.model}"${selected}>${entry.label}</button>`;
+  }).join('');
+}
+
+function renderThinkingMenuItems(
+  levels: readonly ThinkingLevel[],
+  selectedLevel: ThinkingLevel,
+): string {
+  return [...levels]
+    .reverse()
+    .map((level) => {
+      const selected = level === selectedLevel ? ' aria-selected="true"' : '';
+      return `<button type="button" class="dropup-item" data-value="${level}"${selected}>${THINKING_LABELS[level] ?? level}</button>`;
+    })
+    .join('');
+}
+
 export function getComposerTemplate(): string {
+  const defaultModel = getBuiltinGeminiModelByKey('flash');
+  const defaultThinkingLevel = defaultModel.defaultThinkingLevel;
   return `
         <form id="speakeasy-form" class="composer" autocomplete="off">
           <div class="composer-inner">
@@ -20,21 +55,13 @@ export function getComposerTemplate(): string {
             </div>
             <div class="input-toolbar">
               <div class="dropup" id="speakeasy-model-dropup">
-                <button type="button" class="dropup-trigger" data-value="gemini-3-flash-preview" title="Select model">Flash</button>
-                <div class="dropup-menu">
-                  <button type="button" class="dropup-item" data-value="gemini-3-flash-preview" aria-selected="true">Flash</button>
-                  <button type="button" class="dropup-item" data-value="gemini-3.1-pro-preview">Pro</button>
-                </div>
+                <button type="button" class="dropup-trigger" data-value="${defaultModel.model}" title="Select model">${defaultModel.label}</button>
+                <div class="dropup-menu">${renderModelMenuItems(defaultModel.model)}</div>
               </div>
               <span class="input-toolbar-separator" aria-hidden="true">|</span>
               <div class="dropup" id="speakeasy-thinking-dropup">
-                <button type="button" class="dropup-trigger" data-value="minimal" title="Select effort level">Min</button>
-                <div class="dropup-menu">
-                  <button type="button" class="dropup-item" data-value="high">High</button>
-                  <button type="button" class="dropup-item" data-value="medium">Med</button>
-                  <button type="button" class="dropup-item" data-value="low">Low</button>
-                  <button type="button" class="dropup-item" data-value="minimal" aria-selected="true">Min</button>
-                </div>
+                <button type="button" class="dropup-trigger" data-value="${defaultThinkingLevel}" title="Select effort level">${THINKING_LABELS[defaultThinkingLevel] ?? defaultThinkingLevel}</button>
+                <div class="dropup-menu">${renderThinkingMenuItems(defaultModel.thinkingLevels, defaultThinkingLevel)}</div>
               </div>
               <div class="input-toolbar-actions">
                 <button

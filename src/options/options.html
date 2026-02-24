@@ -28,13 +28,48 @@
             placeholder="AI... or your Gemini API key" required />
         </label>
 
-        <label class="settings-field">
-          <span class="settings-label">Custom model <span
-              class="settings-optional">(optional)</span></span>
-          <input id="model" name="model" type="text"
-            class="settings-input"
-            placeholder="gemini-3-pro-preview (appears in chat selector)" />
-        </label>
+        <section class="settings-field">
+          <span class="settings-label">Model thinking defaults</span>
+          <div class="settings-grid-two">
+            <input id="model-name-flash" type="text"
+              class="settings-input"
+              readonly />
+            <select id="model-thinking-level-flash" name="modelThinkingLevelFlash"
+              class="settings-input">
+            </select>
+          </div>
+          <div class="settings-grid-two mt-3">
+            <input id="model-name-pro" type="text"
+              class="settings-input"
+              readonly />
+            <select id="model-thinking-level-pro" name="modelThinkingLevelPro"
+              class="settings-input">
+            </select>
+          </div>
+          <span class="settings-label mt-4">Custom models</span>
+          <div id="custom-model-rows" class="space-y-3"></div>
+          <button id="add-custom-model" type="button" class="settings-inline-button mt-3">
+            Add custom model
+          </button>
+          <template id="custom-model-row-template">
+            <div class="settings-grid-two" data-custom-model-row>
+              <input type="text"
+                class="settings-input"
+                data-custom-model-input
+                placeholder="gemini-3.2-custom" />
+              <div class="flex gap-3">
+                <select data-custom-model-thinking-level
+                  class="settings-input">
+                </select>
+                <button type="button"
+                  class="settings-inline-button"
+                  data-remove-custom-model>
+                  Remove
+                </button>
+              </div>
+            </div>
+          </template>
+        </section>
 
         <label class="settings-field">
           <span class="settings-label">System instruction <span

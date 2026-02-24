@@ -1,4 +1,10 @@
-import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../../../shared/settings';
+import {
+  DEFAULT_GEMINI_MODEL,
+  GEMINI_SETTINGS_STORAGE_KEY,
+  getModelDisplayLabel,
+  getModelThinkingLevels,
+  normalizeGeminiSettings,
+} from '../../../shared/settings';
 import { queryRequiredElement } from '../../core/dom';
 import { createMenuController } from '../../core/menu-controller';
 
@@ -9,23 +15,6 @@ export interface InputToolbar {
   extractTextButton: HTMLButtonElement;
   attachButton: HTMLButtonElement;
 }
-
-const MODEL_ALIASES: Record<string, string> = {
-  'gemini-3-flash-preview': 'Flash',
-  'gemini-3.1-pro-preview': 'Pro',
-};
-
-const BUILTIN_THINKING_LEVELS: Record<string, string[]> = {
-  'gemini-3-flash-preview': ['minimal', 'low', 'medium', 'high'],
-  'gemini-3.1-pro-preview': ['low', 'medium', 'high'],
-};
-
-const DEFAULT_THINKING_DEFAULTS: Record<string, string> = {
-  'gemini-3-flash-preview': 'minimal',
-  'gemini-3.1-pro-preview': 'high',
-};
-
-const DEFAULT_THINKING_LEVELS = ['low', 'medium', 'high'];
 
 const THINKING_LABELS: Record<string, string> = {
   high: 'High',
@@ -58,10 +47,15 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
   const attachButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-attach');
   const modelMenuController = createMenuController({ container: modelDropup });
   const thinkingMenuController = createMenuController({ container: thinkingDropup });
+  let modelThinkingLevelMap = normalizeGeminiSettings(undefined).modelThinkingLevelMap;
 
   function closeAllDropups(): void {
     modelMenuController.setOpen(false);
     thinkingMenuController.setOpen(false);
+  }
+
+  function selectedModelValue(): string {
+    return modelTrigger.dataset.value ?? DEFAULT_GEMINI_MODEL;
   }
 
   function selectDropupItem(
@@ -83,9 +77,21 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     }
   }
 
-  function updateThinkingOptions(model: string): void {
-    const levels = BUILTIN_THINKING_LEVELS[model] ?? DEFAULT_THINKING_LEVELS;
-    const defaultLevel = DEFAULT_THINKING_DEFAULTS[model] ?? 'high';
+  function resolveThinkingLevel(model: string, preferred?: string): string {
+    const levels: readonly string[] = getModelThinkingLevels(model);
+    if (preferred && levels.includes(preferred)) {
+      return preferred;
+    }
+    const mapped = modelThinkingLevelMap[model];
+    if (mapped && levels.includes(mapped)) {
+      return mapped;
+    }
+    return levels[levels.length - 1] ?? 'high';
+  }
+
+  function updateThinkingOptions(model: string, preferredThinkingLevel?: string): void {
+    const levels = getModelThinkingLevels(model);
+    const selectedThinkingLevel = resolveThinkingLevel(model, preferredThinkingLevel);
     thinkingMenu.innerHTML = '';
     for (const level of [...levels].reverse()) {
       const btn = document.createElement('button');
@@ -93,14 +99,14 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
       btn.className = 'dropup-item';
       btn.dataset.value = level;
       btn.textContent = THINKING_LABELS[level] ?? level;
-      btn.setAttribute('aria-selected', level === defaultLevel ? 'true' : 'false');
+      btn.setAttribute('aria-selected', level === selectedThinkingLevel ? 'true' : 'false');
       thinkingMenu.appendChild(btn);
     }
     selectDropupItem(
       thinkingDropup,
       thinkingTrigger,
-      defaultLevel,
-      THINKING_LABELS[defaultLevel] ?? defaultLevel,
+      selectedThinkingLevel,
+      THINKING_LABELS[selectedThinkingLevel] ?? selectedThinkingLevel,
     );
   }
 
@@ -120,7 +126,7 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
         btn.className = 'dropup-item';
         btn.dataset.value = model;
         btn.dataset.custom = '1';
-        btn.textContent = MODEL_ALIASES[model] ?? model;
+        btn.textContent = getModelDisplayLabel(model);
         modelMenu.appendChild(btn);
       }
     }
@@ -171,9 +177,18 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     closeAllDropups();
   });
 
-  void chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY).then((stored) => {
-    const settings = normalizeGeminiSettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
+  function applySettings(settingsValue: unknown, keepThinkingSelection = false): void {
+    const settings = normalizeGeminiSettings(settingsValue);
+    modelThinkingLevelMap = settings.modelThinkingLevelMap;
     applyCustomModels(settings.customModels);
+    const preferred = keepThinkingSelection ? thinkingTrigger.dataset.value : undefined;
+    updateThinkingOptions(selectedModelValue(), preferred);
+  }
+
+  applySettings(undefined);
+
+  void chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY).then((stored) => {
+    applySettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
   });
 
   chrome.storage.onChanged.addListener((changes) => {
@@ -181,16 +196,15 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     if (!settingsChange) {
       return;
     }
-    const settings = normalizeGeminiSettings(settingsChange.newValue);
-    applyCustomModels(settings.customModels);
+    applySettings(settingsChange.newValue, true);
   });
 
   return {
     selectedModel(): string {
-      return modelTrigger.dataset.value ?? 'gemini-3-flash-preview';
+      return selectedModelValue();
     },
     selectedThinkingLevel(): string {
-      return thinkingTrigger.dataset.value ?? 'minimal';
+      return resolveThinkingLevel(selectedModelValue(), thinkingTrigger.dataset.value);
     },
     captureButton,
     extractTextButton,

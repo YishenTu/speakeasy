@@ -19,14 +19,20 @@ describe('options dom helpers', () => {
 
     expect(optionsDom.form.id).toBe('settings-form');
     expect(optionsDom.apiKeyInput.id).toBe('api-key');
-    expect(optionsDom.modelInput.id).toBe('model');
+    expect(optionsDom.modelFlashNameInput.id).toBe('model-name-flash');
+    expect(optionsDom.modelFlashThinkingLevelSelect.id).toBe('model-thinking-level-flash');
+    expect(optionsDom.modelProNameInput.id).toBe('model-name-pro');
+    expect(optionsDom.modelProThinkingLevelSelect.id).toBe('model-thinking-level-pro');
+    expect(optionsDom.customModelRowsContainer.id).toBe('custom-model-rows');
+    expect(optionsDom.addCustomModelButton.id).toBe('add-custom-model');
+    expect(optionsDom.customModelRowTemplate.id).toBe('custom-model-row-template');
     expect(optionsDom.pageTextExtractionEngineInput.id).toBe('page-text-extraction-engine');
     expect(optionsDom.statusNode.id).toBe('save-status');
   });
 
   it('throws when a required node is missing', () => {
-    document.getElementById('model')?.remove();
-    expect(() => getOptionsDom()).toThrow(/missing required node: #model/i);
+    document.getElementById('add-custom-model')?.remove();
+    expect(() => getOptionsDom()).toThrow(/missing required node: #add-custom-model/i);
   });
 
   it('updates status text and tone classes', () => {
@@ -51,7 +57,13 @@ function buildOptionsFixtureHtml(): string {
         <span id="version"></span>
         <p id="save-status"></p>
         <input id="api-key" />
-        <input id="model" />
+        <input id="model-name-flash" />
+        <select id="model-thinking-level-flash"></select>
+        <input id="model-name-pro" />
+        <select id="model-thinking-level-pro"></select>
+        <div id="custom-model-rows"></div>
+        <button id="add-custom-model" type="button">Add</button>
+        <template id="custom-model-row-template"></template>
         <textarea id="system-instruction"></textarea>
         <input id="store-interactions" type="checkbox" />
         <input id="max-tool-round-trips" />
