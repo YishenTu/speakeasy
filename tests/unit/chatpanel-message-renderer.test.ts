@@ -518,6 +518,89 @@ describe('chatpanel messages', () => {
     expect(messageList.scrollTop).toBe(320);
   });
 
+  it('does not force bottom scroll when opening stats for a non-latest assistant message', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    let simulatedScrollHeight = 200;
+    Object.defineProperty(messageList, 'scrollHeight', {
+      configurable: true,
+      get: () => simulatedScrollHeight,
+    });
+
+    renderAll(
+      [
+        {
+          id: 'assistant-stats-first',
+          role: 'assistant',
+          content: 'First response',
+          stats: {
+            requestDurationMs: 1000,
+            timeToFirstTokenMs: 180,
+            outputTokens: 60,
+            inputTokens: 20,
+            thoughtTokens: 8,
+            toolUseTokens: 1,
+            cachedTokens: 0,
+            totalTokens: 89,
+            outputTokensPerSecond: 60,
+            totalTokensPerSecond: 89,
+            hasStreamingToken: true,
+          },
+        },
+        {
+          id: 'assistant-stats-second',
+          role: 'assistant',
+          content: 'Second response',
+          stats: {
+            requestDurationMs: 900,
+            timeToFirstTokenMs: 140,
+            outputTokens: 58,
+            inputTokens: 24,
+            thoughtTokens: 7,
+            toolUseTokens: 2,
+            cachedTokens: 0,
+            totalTokens: 91,
+            outputTokensPerSecond: 64.444,
+            totalTokensPerSecond: 101.111,
+            hasStreamingToken: true,
+          },
+        },
+      ],
+      messageList,
+    );
+
+    expect(messageList.scrollTop).toBe(200);
+    messageList.scrollTop = 72;
+    simulatedScrollHeight = 360;
+
+    const firstStatsDisclosure = messageList.querySelector(
+      'li[data-message-id="assistant-stats-first"] .message-stats',
+    ) as HTMLDetailsElement | null;
+    expect(firstStatsDisclosure).not.toBeNull();
+
+    if (!firstStatsDisclosure) {
+      throw new Error('Expected first stats disclosure to be rendered.');
+    }
+
+    firstStatsDisclosure.open = true;
+    firstStatsDisclosure.dispatchEvent(new Event('toggle', { bubbles: false }));
+
+    const firstRow = messageList.querySelector(
+      'li[data-message-id="assistant-stats-first"]',
+    ) as HTMLLIElement | null;
+    const firstActionBar = firstRow?.querySelector('.message-actions-assistant') as
+      | HTMLDivElement
+      | undefined;
+    expect(firstRow?.classList.contains('row-stats-open')).toBe(true);
+    expect(firstActionBar?.classList.contains('is-stats-open')).toBe(true);
+    expect(messageList.scrollTop).toBe(72);
+
+    firstStatsDisclosure.open = false;
+    firstStatsDisclosure.dispatchEvent(new Event('toggle', { bubbles: false }));
+
+    expect(firstRow?.classList.contains('row-stats-open')).toBe(false);
+    expect(firstActionBar?.classList.contains('is-stats-open')).toBe(false);
+  });
+
   it('copies the whole assistant response from the action row copy button', async () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 

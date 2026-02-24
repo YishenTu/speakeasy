@@ -40,6 +40,13 @@ describe('chatpanel template', () => {
     expect(template).toContain('.row-user .message-actions-user:hover');
   });
 
+  it('anchors expanded stats below the trigger without shifting action controls upward', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.message-actions.is-stats-open {');
+    expect(template).toContain('align-items: flex-start;');
+  });
+
   it('wraps fenced code blocks without horizontal scrolling', () => {
     const template = getChatPanelTemplate();
 

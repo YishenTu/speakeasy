@@ -320,8 +320,16 @@ function createStatsDisclosure(
   const disclosure = document.createElement('details');
   disclosure.className = 'message-stats';
   disclosure.addEventListener('toggle', () => {
+    const parentRow = disclosure.closest<HTMLLIElement>('li.row');
+    parentRow?.classList.toggle('row-stats-open', disclosure.open);
+
+    const actionBar = disclosure.closest<HTMLDivElement>('.message-actions');
+    actionBar?.classList.toggle('is-stats-open', disclosure.open);
+
     if (disclosure.open) {
-      scrollMessageListToBottom(messageList);
+      if (parentRow && parentRow === messageList.lastElementChild) {
+        scrollMessageListToBottom(messageList);
+      }
     }
   });
 

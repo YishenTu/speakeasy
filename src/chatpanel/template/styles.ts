@@ -478,6 +478,10 @@ export function getChatPanelStyles(): string {
         padding-bottom: var(--sp-message-actions-clearance);
       }
 
+      .row-with-actions.row-stats-open {
+        padding-bottom: 0;
+      }
+
       .row-user {
         align-items: flex-end;
       }
@@ -931,8 +935,8 @@ export function getChatPanelStyles(): string {
       }
 
       .message-stats-panel {
-        position: absolute;
-        top: calc(100% + 6px);
+        position: static;
+        margin-top: 6px;
         left: 0;
         right: 0;
         z-index: 12;
@@ -981,6 +985,15 @@ export function getChatPanelStyles(): string {
         transform: translateY(1px);
         pointer-events: none;
         transition: opacity var(--sp-transition-fast), transform var(--sp-transition-fast);
+      }
+
+      .message-actions.is-stats-open {
+        margin-top: 6px;
+        position: static;
+        align-items: flex-start;
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
       }
 
       .message-actions-assistant {
