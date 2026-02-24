@@ -66,14 +66,9 @@ export function buildAssistantResponseStats(input: {
       : toRoundedDurationMs(input.firstStreamTokenAtMs - input.requestStartedAtMs);
   const outputWindowStartedAtMs = input.firstStreamTokenAtMs ?? input.requestStartedAtMs;
   const outputWindowDurationMs = Math.max(1, input.completedAtMs - outputWindowStartedAtMs);
-  const requestDurationForRateMs = Math.max(1, input.completedAtMs - input.requestStartedAtMs);
   const outputTokensPerSecond =
     input.usageTotals.hasOutputTokens && input.usageTotals.outputTokens >= 0
       ? (input.usageTotals.outputTokens * 1000) / outputWindowDurationMs
-      : undefined;
-  const totalTokensPerSecond =
-    input.usageTotals.hasTotalTokens && input.usageTotals.totalTokens >= 0
-      ? (input.usageTotals.totalTokens * 1000) / requestDurationForRateMs
       : undefined;
 
   const responseStats: AssistantResponseStats = {
@@ -101,9 +96,6 @@ export function buildAssistantResponseStats(input: {
   }
   if (outputTokensPerSecond !== undefined) {
     responseStats.outputTokensPerSecond = outputTokensPerSecond;
-  }
-  if (totalTokensPerSecond !== undefined) {
-    responseStats.totalTokensPerSecond = totalTokensPerSecond;
   }
 
   return responseStats;

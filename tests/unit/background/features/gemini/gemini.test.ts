@@ -1365,7 +1365,6 @@ describe('completeAssistantTurn', () => {
     expect(stats?.timeToFirstTokenMs).toBeGreaterThanOrEqual(0);
     expect(stats?.timeToFirstTokenMs).toBe(stats?.requestDurationMs);
     expect(stats?.outputTokensPerSecond).toBeGreaterThan(0);
-    expect(stats?.totalTokensPerSecond).toBeGreaterThan(0);
   });
 
   it('attaches response stats from streamed usage and marks streamed ttft source', async () => {
@@ -1460,7 +1459,6 @@ describe('completeAssistantTurn', () => {
       totalTokens: 51,
       hasStreamingToken: false,
     });
-    expect(stats?.totalTokensPerSecond).toBeGreaterThan(0);
   });
 
   it('throws when Gemini returns a non-object payload', async () => {
