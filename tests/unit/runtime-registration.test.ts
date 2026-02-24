@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { registerBackgroundRuntimeHandlers } from '../../src/background/runtime';
+import { registerBackgroundRuntimeHandlers } from '../../src/background/app/runtime';
 import type { RuntimeResponse } from '../../src/shared/runtime';
 import { createChromeStorageLocalMock } from './helpers/chrome-mock';
 

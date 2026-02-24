@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { uploadFilesToGemini } from '../../src/background/uploads';
+import { uploadFilesToGemini } from '../../src/background/features/uploads/uploads';
 import type { UploadFilePayload } from '../../src/shared/runtime';
 
 async function toUploadPayload(file: File): Promise<UploadFilePayload> {

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
-import type { ChatRepository } from '../../src/background/chat-repository';
+import { createRuntimeRequestHandler } from '../../src/background/app/runtime';
+import type { ChatRepository } from '../../src/background/features/chat-storage/chat-repository';
 import {
   InvalidPreviousInteractionIdError,
   completeAssistantTurn,
-} from '../../src/background/gemini';
-import { createRuntimeRequestHandler } from '../../src/background/runtime';
-import type { ChatSession, GeminiContent } from '../../src/background/types';
+} from '../../src/background/features/gemini/gemini';
+import type { ChatSession, GeminiContent } from '../../src/background/features/session/types';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 import type { GeminiSettings } from '../../src/shared/settings';
 import { defaultGeminiSettings } from '../../src/shared/settings';

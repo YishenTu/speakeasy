@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import type { ChatRepository } from '../../src/background/chat-repository';
-import { createRuntimeRequestHandler } from '../../src/background/runtime';
+import { createRuntimeRequestHandler } from '../../src/background/app/runtime';
+import type { ChatRepository } from '../../src/background/features/chat-storage/chat-repository';
 import type { RuntimeRequest } from '../../src/shared/runtime';
 
 function createRepositoryStub(): ChatRepository {

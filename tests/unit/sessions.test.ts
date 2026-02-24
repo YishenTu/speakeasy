@@ -6,8 +6,8 @@ import {
   mapSessionToChatMessages,
   setActiveLeafNodeId,
   toAssistantChatMessage,
-} from '../../src/background/sessions';
-import type { ChatSession } from '../../src/background/types';
+} from '../../src/background/features/session/sessions';
+import type { ChatSession } from '../../src/background/features/session/types';
 
 describe('sessions', () => {
   it('createSession returns independent session objects', () => {

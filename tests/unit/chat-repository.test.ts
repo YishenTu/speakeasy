@@ -8,8 +8,8 @@ import {
   SESSION_TTL_MS,
   closeChatDatabaseForTests,
   createChatRepository,
-} from '../../src/background/chat-repository';
-import { createSession } from '../../src/background/sessions';
+} from '../../src/background/features/chat-storage/chat-repository';
+import { createSession } from '../../src/background/features/session/sessions';
 
 async function deleteChatDatabase(): Promise<void> {
   await closeChatDatabaseForTests();

@@ -3,7 +3,11 @@
 ## Project Structure & Module Organization
 Manifest V3 Chrome extension built with Bun + TypeScript.
 
-- `src/background/`: service worker runtime, Gemini request orchestration, sessions.
+- `src/background/`: service worker runtime.
+  - `app/`: background lifecycle/runtime wiring.
+  - `core/`: reusable background primitives/utilities.
+  - `features/`: domain modules (`chat-storage`, `gemini`, `runtime`, `session`, `tab`, `uploads`).
+  - Root `background.ts` is entrypoint-only.
 - `src/chatpanel/`: in-page overlay UI/content script.
   - `app/`: chatpanel bootstrap/composition.
   - `core/`: reusable chatpanel primitives/utilities.
@@ -18,6 +22,7 @@ Manifest V3 Chrome extension built with Bun + TypeScript.
 - `dist/`: build output.
 
 Respect boundaries from `.dependency-cruiser.cjs`: `shared` <- (`background` | `chatpanel` | `options`), no circular imports.
+For background internals, follow: `app -> (features|core|shared)`, `features -> (core|shared)`, `core -> shared`.
 For chatpanel internals, follow: `app -> (features|core|template)`, `features -> (core|shared)`, `core -> shared`.
 
 ## Build, Test, and Development Commands

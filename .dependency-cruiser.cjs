@@ -37,6 +37,30 @@ module.exports = {
       to: { path: '^src/(background|chatpanel)(/|$)' },
     },
     {
+      name: 'background-features-no-app-imports',
+      severity: 'error',
+      comment: 'Background feature modules must not depend on app-level orchestration.',
+      from: { path: '^src/background/features(/|$)' },
+      to: { path: '^src/background/app(/|$)' },
+    },
+    {
+      name: 'background-core-no-app-or-feature-imports',
+      severity: 'error',
+      comment: 'Background core modules must stay independent from app/features.',
+      from: { path: '^src/background/core(/|$)' },
+      to: { path: '^src/background/(app|features)(/|$)' },
+    },
+    {
+      name: 'background-no-legacy-root-module-imports',
+      severity: 'error',
+      comment:
+        'Background internals should use app/core/features layers, not root-level legacy modules.',
+      from: { path: '^src/background/(app|features|core)(/|$)' },
+      to: {
+        path: '^src/background/(?!background\\.ts$)[^/]+\\.ts$',
+      },
+    },
+    {
       name: 'chatpanel-features-no-app-imports',
       severity: 'error',
       comment: 'Chatpanel feature modules must not depend on app-level orchestration.',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { assertNever, toErrorMessage } from '../../src/background/utils';
+import { assertNever, toErrorMessage } from '../../src/background/core/utils';
 
 describe('background utils', () => {
   it('formats error messages with fallback behavior', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import type { ChatRepository } from '../../src/background/chat-repository';
-import { createRuntimeRequestHandler } from '../../src/background/runtime';
-import type { RuntimeRequestContext } from '../../src/background/runtime/contracts';
+import { createRuntimeRequestHandler } from '../../src/background/app/runtime';
+import type { ChatRepository } from '../../src/background/features/chat-storage/chat-repository';
+import type { RuntimeRequestContext } from '../../src/background/features/runtime/contracts';
 import type {
   RuntimeRequest,
   TabCaptureFullPagePayload,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { composeGeminiInteractionRequest } from '../../src/background/gemini-request';
+import { composeGeminiInteractionRequest } from '../../src/background/features/gemini/gemini-request';
 import { defaultGeminiSettings } from '../../src/shared/settings';
 
 const FUNCTION_DECLARATIONS = [

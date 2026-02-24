@@ -8,12 +8,12 @@ import {
   normalizeContent,
   renderContentForChat,
   renderThinkingSummaryForChat,
-} from '../../src/background/gemini';
+} from '../../src/background/features/gemini/gemini';
 import {
   buildGeminiRequestToolSelection,
   composeGeminiInteractionRequest,
-} from '../../src/background/gemini-request';
-import type { ChatSession, GeminiContent } from '../../src/background/types';
+} from '../../src/background/features/gemini/gemini-request';
+import type { ChatSession, GeminiContent } from '../../src/background/features/session/types';
 import { defaultGeminiSettings } from '../../src/shared/settings';
 
 const FUNCTION_DECLARATIONS = [

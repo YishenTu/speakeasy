@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { captureFullPageScreenshot } from '../../src/background/full-page-screenshot';
+import { captureFullPageScreenshot } from '../../src/background/features/tab/full-page-screenshot';
 
 type RuntimeWithLastError = {
   runtime: {

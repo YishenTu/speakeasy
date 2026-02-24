@@ -1,5 +1,5 @@
-import { registerBackgroundLifecycleHandlers } from './lifecycle';
-import { registerBackgroundRuntimeHandlers } from './runtime';
+import { registerBackgroundLifecycleHandlers } from './app/lifecycle';
+import { registerBackgroundRuntimeHandlers } from './app/runtime';
 
 registerBackgroundLifecycleHandlers();
 registerBackgroundRuntimeHandlers();

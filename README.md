@@ -27,7 +27,11 @@ regular web pages (`http://*/*`, `https://*/*`).
 
 ## Project structure
 
-- `src/background/`: service worker runtime, Gemini orchestration, session persistence, uploads.
+- `src/background/`: service worker runtime.
+  - `app/`: background lifecycle + runtime wiring.
+  - `core/`: shared background primitives/utilities.
+  - `features/`: domain modules (`chat-storage`, `gemini`, `runtime`, `session`, `tab`, `uploads`).
+  - `background.ts`: entrypoint only.
 - `src/chatpanel/`: content-script overlay UI.
   - `app/`: chatpanel composition/bootstrap.
   - `core/`: shared chatpanel primitives/utilities.
@@ -98,6 +102,9 @@ GEMINI_API_KEY=your-real-gemini-key
 - `src/background` can depend on `src/shared`, never on `src/chatpanel` or `src/options`.
 - `src/chatpanel` can depend on `src/shared`, never on `src/background` or `src/options`.
 - `src/options` can depend on `src/shared`, never on `src/background` or `src/chatpanel`.
+- Inside `src/background`: `app -> (features|core|shared)`, `features -> (core|shared)`, `core -> shared`.
+- `src/background/features` must not depend on `src/background/app`.
+- `src/background/core` must not depend on `src/background/app` or `src/background/features`.
 - Inside `src/chatpanel`: `app -> (features|core|template)`, `features -> (core|shared)`, `core -> shared`.
 - `src/chatpanel/features` must not depend on `src/chatpanel/app` or `src/chatpanel/template`.
 - `src/chatpanel/core` must not depend on `src/chatpanel/app`, `src/chatpanel/features`, or `src/chatpanel/template`.

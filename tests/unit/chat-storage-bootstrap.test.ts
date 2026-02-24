@@ -3,7 +3,7 @@ import {
   CURRENT_CHAT_STORAGE_SCHEMA_VERSION,
   LEGACY_CHAT_SESSIONS_STORAGE_KEY,
   bootstrapChatStorage,
-} from '../../src/background/chat-storage-bootstrap';
+} from '../../src/background/features/chat-storage/chat-storage-bootstrap';
 import {
   ACTIVE_CHAT_STORAGE_KEY,
   CHAT_STORAGE_SCHEMA_VERSION_STORAGE_KEY,
