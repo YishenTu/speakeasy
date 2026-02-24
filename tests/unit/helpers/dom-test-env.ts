@@ -28,6 +28,14 @@ export function installDomTestEnvironment(
   const window = new Window({ url: 'https://example.test' });
   window.document.write(html);
   window.document.close();
+  // KaTeX auto-render bails out in quirks mode. Happy DOM does not expose
+  // compatMode consistently, so force standards mode for deterministic tests.
+  if (window.document.compatMode !== 'CSS1Compat') {
+    Object.defineProperty(window.document, 'compatMode', {
+      configurable: true,
+      value: 'CSS1Compat',
+    });
+  }
   (window as unknown as { SyntaxError?: typeof SyntaxError }).SyntaxError = SyntaxError;
 
   const snapshot: DomGlobalsSnapshot = {
