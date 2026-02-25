@@ -46,6 +46,56 @@ describe('chatpanel messages', () => {
     expect(messageList.scrollTop).toBe(140);
   });
 
+  it('allows append and replace updates to opt out of forced bottom scrolling', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+    let simulatedScrollHeight = 220;
+    Object.defineProperty(messageList, 'scrollHeight', {
+      configurable: true,
+      get: () => simulatedScrollHeight,
+    });
+
+    messageList.scrollTop = 48;
+    const observedReasons: string[] = [];
+    appendMessage(
+      {
+        id: 'assistant-streaming',
+        role: 'assistant',
+        content: 'Partial response',
+      },
+      messageList,
+      {
+        shouldAutoScroll: (reason) => {
+          observedReasons.push(reason);
+          return false;
+        },
+      },
+    );
+
+    expect(messageList.scrollTop).toBe(48);
+    expect(observedReasons).toEqual(['append']);
+
+    simulatedScrollHeight = 360;
+    const replaced = replaceMessageById(
+      'assistant-streaming',
+      {
+        id: 'assistant-streaming',
+        role: 'assistant',
+        content: 'Final streamed response',
+      },
+      messageList,
+      {
+        shouldAutoScroll: (reason) => {
+          observedReasons.push(reason);
+          return false;
+        },
+      },
+    );
+
+    expect(replaced).toBe(true);
+    expect(messageList.scrollTop).toBe(48);
+    expect(observedReasons).toEqual(['append', 'replace']);
+  });
+
   it('renders markdown content including formatting, tasks, and tables', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 

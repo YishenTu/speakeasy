@@ -10,7 +10,10 @@ export interface MessageRenderOptions {
   onAssistantAction?: (action: 'regen', message: ChatMessage) => void;
   onAssistantBranchSelect?: (message: ChatMessage, interactionId: string) => void;
   onUserAction?: (action: 'fork', message: ChatMessage) => void;
+  shouldAutoScroll?: (reason: MessageListAutoScrollReason) => boolean;
 }
+
+export type MessageListAutoScrollReason = 'render-all' | 'append' | 'replace' | 'stats-toggle';
 
 const COPY_FEEDBACK_RESET_MS = 1200;
 const MAX_VISIBLE_GROUNDING_SOURCES = 5;
@@ -29,7 +32,7 @@ export function renderAll(
   }
 
   messageList.replaceChildren(fragment);
-  scrollMessageListToBottom(messageList);
+  maybeScrollMessageListToBottom(messageList, options, 'render-all');
 }
 
 export function appendMessage(
@@ -38,7 +41,7 @@ export function appendMessage(
   options: MessageRenderOptions = {},
 ): void {
   messageList.append(createMessageNode(message, messageList, options));
-  scrollMessageListToBottom(messageList);
+  maybeScrollMessageListToBottom(messageList, options, 'append');
 }
 
 export function replaceMessageById(
@@ -55,7 +58,7 @@ export function replaceMessageById(
   const retainedBlobPreviewUrls = collectBlobPreviewUrlsForMessage(message);
   revokeMessageBlobPreviewUrls(existing, retainedBlobPreviewUrls);
   existing.replaceWith(createMessageNode(message, messageList, options));
-  scrollMessageListToBottom(messageList);
+  maybeScrollMessageListToBottom(messageList, options, 'replace');
   return true;
 }
 
@@ -310,6 +313,7 @@ function createSourceListItem(source: GroundingSource): HTMLLIElement {
 function createStatsDisclosure(
   stats: NonNullable<ChatMessage['stats']>,
   messageList: HTMLOListElement,
+  options: MessageRenderOptions,
 ): HTMLElement {
   const disclosure = document.createElement('details');
   disclosure.className = 'message-stats';
@@ -322,7 +326,7 @@ function createStatsDisclosure(
 
     if (disclosure.open) {
       if (parentRow && parentRow === messageList.lastElementChild) {
-        scrollMessageListToBottom(messageList);
+        maybeScrollMessageListToBottom(messageList, options, 'stats-toggle');
       }
     }
   });
@@ -413,7 +417,7 @@ function createAssistantActionBar(
   }
 
   if (stats) {
-    actionBar.append(createStatsDisclosure(stats, messageList));
+    actionBar.append(createStatsDisclosure(stats, messageList, options));
   }
 
   if (hasBranchSwitchAction) {
@@ -622,6 +626,18 @@ function formatTokensPerSecond(value: number | undefined): string {
 
 function scrollMessageListToBottom(messageList: HTMLOListElement): void {
   messageList.scrollTop = messageList.scrollHeight;
+}
+
+function maybeScrollMessageListToBottom(
+  messageList: HTMLOListElement,
+  options: MessageRenderOptions,
+  reason: MessageListAutoScrollReason,
+): void {
+  if (options.shouldAutoScroll && !options.shouldAutoScroll(reason)) {
+    return;
+  }
+
+  scrollMessageListToBottom(messageList);
 }
 
 function bindCodeCopyButtons(container: ParentNode): void {

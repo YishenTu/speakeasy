@@ -62,6 +62,7 @@ import {
   toErrorMessage,
 } from '../features/messages/message-renderer';
 import { findLatestAssistantInteractionId } from '../features/messages/optimistic-message';
+import { createMessageListAutoScrollState } from '../features/messages/scroll-follow-state';
 import { createLocalAttachmentPreviewCache } from '../features/preview/local-preview-cache';
 import { getChatPanelTemplate } from '../template';
 import { createPanelVisibilityController } from './panel-visibility';
@@ -217,6 +218,25 @@ export function mountChatPanel(): void {
   let pageTextExtractionEngine: PageTextExtractionEngine = DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE;
   let hasLoadedPageTextExtractionEngine = false;
   const loadPageTextExtractionEnginePromise = loadPageTextExtractionEngine();
+  const messageListAutoScrollState = createMessageListAutoScrollState();
+
+  function syncMessageListAutoScrollState(): void {
+    messageListAutoScrollState.updateFromScroll({
+      scrollTop: messageList.scrollTop,
+      clientHeight: messageList.clientHeight,
+      scrollHeight: messageList.scrollHeight,
+    });
+  }
+
+  function resumeMessageListAutoScroll(): void {
+    messageListAutoScrollState.resumeAutoScroll();
+    messageList.scrollTop = messageList.scrollHeight;
+    syncMessageListAutoScrollState();
+  }
+
+  messageList.addEventListener('scroll', () => {
+    syncMessageListAutoScrollState();
+  });
 
   function applyPageTextExtractionEngine(rawSettings: unknown): void {
     pageTextExtractionEngine = normalizeGeminiSettings(rawSettings).pageTextExtractionEngine;
@@ -248,6 +268,8 @@ export function mountChatPanel(): void {
   });
 
   const messageRenderOptions: MessageRenderOptions = {
+    shouldAutoScroll: (reason) =>
+      reason === 'render-all' || messageListAutoScrollState.shouldAutoScroll(),
     onAssistantAction: (action, message) => {
       if (!conversationFlow) {
         return;
@@ -671,6 +693,7 @@ export function mountChatPanel(): void {
       return;
     }
 
+    resumeMessageListAutoScroll();
     await conversationFlow.send();
   });
 

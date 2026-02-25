@@ -709,6 +709,145 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList.textContent).toContain('Looks like a test image.');
   });
 
+  it('pauses stream auto-scroll when manually scrolled up and resumes at bottom or on submit', async () => {
+    const testWindow = getTestWindow();
+    currentMessages = [];
+    listSessionsPayload = [];
+    sendDeferred = createDeferred();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!form || !input || !messageList) {
+      throw new Error('Expected chatpanel form controls.');
+    }
+
+    let simulatedScrollHeight = 260;
+    Object.defineProperty(messageList, 'scrollHeight', {
+      configurable: true,
+      get: () => simulatedScrollHeight,
+    });
+
+    input.value = 'first prompt';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(20);
+
+    expect(messageList.scrollTop).toBe(260);
+    const firstStreamRequestId = sendRequest?.streamRequestId;
+    expect(typeof firstStreamRequestId).toBe('string');
+    if (!firstStreamRequestId) {
+      throw new Error('Expected first stream request id.');
+    }
+
+    messageList.scrollTop = 248;
+    messageList.dispatchEvent(new testWindow.Event('scroll'));
+
+    simulatedScrollHeight = 420;
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: 'chat/stream-delta',
+        requestId: firstStreamRequestId,
+        textDelta: 'delta one',
+      });
+    }
+    await flushMicrotasks(6);
+    expect(messageList.scrollTop).toBe(248);
+
+    messageList.scrollTop = 420;
+    messageList.dispatchEvent(new testWindow.Event('scroll'));
+
+    simulatedScrollHeight = 500;
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: 'chat/stream-delta',
+        requestId: firstStreamRequestId,
+        textDelta: 'delta two',
+      });
+    }
+    await flushMicrotasks(6);
+    expect(messageList.scrollTop).toBe(500);
+
+    currentMessages = [
+      { id: 'persisted-user-1', role: 'user', content: 'first prompt' },
+      {
+        id: 'persisted-assistant-1',
+        role: 'assistant',
+        content: 'first answer',
+        interactionId: 'interaction-first',
+      },
+    ];
+    sendDeferred.resolve({
+      ok: true,
+      payload: {
+        chatId: 'chat-seed',
+        assistantMessage: {
+          id: 'assistant-send-1',
+          role: 'assistant',
+          content: 'first answer',
+          interactionId: 'interaction-first',
+        },
+      },
+    });
+    await flushMicrotasks(40);
+
+    sendDeferred = createDeferred();
+    simulatedScrollHeight = 620;
+    messageList.scrollTop = 120;
+    messageList.dispatchEvent(new testWindow.Event('scroll'));
+
+    input.value = 'second prompt';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(20);
+
+    expect(messageList.scrollTop).toBe(620);
+    expect(sendRequest?.text).toBe('second prompt');
+    const secondStreamRequestId = sendRequest?.streamRequestId;
+    expect(typeof secondStreamRequestId).toBe('string');
+    if (!secondStreamRequestId) {
+      throw new Error('Expected second stream request id.');
+    }
+
+    simulatedScrollHeight = 700;
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: 'chat/stream-delta',
+        requestId: secondStreamRequestId,
+        textDelta: 'delta three',
+      });
+    }
+    await flushMicrotasks(6);
+    expect(messageList.scrollTop).toBe(700);
+
+    currentMessages = [
+      { id: 'persisted-user-2', role: 'user', content: 'second prompt' },
+      {
+        id: 'persisted-assistant-2',
+        role: 'assistant',
+        content: 'second answer',
+        interactionId: 'interaction-second',
+      },
+    ];
+    sendDeferred.resolve({
+      ok: true,
+      payload: {
+        chatId: 'chat-seed',
+        assistantMessage: {
+          id: 'assistant-send-2',
+          role: 'assistant',
+          content: 'second answer',
+          interactionId: 'interaction-second',
+        },
+      },
+    });
+    await flushMicrotasks(20);
+  });
+
   it('shows image previews inline within the chatpanel for staged and message attachments', async () => {
     const testWindow = getTestWindow();
     currentMessages = [
