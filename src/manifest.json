@@ -33,6 +33,10 @@
     {
       "resources": ["icons/gemini-logo.svg"],
       "matches": ["http://*/*", "https://*/*"]
+    },
+    {
+      "resources": ["plugins/page-text-extraction/*.js"],
+      "matches": ["http://*/*", "https://*/*"]
     }
   ],
   "options_page": "options.html",

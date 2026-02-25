@@ -34,7 +34,7 @@ import {
 } from '../features/attachments/full-page-screenshot';
 import {
   extractAndStageCurrentTabText,
-  extractCurrentTabText,
+  extractCurrentTabTextWithPlugins,
   toExtractedTextFile,
 } from '../features/attachments/page-text-extraction';
 import { readAttachedTextPreview } from '../features/attachments/text-preview';
@@ -741,7 +741,7 @@ export function mountChatPanel(): void {
   ): Promise<void> {
     try {
       const extractionEngine = await resolvePageTextExtractionEngine();
-      const payload = extractCurrentTabText({
+      const payload = await extractCurrentTabTextWithPlugins({
         extractionEngine,
       });
       const response: RuntimeResponse<typeof payload> = {

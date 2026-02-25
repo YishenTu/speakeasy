@@ -6,6 +6,10 @@ import {
   DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE,
   type PageTextExtractionEngine,
 } from '../../../shared/settings';
+import {
+  type PageTextExtractionPreprocessInput,
+  resolvePageTextPreprocessSourceHtml,
+} from './page-text-extraction-plugins/runtime';
 
 const SPEAKEASY_OVERLAY_ROOT_SELECTOR = '#speakeasy-overlay-root';
 const DEFAULT_EXTRACTED_TEXT_FILE_BASENAME = 'speakeasy-page-extract';
@@ -39,6 +43,7 @@ interface ExtractionEngineAdapterInput {
 }
 
 type ExtractionEngineAdapter = (input: ExtractionEngineAdapterInput) => ExtractedPageContent;
+type PreprocessSourceHtml = (input: PageTextExtractionPreprocessInput) => string;
 
 export interface ExtractCurrentTabTextDependencies {
   extractionEngine?: PageTextExtractionEngine;
@@ -49,6 +54,8 @@ export interface ExtractCurrentTabTextDependencies {
   createDefuddle?: (doc: Document, options: DefuddleOptions) => DefuddleExtractor;
   createReadability?: (doc: Document) => ReadabilityExtractor;
   convertHtmlToMarkdown?: (html: string) => string;
+  preprocessSourceHtml?: PreprocessSourceHtml;
+  resolvePreprocessSourceHtml?: () => Promise<PreprocessSourceHtml>;
 }
 
 export interface ExtractAndStageCurrentTabTextDependencies
@@ -64,13 +71,26 @@ interface ExtractedTextFileInput {
 export async function extractAndStageCurrentTabText(
   dependencies: ExtractAndStageCurrentTabTextDependencies,
 ): Promise<File> {
-  const extractedPayload = extractCurrentTabText(dependencies);
+  const extractedPayload = await extractCurrentTabTextWithPlugins(dependencies);
   const textFile = toExtractedTextFile({
     markdown: extractedPayload.markdown,
     title: extractedPayload.title,
   });
   dependencies.stageFromFiles([textFile]);
   return textFile;
+}
+
+export async function extractCurrentTabTextWithPlugins(
+  dependencies: ExtractCurrentTabTextDependencies = {},
+): Promise<TabExtractTextPayload> {
+  const resolvePreprocessSourceHtml =
+    dependencies.resolvePreprocessSourceHtml ?? resolvePageTextPreprocessSourceHtml;
+  const preprocessSourceHtml =
+    dependencies.preprocessSourceHtml ?? (await resolvePreprocessSourceHtml());
+  return extractCurrentTabText({
+    ...dependencies,
+    preprocessSourceHtml,
+  });
 }
 
 export function extractCurrentTabText(
@@ -82,14 +102,24 @@ export function extractCurrentTabText(
     throw new Error('Cannot extract page text because current tab HTML is unavailable.');
   }
 
+  const sourceUrl = resolveSourceUrl(dependencies.sourceUrl, sourceDocument);
   const parseHtmlToDocument =
     dependencies.parseHtmlToDocument ??
     ((html: string) => new DOMParser().parseFromString(html, 'text/html'));
+  const preprocessSourceHtml = dependencies.preprocessSourceHtml ?? ((input) => input.sourceHtml);
+  const preprocessedSourceHtml = preprocessSourceHtml({
+    sourceHtml,
+    sourceUrl,
+    parseHtmlToDocument,
+  });
+  if (!preprocessedSourceHtml.trim()) {
+    throw new Error('Cannot extract page text because preprocessed HTML is empty.');
+  }
+
   // Defuddle normalizes and mutates document nodes, so extraction must run on a detached copy.
-  const extractionDocument = parseHtmlToDocument(sourceHtml);
+  const extractionDocument = parseHtmlToDocument(preprocessedSourceHtml);
   extractionDocument.querySelector(SPEAKEASY_OVERLAY_ROOT_SELECTOR)?.remove();
 
-  const sourceUrl = resolveSourceUrl(dependencies.sourceUrl, sourceDocument);
   const extractionEngine = dependencies.extractionEngine ?? DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE;
   const content = extractPageContentByEngine({
     extractionDocument,

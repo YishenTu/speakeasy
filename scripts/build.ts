@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { $ } from 'bun';
 
@@ -81,6 +81,28 @@ async function copyStaticFiles(outDir: string): Promise<void> {
     ),
     ...iconFiles.map((file) => cp(join(rootDir, iconDir, file), join(iconsDistDir, file))),
   ]);
+  await copyOptionalPlugins(outDir);
+}
+
+async function copyOptionalPlugins(outDir: string): Promise<void> {
+  const pluginsDir = join(rootDir, 'plugins');
+  const targetDir = join(outDir, 'plugins');
+
+  const pluginsDirExists = await pathExists(pluginsDir);
+  if (!pluginsDirExists) {
+    return;
+  }
+
+  await cp(pluginsDir, targetDir, { recursive: true });
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function buildArtifacts(outDir: string): Promise<void> {

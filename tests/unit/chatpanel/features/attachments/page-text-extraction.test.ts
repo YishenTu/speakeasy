@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import {
   extractAndStageCurrentTabText,
+  extractCurrentTabText,
   toExtractedTextFile,
 } from '../../../../../src/chatpanel/features/attachments/page-text-extraction';
 import {
@@ -218,5 +219,37 @@ describe('chatpanel page text extraction', () => {
     });
 
     expect(file.name).toBe('Project Alpha Beta Draft.md');
+  });
+
+  it('preprocesses raw html before extraction', () => {
+    const parsedHtmlInputs: string[] = [];
+    const payload = extractCurrentTabText({
+      sourceUrl: 'https://example.test/source',
+      sourceDocument: document.implementation.createHTMLDocument('Source'),
+      preprocessSourceHtml: ({ sourceHtml }) => {
+        expect(sourceHtml).toContain('<html');
+        return '<html><body><article id="normalized">Normalized body</article></body></html>';
+      },
+      parseHtmlToDocument: (html) => {
+        parsedHtmlInputs.push(html);
+        const parsed = document.implementation.createHTMLDocument('Extracted');
+        parsed.open();
+        parsed.write(html);
+        parsed.close();
+        return parsed;
+      },
+      createDefuddle: (doc) => ({
+        parse: () => ({
+          title: 'Normalized',
+          content: doc.getElementById('normalized')?.textContent ?? '',
+        }),
+      }),
+    });
+
+    expect(parsedHtmlInputs).toEqual([
+      '<html><body><article id="normalized">Normalized body</article></body></html>',
+    ]);
+    expect(payload.markdown).toBe('Normalized body');
+    expect(payload.url).toBe('https://example.test/source');
   });
 });

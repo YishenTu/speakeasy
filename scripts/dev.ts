@@ -1,4 +1,4 @@
-import { type FSWatcher, watch } from 'node:fs';
+import { type FSWatcher, existsSync, watch } from 'node:fs';
 import { join, relative } from 'node:path';
 import { buildExtension } from './build';
 
@@ -9,6 +9,7 @@ const watchTargets = [
   join(rootDir, 'tailwind.config.js'),
   join(rootDir, 'tsconfig.json'),
   join(rootDir, 'biome.json'),
+  ...(existsSync(join(rootDir, 'plugins')) ? [join(rootDir, 'plugins')] : []),
 ];
 
 const ignoredPathSegments = ['/dist/', '/node_modules/', '/.git/'];
