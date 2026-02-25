@@ -374,6 +374,11 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
   const toolUseTokens = readNonNegativeIntegerField(value, 'toolUseTokens', 'tool_use_tokens');
   const cachedTokens = readNonNegativeIntegerField(value, 'cachedTokens', 'cached_tokens');
   const totalTokens = readNonNegativeIntegerField(value, 'totalTokens', 'total_tokens');
+  const turnTokensPerSecond = readNonNegativeNumberField(
+    value,
+    'turnTokensPerSecond',
+    'turn_tokens_per_second',
+  );
   const outputTokensPerSecond = readNonNegativeNumberField(
     value,
     'outputTokensPerSecond',
@@ -401,6 +406,9 @@ function normalizeAssistantResponseStats(value: unknown): AssistantResponseStats
   }
   if (totalTokens !== undefined) {
     stats.totalTokens = totalTokens;
+  }
+  if (turnTokensPerSecond !== undefined) {
+    stats.turnTokensPerSecond = turnTokensPerSecond;
   }
   if (outputTokensPerSecond !== undefined) {
     stats.outputTokensPerSecond = outputTokensPerSecond;

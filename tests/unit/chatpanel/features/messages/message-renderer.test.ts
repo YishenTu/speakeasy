@@ -594,6 +594,7 @@ describe('chatpanel messages', () => {
           toolUseTokens: 8,
           cachedTokens: 0,
           totalTokens: 225,
+          turnTokensPerSecond: 70.123,
           outputTokensPerSecond: 88.888,
           hasStreamingToken: true,
         },
@@ -610,12 +611,14 @@ describe('chatpanel messages', () => {
     expect(stats?.querySelector('.message-action-icon')).not.toBeNull();
     expect(stats?.textContent).toContain('Turn TTFT');
     expect(stats?.textContent).toContain('240 ms');
-    expect(stats?.textContent).toContain('Turn Output TPS');
+    expect(stats?.textContent).toContain('Turn TPS');
+    expect(stats?.textContent).toContain('70.12 tok/s');
+    expect(stats?.textContent).toContain('Output TPS');
     expect(stats?.textContent).toContain('88.89 tok/s');
     expect(stats?.textContent).toContain('Total Tokens');
     expect(stats?.textContent).toContain('225');
-    expect(stats?.textContent).toContain('Turn TTFT Source');
-    expect(stats?.textContent).toContain('stream delta');
+    expect(stats?.textContent).not.toContain('Turn TTFT Source');
+    expect(stats?.textContent).not.toContain('stream delta');
   });
 
   it('scrolls to the bottom when opening the stats disclosure', () => {
@@ -640,6 +643,7 @@ describe('chatpanel messages', () => {
           toolUseTokens: 8,
           cachedTokens: 0,
           totalTokens: 225,
+          turnTokensPerSecond: 70.123,
           outputTokensPerSecond: 88.888,
           hasStreamingToken: true,
         },
@@ -687,6 +691,7 @@ describe('chatpanel messages', () => {
             toolUseTokens: 1,
             cachedTokens: 0,
             totalTokens: 89,
+            turnTokensPerSecond: 69,
             outputTokensPerSecond: 60,
             hasStreamingToken: true,
           },
@@ -704,6 +709,7 @@ describe('chatpanel messages', () => {
             toolUseTokens: 2,
             cachedTokens: 0,
             totalTokens: 91,
+            turnTokensPerSecond: 74.444,
             outputTokensPerSecond: 64.444,
             hasStreamingToken: true,
           },

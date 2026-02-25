@@ -57,6 +57,7 @@ export function buildAssistantResponseStats(input: {
   usageTotals: UsageTotals;
   requestStartedAtMs: number;
   firstStreamTokenAtMs: number | null;
+  firstOutputTokenAtMs: number | null;
   completedAtMs: number;
 }): AssistantResponseStats {
   const requestDurationMs = toRoundedDurationMs(input.completedAtMs - input.requestStartedAtMs);
@@ -64,8 +65,12 @@ export function buildAssistantResponseStats(input: {
     input.firstStreamTokenAtMs === null
       ? requestDurationMs
       : toRoundedDurationMs(input.firstStreamTokenAtMs - input.requestStartedAtMs);
-  const outputWindowStartedAtMs = input.firstStreamTokenAtMs ?? input.requestStartedAtMs;
+  const outputWindowStartedAtMs = input.firstOutputTokenAtMs ?? input.requestStartedAtMs;
   const outputWindowDurationMs = Math.max(1, input.completedAtMs - outputWindowStartedAtMs);
+  const turnWindowDurationMs = Math.max(1, input.completedAtMs - input.requestStartedAtMs);
+  const turnTokens = getTurnTokenCount(input.usageTotals);
+  const turnTokensPerSecond =
+    turnTokens === undefined ? undefined : (turnTokens * 1000) / turnWindowDurationMs;
   const outputTokensPerSecond =
     input.usageTotals.hasOutputTokens && input.usageTotals.outputTokens >= 0
       ? (input.usageTotals.outputTokens * 1000) / outputWindowDurationMs
@@ -94,6 +99,9 @@ export function buildAssistantResponseStats(input: {
   if (input.usageTotals.hasTotalTokens) {
     responseStats.totalTokens = input.usageTotals.totalTokens;
   }
+  if (turnTokensPerSecond !== undefined) {
+    responseStats.turnTokensPerSecond = turnTokensPerSecond;
+  }
   if (outputTokensPerSecond !== undefined) {
     responseStats.outputTokensPerSecond = outputTokensPerSecond;
   }
@@ -112,6 +120,16 @@ export function withAssistantResponseStats(
       responseStats,
     },
   };
+}
+
+function getTurnTokenCount(usageTotals: UsageTotals): number | undefined {
+  const hasTurnTokenClasses =
+    usageTotals.hasOutputTokens || usageTotals.hasThoughtTokens || usageTotals.hasToolUseTokens;
+  if (!hasTurnTokenClasses) {
+    return undefined;
+  }
+
+  return usageTotals.outputTokens + usageTotals.thoughtTokens + usageTotals.toolUseTokens;
 }
 
 export function withAssistantInteractionMetadata(

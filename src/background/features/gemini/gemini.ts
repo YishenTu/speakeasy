@@ -74,11 +74,15 @@ export async function completeAssistantTurn(
   let latestAssistantContent: GeminiContent | null = null;
   const requestStartedAtMs = getMonotonicNowMs();
   let firstStreamTokenAtMs: number | null = null;
+  let firstOutputTokenAtMs: number | null = null;
   const usageTotals = createEmptyUsageTotals();
   const streamDeltaHandler = onStreamDelta
     ? (delta: GeminiStreamDelta): void => {
         if ((delta.textDelta || delta.thinkingDelta) && firstStreamTokenAtMs === null) {
           firstStreamTokenAtMs = getMonotonicNowMs();
+        }
+        if (delta.textDelta && firstOutputTokenAtMs === null) {
+          firstOutputTokenAtMs = getMonotonicNowMs();
         }
         onStreamDelta(delta);
       }
@@ -113,6 +117,7 @@ export async function completeAssistantTurn(
         usageTotals,
         requestStartedAtMs,
         firstStreamTokenAtMs,
+        firstOutputTokenAtMs,
       });
       session.contents[session.contents.length - 1] = finalContent;
       return finalContent;
@@ -124,6 +129,7 @@ export async function completeAssistantTurn(
         usageTotals,
         requestStartedAtMs,
         firstStreamTokenAtMs,
+        firstOutputTokenAtMs,
       });
       session.contents[session.contents.length - 1] = finalContent;
       return finalContent;
@@ -150,6 +156,7 @@ export async function completeAssistantTurn(
       usageTotals,
       requestStartedAtMs,
       firstStreamTokenAtMs,
+      firstOutputTokenAtMs,
     });
     for (let index = session.contents.length - 1; index >= 0; index -= 1) {
       if (session.contents[index]?.role === 'model') {
@@ -169,6 +176,7 @@ function finalizeAssistantContent(
     usageTotals: ReturnType<typeof createEmptyUsageTotals>;
     requestStartedAtMs: number;
     firstStreamTokenAtMs: number | null;
+    firstOutputTokenAtMs: number | null;
   },
 ): GeminiContent {
   const completedAtMs = getMonotonicNowMs();
@@ -178,6 +186,7 @@ function finalizeAssistantContent(
       usageTotals: input.usageTotals,
       requestStartedAtMs: input.requestStartedAtMs,
       firstStreamTokenAtMs: input.firstStreamTokenAtMs,
+      firstOutputTokenAtMs: input.firstOutputTokenAtMs,
       completedAtMs,
     }),
   );

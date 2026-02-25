@@ -339,14 +339,14 @@ function createStatsDisclosure(
   const rows: Array<[string, string]> = [
     ['Turn TTFT', `${Math.round(stats.timeToFirstTokenMs)} ms`],
     ['Duration', `${Math.round(stats.requestDurationMs)} ms`],
-    ['Turn Output TPS', formatTokensPerSecond(stats.outputTokensPerSecond)],
+    ['Turn TPS', formatTokensPerSecond(stats.turnTokensPerSecond)],
+    ['Output TPS', formatTokensPerSecond(stats.outputTokensPerSecond)],
     ['Output Tokens', formatTokenCount(stats.outputTokens)],
     ['Input Tokens', formatTokenCount(stats.inputTokens)],
     ['Thought Tokens', formatTokenCount(stats.thoughtTokens)],
     ['Tool Tokens', formatTokenCount(stats.toolUseTokens)],
     ['Cached Tokens', formatTokenCount(stats.cachedTokens)],
     ['Total Tokens', formatTokenCount(stats.totalTokens)],
-    ['Turn TTFT Source', stats.hasStreamingToken ? 'stream delta' : 'completion fallback'],
   ];
 
   for (const [labelText, valueText] of rows) {

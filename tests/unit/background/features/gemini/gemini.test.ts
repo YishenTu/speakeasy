@@ -605,6 +605,7 @@ describe('normalizeContent', () => {
           requestDurationMs: 1000,
           timeToFirstTokenMs: 140,
           outputTokens: 21,
+          turnTokensPerSecond: 46.2,
           outputTokensPerSecond: 33.3,
           hasStreamingToken: true,
         },
@@ -614,6 +615,7 @@ describe('normalizeContent', () => {
       requestDurationMs: 1000,
       timeToFirstTokenMs: 140,
       outputTokens: 21,
+      turnTokensPerSecond: 46.2,
       outputTokensPerSecond: 33.3,
       hasStreamingToken: true,
     });
@@ -1364,6 +1366,7 @@ describe('completeAssistantTurn', () => {
     expect(stats?.requestDurationMs).toBeGreaterThanOrEqual(0);
     expect(stats?.timeToFirstTokenMs).toBeGreaterThanOrEqual(0);
     expect(stats?.timeToFirstTokenMs).toBe(stats?.requestDurationMs);
+    expect(stats?.turnTokensPerSecond).toBeGreaterThan(0);
     expect(stats?.outputTokensPerSecond).toBeGreaterThan(0);
   });
 
@@ -1406,6 +1409,8 @@ describe('completeAssistantTurn', () => {
     expect(stats?.requestDurationMs).toBeGreaterThanOrEqual(0);
     expect(stats?.timeToFirstTokenMs).toBeGreaterThanOrEqual(0);
     expect(stats?.timeToFirstTokenMs).toBeLessThanOrEqual(stats?.requestDurationMs ?? 0);
+    expect(stats?.turnTokensPerSecond).toBeGreaterThan(0);
+    expect(stats?.outputTokensPerSecond).toBeGreaterThan(0);
   });
 
   it('aggregates interaction usage across function-call round trips', async () => {
@@ -1459,6 +1464,8 @@ describe('completeAssistantTurn', () => {
       totalTokens: 51,
       hasStreamingToken: false,
     });
+    expect(stats?.turnTokensPerSecond).toBeGreaterThan(0);
+    expect(stats?.outputTokensPerSecond).toBeGreaterThan(0);
   });
 
   it('throws when Gemini returns a non-object payload', async () => {
