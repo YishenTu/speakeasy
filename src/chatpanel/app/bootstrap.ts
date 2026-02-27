@@ -1033,8 +1033,15 @@ export function mountChatPanel(): void {
 
 function appendVideoUrlPrompt(inputValue: string, videoUrl: string): string {
   const promptLine = `${VIDEO_URL_PROMPT_PREFIX}${videoUrl}`;
-  if (inputValue.includes(promptLine)) {
-    return inputValue;
+  const lines = inputValue.split('\n');
+  const existingPromptIndex = lines.findIndex((line) => line.startsWith(VIDEO_URL_PROMPT_PREFIX));
+  if (existingPromptIndex >= 0) {
+    if (lines[existingPromptIndex] === promptLine) {
+      return inputValue;
+    }
+
+    lines[existingPromptIndex] = promptLine;
+    return lines.join('\n');
   }
 
   const separator = !inputValue || inputValue.endsWith('\n') ? '' : '\n';
