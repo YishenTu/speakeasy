@@ -493,6 +493,115 @@ describe('chatpanel regenerate flow', () => {
     });
   });
 
+  function getToolbarButtons(shadowRoot: ShadowRoot) {
+    const extractTextButton = shadowRoot.querySelector(
+      '#speakeasy-extract-page-text',
+    ) as HTMLButtonElement;
+    const captureButton = shadowRoot.querySelector(
+      '#speakeasy-capture-full-page',
+    ) as HTMLButtonElement;
+    const videoUrlButton = shadowRoot.querySelector(
+      '#speakeasy-attach-video-url',
+    ) as HTMLButtonElement;
+    expect(extractTextButton).not.toBeNull();
+    expect(captureButton).not.toBeNull();
+    expect(videoUrlButton).not.toBeNull();
+    return { extractTextButton, captureButton, videoUrlButton };
+  }
+
+  it('shows TXT and screenshot actions for non-YouTube tabs', async () => {
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const { extractTextButton, captureButton, videoUrlButton } = getToolbarButtons(
+      getChatpanelShadowRoot(),
+    );
+    expect(extractTextButton.hidden).toBe(false);
+    expect(captureButton.hidden).toBe(false);
+    expect(videoUrlButton.hidden).toBe(true);
+  });
+
+  it('shows TXT and screenshot actions for non-video YouTube tabs', async () => {
+    dom.window.location.href = 'https://www.youtube.com/results?search_query=vid123';
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const { extractTextButton, captureButton, videoUrlButton } = getToolbarButtons(
+      getChatpanelShadowRoot(),
+    );
+    expect(extractTextButton.hidden).toBe(false);
+    expect(captureButton.hidden).toBe(false);
+    expect(videoUrlButton.hidden).toBe(true);
+  });
+
+  it('replaces TXT and screenshot actions with a YouTube URL action on YouTube tabs', async () => {
+    const testWindow = getTestWindow();
+    dom.window.location.href = 'https://www.youtube.com/watch?v=vid123&t=9';
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement;
+    const { extractTextButton, captureButton, videoUrlButton } = getToolbarButtons(shadowRoot);
+
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+
+    expect(extractTextButton.hidden).toBe(true);
+    expect(captureButton.hidden).toBe(true);
+    expect(videoUrlButton.hidden).toBe(false);
+
+    input.value = 'Summarize this video';
+    input.setSelectionRange(input.value.length, input.value.length);
+    videoUrlButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(8);
+
+    expect(input.value).toContain('Summarize this video');
+    expect(input.value).toContain('Video URL: https://www.youtube.com/watch?v=vid123&t=9');
+
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(12);
+
+    expect(sendRequest?.type).toBe('chat/send');
+    expect(sendRequest?.text).toContain('Summarize this video');
+    expect(sendRequest?.text).toContain('Video URL: https://www.youtube.com/watch?v=vid123&t=9');
+  });
+
+  it('replaces existing attached YouTube URL line when the current video changes', async () => {
+    const testWindow = getTestWindow();
+    dom.window.location.href = 'https://www.youtube.com/watch?v=vid123&t=90';
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const videoUrlButton = shadowRoot.querySelector(
+      '#speakeasy-attach-video-url',
+    ) as HTMLButtonElement | null;
+
+    expect(input).not.toBeNull();
+    expect(videoUrlButton).not.toBeNull();
+    if (!input || !videoUrlButton) {
+      throw new Error('Expected chatpanel YouTube URL controls.');
+    }
+
+    input.value = 'Compare both';
+    input.setSelectionRange(input.value.length, input.value.length);
+    videoUrlButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(8);
+
+    expect(input.value).toContain('Video URL: https://www.youtube.com/watch?v=vid123&t=90');
+
+    dom.window.location.href = 'https://www.youtube.com/watch?v=vid123';
+    videoUrlButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushMicrotasks(8);
+
+    const lines = input.value.split('\n');
+    const videoLines = lines.filter((line) => line.startsWith('Video URL: '));
+    expect(videoLines).toEqual(['Video URL: https://www.youtube.com/watch?v=vid123']);
+  });
+
   it('reloads conversation history when reopening the panel', async () => {
     await importFreshChatpanelModule();
     await flushMicrotasks();

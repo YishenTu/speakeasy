@@ -23,6 +23,7 @@ import {
 import { isTabExtractTextMessageRequest } from '../../shared/tab-text-extraction-message';
 import { isRecord } from '../../shared/utils';
 import { queryRequiredElement } from '../core/dom';
+import { getYouTubeUrlForPrompt } from '../core/youtube-url';
 import {
   createAttachmentManager,
   extractFilesFromDataTransfer,
@@ -70,6 +71,7 @@ import { createPanelVisibilityController } from './panel-visibility';
 const ROOT_HOST_ID = 'speakeasy-overlay-root';
 const INPUT_MAX_PANEL_HEIGHT_RATIO = 1 / 3;
 const BRAND_LOGO_ASSET_PATH = 'icons/gemini-logo.svg';
+const VIDEO_URL_PROMPT_PREFIX = 'Video URL: ';
 
 export function mountChatPanel(): void {
   if (document.getElementById(ROOT_HOST_ID)) {
@@ -144,6 +146,8 @@ export function mountChatPanel(): void {
     '#speakeasy-text-preview-close',
   );
   const toolbar = createInputToolbar(shadowRoot);
+  const initialYouTubeUrl = getYouTubeUrlForPrompt(window.location.href);
+  const isYouTubeTabContext = initialYouTubeUrl !== null;
   const deleteSessionConfirmation = createDeleteSessionConfirmation(shadowRoot);
   if (resizeHandles.length === 0) {
     throw new Error('Missing resize zones in chat panel template.');
@@ -430,6 +434,7 @@ export function mountChatPanel(): void {
     },
     appendLocalError,
   });
+  syncToolbarActionVisibility();
 
   input.addEventListener('paste', (event) => {
     if (isBusy) {
@@ -466,6 +471,19 @@ export function mountChatPanel(): void {
     }
 
     void extractCurrentTabTextIntoAttachments();
+  });
+
+  toolbar.videoUrlButton.addEventListener('click', () => {
+    if (
+      isBusy ||
+      isCapturingFullPageScreenshot ||
+      isExtractingPageText ||
+      isProcessingMentionAction
+    ) {
+      return;
+    }
+
+    attachCurrentTabYouTubeUrlToInput();
   });
 
   fileInput.addEventListener('change', () => {
@@ -819,6 +837,13 @@ export function mountChatPanel(): void {
     toolbar.attachButton.disabled = toolbarBusy;
     toolbar.captureButton.disabled = toolbarBusy;
     toolbar.extractTextButton.disabled = toolbarBusy;
+    toolbar.videoUrlButton.disabled = toolbarBusy;
+  }
+
+  function syncToolbarActionVisibility(): void {
+    toolbar.extractTextButton.hidden = isYouTubeTabContext;
+    toolbar.captureButton.hidden = isYouTubeTabContext;
+    toolbar.videoUrlButton.hidden = !isYouTubeTabContext;
   }
 
   function syncComposerDisabledState(): void {
@@ -912,6 +937,25 @@ export function mountChatPanel(): void {
     }
   }
 
+  function attachCurrentTabYouTubeUrlToInput(): void {
+    const videoUrl = getYouTubeUrlForPrompt(window.location.href) ?? initialYouTubeUrl;
+    if (!videoUrl) {
+      appendLocalError('Unable to attach the current YouTube URL.');
+      return;
+    }
+
+    const nextValue = appendVideoUrlPrompt(input.value, videoUrl);
+    if (nextValue === input.value) {
+      input.focus();
+      return;
+    }
+
+    input.value = nextValue;
+    input.focus();
+    input.setSelectionRange(nextValue.length, nextValue.length);
+    resizeComposerInput();
+  }
+
   async function handleMentionTabActionSelection(
     tab: MentionableTab,
     token: MentionTokenRange,
@@ -985,6 +1029,23 @@ export function mountChatPanel(): void {
       syncToolbarButtonState();
     }
   }
+}
+
+function appendVideoUrlPrompt(inputValue: string, videoUrl: string): string {
+  const promptLine = `${VIDEO_URL_PROMPT_PREFIX}${videoUrl}`;
+  const lines = inputValue.split('\n');
+  const existingPromptIndex = lines.findIndex((line) => line.startsWith(VIDEO_URL_PROMPT_PREFIX));
+  if (existingPromptIndex >= 0) {
+    if (lines[existingPromptIndex] === promptLine) {
+      return inputValue;
+    }
+
+    lines[existingPromptIndex] = promptLine;
+    return lines.join('\n');
+  }
+
+  const separator = !inputValue || inputValue.endsWith('\n') ? '' : '\n';
+  return `${inputValue}${separator}${promptLine}`;
 }
 
 function waitForNextPaint(): Promise<void> {
