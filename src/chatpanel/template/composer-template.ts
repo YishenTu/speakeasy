@@ -95,7 +95,8 @@ export function getComposerTemplate(): string {
                   title="Attach current YouTube URL"
                   hidden>
                   <svg class="attach-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <path d="M10.5 13.5L13.5 10.5M8.2 15.8a3.25 3.25 0 0 1 0-4.6l2.2-2.2a3.25 3.25 0 1 1 4.6 4.6l-.7.7m1.5-6.1a3.25 3.25 0 0 1 4.6 4.6l-2.2 2.2a3.25 3.25 0 1 1-4.6-4.6l.7-.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <rect x="4" y="6" width="16" height="12" rx="3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M10 9.5L14.5 12L10 14.5V9.5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </button>
                 <button id="speakeasy-attach" class="attach-btn" type="button" aria-label="Attach file" title="Attach file">

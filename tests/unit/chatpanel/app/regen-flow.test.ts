@@ -639,6 +639,89 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList?.textContent).not.toContain('Original flash answer');
   });
 
+  it('ignores overlay toggle while the composer input is focused', async () => {
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const onMessageListener = runtimeMessageListeners[0];
+    expect(typeof onMessageListener).toBe('function');
+    if (!onMessageListener) {
+      throw new Error('Expected runtime message listener.');
+    }
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const shell = shadowRoot.querySelector('#speakeasy-shell') as HTMLElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const closeButton = shadowRoot.querySelector('#speakeasy-close') as HTMLButtonElement | null;
+    expect(shell).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(closeButton).not.toBeNull();
+    if (!shell || !input || !closeButton) {
+      throw new Error('Expected chatpanel shell, input, and close button elements.');
+    }
+
+    onMessageListener({ type: 'overlay/open' });
+    await flushMicrotasks(10);
+    expect(shell.hidden).toBe(false);
+
+    input.focus();
+    onMessageListener({ type: 'overlay/toggle' });
+    await flushMicrotasks(10);
+    expect(shell.hidden).toBe(false);
+
+    closeButton.focus();
+    onMessageListener({ type: 'overlay/toggle' });
+    await flushMicrotasks(10);
+    expect(shell.hidden).toBe(true);
+  });
+
+  it('stops composer keyboard events from bubbling to the page', async () => {
+    const testWindow = getTestWindow();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error('Expected chatpanel input element.');
+    }
+
+    const bubbledKeys: string[] = [];
+    const onKeyDown = (event: Event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      bubbledKeys.push(`down:${keyboardEvent.key}`);
+    };
+    const onKeyUp = (event: Event) => {
+      const keyboardEvent = event as KeyboardEvent;
+      bubbledKeys.push(`up:${keyboardEvent.key}`);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    try {
+      input.dispatchEvent(
+        new testWindow.KeyboardEvent('keydown', {
+          key: 'k',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      input.dispatchEvent(
+        new testWindow.KeyboardEvent('keyup', {
+          key: 'k',
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      await flushMicrotasks(4);
+    } finally {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keyup', onKeyUp);
+    }
+
+    expect(bubbledKeys).toEqual([]);
+  });
+
   it('shows a local error message when opening settings fails', async () => {
     const testWindow = getTestWindow();
     openOptionsErrorMessage = 'Failed to open settings';

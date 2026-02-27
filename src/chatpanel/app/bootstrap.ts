@@ -204,6 +204,12 @@ export function mountChatPanel(): void {
   input.addEventListener('keyup', () => {
     tabMentionController.onInputOrCaretChange();
   });
+  const stopInputKeyboardPropagation = (event: KeyboardEvent) => {
+    event.stopPropagation();
+  };
+  input.addEventListener('keydown', stopInputKeyboardPropagation);
+  input.addEventListener('keyup', stopInputKeyboardPropagation);
+  input.addEventListener('keypress', stopInputKeyboardPropagation);
 
   let isBusy = false;
   let isInputComposing = false;
@@ -739,6 +745,9 @@ export function mountChatPanel(): void {
         break;
       }
       case 'overlay/toggle':
+        if (panelVisibility.isOpen() && shadowRoot.activeElement === input) {
+          break;
+        }
         void panelVisibility.toggle();
         break;
       case 'overlay/open':
