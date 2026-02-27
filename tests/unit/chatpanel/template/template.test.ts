@@ -95,6 +95,9 @@ describe('chatpanel template', () => {
     expect(template).toContain('id="speakeasy-attach"');
     expect(template).toContain('aria-label="Attach file"');
     expect(template).toContain('title="Attach file"');
+    expect(template).toContain('id="speakeasy-attach-video-url"');
+    expect(template).toContain('aria-label="Attach current YouTube URL"');
+    expect(template).toContain('title="Attach current YouTube URL"');
   });
 
   it('renders image preview markup inside the chatpanel container', () => {

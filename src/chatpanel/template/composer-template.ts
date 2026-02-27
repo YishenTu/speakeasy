@@ -87,6 +87,17 @@ export function getComposerTemplate(): string {
                     <circle cx="12" cy="13" r="3" stroke="currentColor" stroke-width="1.8" />
                   </svg>
                 </button>
+                <button
+                  id="speakeasy-attach-video-url"
+                  class="attach-btn"
+                  type="button"
+                  aria-label="Attach current YouTube URL"
+                  title="Attach current YouTube URL"
+                  hidden>
+                  <svg class="attach-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M10.5 13.5L13.5 10.5M8.2 15.8a3.25 3.25 0 0 1 0-4.6l2.2-2.2a3.25 3.25 0 1 1 4.6 4.6l-.7.7m1.5-6.1a3.25 3.25 0 0 1 4.6 4.6l-2.2 2.2a3.25 3.25 0 1 1-4.6-4.6l.7-.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
                 <button id="speakeasy-attach" class="attach-btn" type="button" aria-label="Attach file" title="Attach file">
                   <svg class="attach-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <path d="M8 12.5L14.8 5.7a3 3 0 1 1 4.2 4.2l-8.6 8.6a5 5 0 1 1-7.1-7.1l9-9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>

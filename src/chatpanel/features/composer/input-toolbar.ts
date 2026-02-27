@@ -13,6 +13,7 @@ export interface InputToolbar {
   selectedThinkingLevel(): string;
   captureButton: HTMLButtonElement;
   extractTextButton: HTMLButtonElement;
+  videoUrlButton: HTMLButtonElement;
   attachButton: HTMLButtonElement;
 }
 
@@ -45,6 +46,10 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     '#speakeasy-extract-page-text',
   );
   const attachButton = queryRequiredElement<HTMLButtonElement>(shadowRoot, '#speakeasy-attach');
+  const videoUrlButton = queryRequiredElement<HTMLButtonElement>(
+    shadowRoot,
+    '#speakeasy-attach-video-url',
+  );
   const modelMenuController = createMenuController({ container: modelDropup });
   const thinkingMenuController = createMenuController({ container: thinkingDropup });
   let modelThinkingLevelMap = normalizeGeminiSettings(undefined).modelThinkingLevelMap;
@@ -208,6 +213,7 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     },
     captureButton,
     extractTextButton,
+    videoUrlButton,
     attachButton,
   };
 }
