@@ -117,8 +117,18 @@ describe('chatpanel regenerate flow', () => {
     };
   }>;
 
-  function getTestWindow(): typeof dom.window {
-    return dom.window;
+  function getTestWindow() {
+    // Happy-dom event constructors return types incompatible with the native
+    // DOM Event hierarchy.  Re-type them so constructed events satisfy
+    // dispatchEvent()'s Event parameter.
+    return dom.window as unknown as Omit<
+      InstalledDomEnvironment['window'],
+      'Event' | 'MouseEvent' | 'KeyboardEvent'
+    > & {
+      Event: typeof Event;
+      MouseEvent: typeof MouseEvent;
+      KeyboardEvent: typeof KeyboardEvent;
+    };
   }
 
   beforeEach(() => {
@@ -412,7 +422,7 @@ describe('chatpanel regenerate flow', () => {
               payload: { opened: true as const },
             });
           }
-          throw new Error(`Unexpected runtime request type: ${request.type}`);
+          throw new Error(`Unexpected runtime request type: ${(request as { type: string }).type}`);
         },
         onMessage: {
           addListener: (listener: (request: unknown) => void) => {
@@ -938,6 +948,7 @@ describe('chatpanel regenerate flow', () => {
     }
 
     messageList.scrollTop = 248;
+    messageList.dispatchEvent(new testWindow.Event('scroll'));
     messageList.dispatchEvent(new testWindow.Event('scroll'));
 
     simulatedScrollHeight = 420;
@@ -2274,7 +2285,7 @@ describe('chatpanel regenerate flow', () => {
 
   it('clears drag interaction lock when the panel closes during an active drag', async () => {
     const testWindow = getTestWindow();
-    const globals = globalThis as { Element?: typeof testWindow.Element };
+    const globals = globalThis as unknown as { Element?: typeof testWindow.Element };
     const previousElementCtor = globals.Element;
     globals.Element = testWindow.Element;
 
@@ -2325,7 +2336,7 @@ describe('chatpanel regenerate flow', () => {
       });
       dragHandle.dispatchEvent(pointerDownEvent);
       expect(document.documentElement.style.userSelect).toBe('none');
-      expect(capturedPointerId).toBe(7);
+      expect(capturedPointerId as number | null).toBe(7);
 
       onMessageListener?.({ type: 'overlay/close' });
       expect(document.documentElement.style.userSelect).toBe('');

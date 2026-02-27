@@ -75,7 +75,9 @@ GEMINI_API_KEY=your-real-gemini-key
 | `bun run lint:fix` | Run Biome checks with auto-fixes. |
 | `bun run format` | Apply Biome formatting. |
 | `bun run format:check` | Check formatting without writing changes. |
-| `bun run typecheck` | TypeScript `--noEmit` checks. |
+| `bun run typecheck` | TypeScript `--noEmit` checks for `src/`. |
+| `bun run typecheck:test` | TypeScript `--noEmit` checks for `tests/` with Bun-aware test config. |
+| `bun run typecheck:all` | Run both `typecheck` and `typecheck:test`. |
 | `bun run test:unit` | Run deterministic unit tests. |
 | `bun run test:contract` | Run deterministic contract tests. |
 | `bun run verify` | Local/CI quality gate (`deps:check -> lint -> typecheck -> build -> test:unit -> test:contract`). |

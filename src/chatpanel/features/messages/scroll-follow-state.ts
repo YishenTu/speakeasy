@@ -28,10 +28,15 @@ export function createMessageListAutoScrollState(
     updateFromScroll: (metrics) => {
       const currentScrollTop = Math.max(0, metrics.scrollTop);
       const movedUp = lastScrollTop !== null && currentScrollTop < lastScrollTop;
+      const movedDown = lastScrollTop !== null && currentScrollTop > lastScrollTop;
 
       if (movedUp) {
         autoScrollEnabled = false;
-      } else if (isMessageListNearBottom(metrics, bottomThresholdPx)) {
+      } else if (
+        !autoScrollEnabled &&
+        movedDown &&
+        isMessageListNearBottom(metrics, bottomThresholdPx)
+      ) {
         autoScrollEnabled = true;
       }
 

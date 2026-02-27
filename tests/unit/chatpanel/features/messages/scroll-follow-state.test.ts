@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createMessageListAutoScrollState } from '../../../../../src/chatpanel/features/messages/scroll-follow-state';
 
 describe('message list auto-scroll state', () => {
-  test('starts enabled, pauses immediately on upward scroll, and resumes near bottom', () => {
+  test('stays paused after upward scroll until user intentionally scrolls down near bottom', () => {
     const state = createMessageListAutoScrollState({ bottomThresholdPx: 12 });
 
     expect(state.shouldAutoScroll()).toBe(true);
@@ -23,6 +23,13 @@ describe('message list auto-scroll state', () => {
 
     state.updateFromScroll({
       scrollTop: 392,
+      clientHeight: 100,
+      scrollHeight: 500,
+    });
+    expect(state.shouldAutoScroll()).toBe(false);
+
+    state.updateFromScroll({
+      scrollTop: 400,
       clientHeight: 100,
       scrollHeight: 500,
     });
