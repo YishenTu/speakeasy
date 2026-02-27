@@ -136,6 +136,7 @@ describe('chatpanel page text extraction', () => {
           parse: () => ({
             title: 'Readable',
             content: '<h1>Readable</h1><p>Body paragraph</p>',
+            textContent: 'Readable Body paragraph',
           }),
         };
       },
@@ -167,6 +168,7 @@ describe('chatpanel page text extraction', () => {
           parse: () => ({
             title: 'Readable',
             content: ' ',
+            textContent: ' ',
           }),
         }),
       }),

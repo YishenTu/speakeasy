@@ -1002,7 +1002,7 @@ describe('chatpanel messages', () => {
         branchOptionInteractionIds: ['interaction-a', 'interaction-b'],
         branchOptionCount: 2,
         branchOptionIndex: 2,
-        timestamp: '2026-02-22T18:20:00.000Z',
+        timestamp: Date.parse('2026-02-22T18:20:00.000Z'),
       },
       messageList,
       {

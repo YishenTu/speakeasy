@@ -336,7 +336,7 @@ describe('chat repository', () => {
     idbFactory.open = (() => {
       const request = {} as IDBOpenDBRequest;
       queueMicrotask(() => {
-        request.onblocked?.(new Event('blocked'));
+        request.onblocked?.(new Event('blocked') as unknown as IDBVersionChangeEvent);
       });
       return request;
     }) as typeof indexedDB.open;
@@ -370,7 +370,7 @@ describe('chat repository', () => {
         throw new Error('Expected an opened IndexedDB database.');
       }
 
-      database.onversionchange?.(new Event('versionchange'));
+      database.onversionchange?.(new Event('versionchange') as unknown as IDBVersionChangeEvent);
 
       await expect(repository.listSessions()).resolves.toEqual([]);
       expect(openCallCount).toBe(2);

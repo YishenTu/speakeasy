@@ -1,4 +1,4 @@
-import { Window } from 'happy-dom';
+import { Window as HappyDomWindow } from 'happy-dom';
 
 interface DomGlobalsSnapshot {
   window: typeof globalThis.window | undefined;
@@ -18,20 +18,21 @@ interface DomGlobalsSnapshot {
 }
 
 export interface InstalledDomEnvironment {
-  window: Window;
+  window: typeof globalThis;
   restore: () => void;
 }
 
 export function installDomTestEnvironment(
   html = '<!doctype html><html><body></body></html>',
 ): InstalledDomEnvironment {
-  const window = new Window({ url: 'https://example.test' });
+  const window = new HappyDomWindow({ url: 'https://example.test' });
   window.document.write(html);
   window.document.close();
   // KaTeX auto-render bails out in quirks mode. Happy DOM does not expose
   // compatMode consistently, so force standards mode for deterministic tests.
-  if (window.document.compatMode !== 'CSS1Compat') {
-    Object.defineProperty(window.document, 'compatMode', {
+  const documentWithCompatMode = window.document as unknown as Document & { compatMode?: string };
+  if (documentWithCompatMode.compatMode !== 'CSS1Compat') {
+    Object.defineProperty(documentWithCompatMode, 'compatMode', {
       configurable: true,
       value: 'CSS1Compat',
     });
@@ -82,7 +83,7 @@ export function installDomTestEnvironment(
   });
 
   return {
-    window,
+    window: window as unknown as typeof globalThis,
     restore: () => {
       window.close();
       Object.assign(globalThis, snapshot);

@@ -7,6 +7,53 @@ type RuntimeWithLastError = {
   };
 };
 
+function withAttachCallback(
+  impl: (target: chrome.debugger.Debuggee, version: string, callback: () => void) => void,
+): typeof chrome.debugger.attach {
+  return ((target: chrome.debugger.Debuggee, version: string, callback?: () => void) => {
+    if (callback) {
+      impl(target, version, callback);
+      return;
+    }
+    return Promise.resolve();
+  }) as typeof chrome.debugger.attach;
+}
+
+function withSendCommandCallback(
+  impl: (
+    target: chrome.debugger.Debuggee,
+    method: string,
+    paramsOrCallback: unknown,
+    maybeCallback?: ((result?: unknown) => void) | undefined,
+  ) => void,
+): typeof chrome.debugger.sendCommand {
+  return ((
+    target: chrome.debugger.Debuggee,
+    method: string,
+    paramsOrCallback?: unknown,
+    maybeCallback?: (result?: unknown) => void,
+  ) => {
+    if (typeof paramsOrCallback === 'function' || typeof maybeCallback === 'function') {
+      impl(target, method, paramsOrCallback, maybeCallback);
+      return;
+    }
+
+    return Promise.resolve({});
+  }) as typeof chrome.debugger.sendCommand;
+}
+
+function withDetachCallback(
+  impl: (target: chrome.debugger.Debuggee, callback: () => void) => void,
+): typeof chrome.debugger.detach {
+  return ((target: chrome.debugger.Debuggee, callback?: () => void) => {
+    if (callback) {
+      impl(target, callback);
+      return;
+    }
+    return Promise.resolve();
+  }) as typeof chrome.debugger.detach;
+}
+
 describe('background full-page screenshot', () => {
   beforeEach(() => {
     (globalThis as { chrome?: unknown }).chrome = {
@@ -24,13 +71,16 @@ describe('background full-page screenshot', () => {
     const detachCalls: chrome.debugger.Debuggee[] = [];
 
     const payload = await captureFullPageScreenshot(44, {
-      attach: (target, version, callback) => {
+      attach: withAttachCallback((target, version, callback) => {
         attachCalls.push(target);
         expect(version).toBe('1.3');
         callback();
-      },
-      sendCommand: (target, method, paramsOrCallback, maybeCallback) => {
-        const params = typeof paramsOrCallback === 'function' ? undefined : paramsOrCallback;
+      }),
+      sendCommand: withSendCommandCallback((target, method, paramsOrCallback, maybeCallback) => {
+        const params =
+          typeof paramsOrCallback === 'function' || typeof paramsOrCallback === 'undefined'
+            ? undefined
+            : (paramsOrCallback as object);
         const callback =
           typeof paramsOrCallback === 'function'
             ? (paramsOrCallback as (result?: unknown) => void)
@@ -68,11 +118,11 @@ describe('background full-page screenshot', () => {
         }
 
         callback();
-      },
-      detach: (target, callback) => {
+      }),
+      detach: withDetachCallback((target, callback) => {
         detachCalls.push(target);
         callback();
-      },
+      }),
     });
 
     expect(attachCalls).toEqual([{ tabId: 44 }]);
@@ -112,10 +162,10 @@ describe('background full-page screenshot', () => {
 
     await expect(
       captureFullPageScreenshot(11, {
-        attach: (_target, _version, callback) => {
+        attach: withAttachCallback((_target, _version, callback) => {
           callback();
-        },
-        sendCommand: (_target, method, paramsOrCallback, maybeCallback) => {
+        }),
+        sendCommand: withSendCommandCallback((_target, method, paramsOrCallback, maybeCallback) => {
           const callback =
             typeof paramsOrCallback === 'function'
               ? (paramsOrCallback as (result?: unknown) => void)
@@ -134,11 +184,11 @@ describe('background full-page screenshot', () => {
           }
 
           callback();
-        },
-        detach: (target, callback) => {
+        }),
+        detach: withDetachCallback((target, callback) => {
           detachCalls.push(target);
           callback();
-        },
+        }),
       }),
     ).rejects.toThrow(/full-page screenshot/i);
 
@@ -150,10 +200,10 @@ describe('background full-page screenshot', () => {
 
     await expect(
       captureFullPageScreenshot(33, {
-        attach: (_target, _version, callback) => {
+        attach: withAttachCallback((_target, _version, callback) => {
           callback();
-        },
-        sendCommand: (_target, method, paramsOrCallback, maybeCallback) => {
+        }),
+        sendCommand: withSendCommandCallback((_target, method, paramsOrCallback, maybeCallback) => {
           const callback =
             typeof paramsOrCallback === 'function'
               ? (paramsOrCallback as (result?: unknown) => void)
@@ -169,20 +219,20 @@ describe('background full-page screenshot', () => {
           }
 
           callback();
-        },
-        detach: (_target, callback) => {
+        }),
+        detach: withDetachCallback((_target, callback) => {
           callback();
-        },
+        }),
       }),
     ).rejects.toThrow(/debugger command failed/i);
   });
 
   it('falls back to default screenshot name when title evaluation is unavailable', async () => {
     const payload = await captureFullPageScreenshot(56, {
-      attach: (_target, _version, callback) => {
+      attach: withAttachCallback((_target, _version, callback) => {
         callback();
-      },
-      sendCommand: (_target, method, paramsOrCallback, maybeCallback) => {
+      }),
+      sendCommand: withSendCommandCallback((_target, method, paramsOrCallback, maybeCallback) => {
         const callback =
           typeof paramsOrCallback === 'function'
             ? (paramsOrCallback as (result?: unknown) => void)
@@ -217,10 +267,10 @@ describe('background full-page screenshot', () => {
         }
 
         callback();
-      },
-      detach: (_target, callback) => {
+      }),
+      detach: withDetachCallback((_target, callback) => {
         callback();
-      },
+      }),
     });
 
     expect(payload.fileName).toBe('speakeasy-full-page.png');

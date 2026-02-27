@@ -9,7 +9,7 @@ export async function sendRuntimeRequest<TPayload>(request: RuntimeRequest): Pro
     throw new Error('Background service did not return a response.');
   }
 
-  if (!response.ok) {
+  if (response.ok === false) {
     throw new Error(response.error || 'Background service failed to handle the request.');
   }
 
@@ -25,9 +25,11 @@ export async function requestOpenOptionsPage(): Promise<string | null> {
     type: 'app/open-options',
   })) as RuntimeResponse<OpenOptionsPayload> | undefined;
 
-  if (response?.ok) {
+  if (response?.ok === true) {
     return null;
   }
 
-  return response?.error || 'Unable to open settings.';
+  return response?.ok === false
+    ? response.error || 'Unable to open settings.'
+    : 'Unable to open settings.';
 }

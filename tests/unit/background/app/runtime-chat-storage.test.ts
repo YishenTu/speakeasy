@@ -6,7 +6,12 @@ import {
   completeAssistantTurn,
 } from '../../../../src/background/features/gemini/gemini';
 import type { ChatSession, GeminiContent } from '../../../../src/background/features/session/types';
-import type { RuntimeRequest } from '../../../../src/shared/runtime';
+import type {
+  ChatLoadPayload,
+  ChatNewPayload,
+  ChatSendPayload,
+  RuntimeRequest,
+} from '../../../../src/shared/runtime';
 import type { GeminiSettings } from '../../../../src/shared/settings';
 import { defaultGeminiSettings } from '../../../../src/shared/settings';
 
@@ -208,14 +213,12 @@ describe('runtime chat storage handler', () => {
       generateSessionTitle: async () => '',
     });
 
-    const newPayload = await handler({ type: 'chat/new' });
-    const rawChatId = (newPayload as { chatId: unknown }).chatId;
-    expect(typeof rawChatId === 'string' || rawChatId instanceof String).toBe(true);
-    const chatId = typeof rawChatId === 'string' ? rawChatId : rawChatId.valueOf();
+    const newPayload = (await handler({ type: 'chat/new' })) as ChatNewPayload;
+    const chatId = newPayload.chatId;
     expect(chatId.length).toBeGreaterThan(0);
     expect(repository.upsertCalls.at(0)?.id).toBe(chatId);
     expect(repository.sessions.has(chatId)).toBe(true);
-    const loadPayload = await handler({ type: 'chat/load', chatId });
+    const loadPayload = (await handler({ type: 'chat/load', chatId })) as ChatLoadPayload;
     expect(loadPayload).toMatchObject({ chatId, messages: [] });
 
     repository.sessions.set('chat-send', createSession('chat-send'));
@@ -298,7 +301,10 @@ describe('runtime chat storage handler', () => {
       },
     });
 
-    const loadPayload = await handler({ type: 'chat/load', chatId: 'chat-stats' });
+    const loadPayload = (await handler({
+      type: 'chat/load',
+      chatId: 'chat-stats',
+    })) as ChatLoadPayload;
     expect(loadPayload.messages.at(-1)).toMatchObject({
       role: 'assistant',
       content: 'answer with metrics',
@@ -457,7 +463,7 @@ describe('runtime chat storage handler', () => {
 
     releaseSend();
     await sendPromise;
-    const loadPayload = await loadPromise;
+    const loadPayload = (await loadPromise) as ChatLoadPayload;
 
     expect(loadPayload).toMatchObject({
       chatId: 'chat-1',
@@ -1198,7 +1204,7 @@ describe('runtime chat storage handler', () => {
       generateSessionTitle: async () => '',
     });
 
-    const sendPayload = await handler({
+    const sendPayload = (await handler({
       type: 'chat/send',
       text: '',
       model: 'gemini-3-flash-preview',
@@ -1210,12 +1216,12 @@ describe('runtime chat storage handler', () => {
           fileName: 'gemini-generated-id-123',
         },
       ],
-    });
+    })) as ChatSendPayload;
 
-    const loadPayload = await handler({
+    const loadPayload = (await handler({
       type: 'chat/load',
       chatId: sendPayload.chatId,
-    });
+    })) as ChatLoadPayload;
 
     const userMessage = loadPayload.messages.find((message) => message.role === 'user');
     expect(userMessage).toBeDefined();

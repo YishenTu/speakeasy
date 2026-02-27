@@ -32,7 +32,7 @@ export async function extractTabTextById(
   if (!isTabExtractTextMessageResponse(response)) {
     throw new Error('Tab text extraction returned an invalid response payload.');
   }
-  if (!response.ok) {
+  if (response.ok === false) {
     throw new Error(response.error || 'Tab text extraction failed.');
   }
   return normalizeExtractedTextPayload(response.payload);
