@@ -1027,6 +1027,9 @@ describe('chatpanel regenerate flow', () => {
     await flushMicrotasks(6);
     expect(messageList.scrollTop).toBe(700);
 
+    messageList.scrollTop = 600;
+    messageList.dispatchEvent(new testWindow.Event('scroll'));
+
     currentMessages = [
       { id: 'persisted-user-2', role: 'user', content: 'second prompt' },
       {
@@ -1048,7 +1051,11 @@ describe('chatpanel regenerate flow', () => {
         },
       },
     });
-    await flushMicrotasks(20);
+    simulatedScrollHeight = 760;
+    const loadCountBeforeSecondCompletion = loadRequests.length;
+    await flushMicrotasks(80);
+    expect(loadRequests.length).toBeGreaterThan(loadCountBeforeSecondCompletion);
+    expect(messageList.scrollTop).toBe(600);
   });
 
   it('shows image previews inline within the chatpanel for staged and message attachments', async () => {
