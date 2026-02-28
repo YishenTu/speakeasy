@@ -198,6 +198,12 @@ describe('chatpanel template', () => {
     );
   });
 
+  it('enforces hidden attribute semantics for shadow-dom controls', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toMatch(/\[hidden\]\s*{\s*display:\s*none\s*!important;\s*}/);
+  });
+
   it('uses square staged-file previews and removes legacy chip styling', () => {
     const template = getChatPanelTemplate();
 

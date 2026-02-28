@@ -28,6 +28,10 @@ export function getChatPanelStyles(): string {
         --sp-transition-medium: 150ms ease;
       }
 
+      [hidden] {
+        display: none !important;
+      }
+
       .shell {
         position: fixed;
         top: 18px;
