@@ -1,5 +1,5 @@
 const MAX_SESSION_TITLE_LENGTH = 60;
-export const SESSION_TITLE_MODEL = 'gemini-flash-lite-latest';
+export const SESSION_TITLE_MODEL = 'gemini-3.1-flash-lite-preview';
 
 export function buildSessionTitlePrompt(firstUserQuery: string): string {
   const lines = [

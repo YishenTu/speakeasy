@@ -1,7 +1,6 @@
 import {
   DEFAULT_GEMINI_MODEL,
   GEMINI_SETTINGS_STORAGE_KEY,
-  getModelDisplayLabel,
   getModelThinkingLevels,
   normalizeGeminiSettings,
 } from '../../../shared/settings';
@@ -115,28 +114,6 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
     );
   }
 
-  function applyCustomModels(customModels: string[]): void {
-    const existing = new Set<string>();
-    for (const item of Array.from(modelMenu.querySelectorAll('.dropup-item'))) {
-      if ((item as HTMLElement).dataset.custom) {
-        item.remove();
-      } else {
-        existing.add(item.getAttribute('data-value') ?? '');
-      }
-    }
-    for (const model of customModels) {
-      if (!existing.has(model)) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'dropup-item';
-        btn.dataset.value = model;
-        btn.dataset.custom = '1';
-        btn.textContent = getModelDisplayLabel(model);
-        modelMenu.appendChild(btn);
-      }
-    }
-  }
-
   modelTrigger.addEventListener('click', (e) => {
     e.stopPropagation();
     const wasOpen = modelMenuController.isOpen();
@@ -185,7 +162,6 @@ export function createInputToolbar(shadowRoot: ShadowRoot): InputToolbar {
   function applySettings(settingsValue: unknown, keepThinkingSelection = false): void {
     const settings = normalizeGeminiSettings(settingsValue);
     modelThinkingLevelMap = settings.modelThinkingLevelMap;
-    applyCustomModels(settings.customModels);
     const preferred = keepThinkingSelection ? thinkingTrigger.dataset.value : undefined;
     updateThinkingOptions(selectedModelValue(), preferred);
   }

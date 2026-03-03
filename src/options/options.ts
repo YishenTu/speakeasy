@@ -1,11 +1,6 @@
 import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../shared/settings';
 import { getOptionsDom, setStatus } from './dom';
-import {
-  addCustomModelRow,
-  applySettingsToForm,
-  readFormState,
-  removeCustomModelRow,
-} from './form-state';
+import { applySettingsToForm, readFormState } from './form-state';
 import { validateSettings } from './validation';
 
 const dom = getOptionsDom();
@@ -13,22 +8,6 @@ let currentSettings = normalizeGeminiSettings(undefined);
 
 dom.versionNode.textContent = chrome.runtime.getManifest().version;
 void initializeForm();
-
-dom.addCustomModelButton.addEventListener('click', () => {
-  addCustomModelRow(dom);
-});
-
-dom.customModelRowsContainer.addEventListener('click', (event) => {
-  const removeButton = (event.target as Element).closest<HTMLElement>('[data-remove-custom-model]');
-  if (!removeButton) {
-    return;
-  }
-
-  const row = removeButton.closest<HTMLElement>('[data-custom-model-row]');
-  if (row) {
-    removeCustomModelRow(row);
-  }
-});
 
 dom.form.addEventListener('submit', async (event) => {
   event.preventDefault();

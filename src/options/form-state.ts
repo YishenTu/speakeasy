@@ -1,6 +1,4 @@
 import {
-  CUSTOM_MODEL_THINKING_LEVELS,
-  DEFAULT_CUSTOM_MODEL_THINKING_LEVEL,
   type GeminiSettings,
   type ThinkingLevel,
   getBuiltinGeminiModelByKey,
@@ -9,10 +7,8 @@ import {
 import type { OptionsDom } from './dom';
 
 const FLASH_MODEL = getBuiltinGeminiModelByKey('flash');
+const FLASH_LITE_MODEL = getBuiltinGeminiModelByKey('flash-lite');
 const PRO_MODEL = getBuiltinGeminiModelByKey('pro');
-const CUSTOM_MODEL_ROW_SELECTOR = '[data-custom-model-row]';
-const CUSTOM_MODEL_INPUT_SELECTOR = '[data-custom-model-input]';
-const CUSTOM_MODEL_THINKING_LEVEL_SELECTOR = '[data-custom-model-thinking-level]';
 const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
   minimal: 'Minimal (fastest)',
   low: 'Low',
@@ -22,15 +18,14 @@ const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
 
 export function initializeModelThinkingControls(dom: OptionsDom): void {
   dom.modelFlashNameInput.value = FLASH_MODEL.model;
+  dom.modelFlashLiteNameInput.value = FLASH_LITE_MODEL.model;
   dom.modelProNameInput.value = PRO_MODEL.model;
   replaceThinkingLevelOptions(dom.modelFlashThinkingLevelSelect, FLASH_MODEL.thinkingLevels);
-  replaceThinkingLevelOptions(dom.modelProThinkingLevelSelect, PRO_MODEL.thinkingLevels);
-
-  const templateThinkingLevelSelect = queryRequiredInTemplate<HTMLSelectElement>(
-    dom.customModelRowTemplate,
-    CUSTOM_MODEL_THINKING_LEVEL_SELECTOR,
+  replaceThinkingLevelOptions(
+    dom.modelFlashLiteThinkingLevelSelect,
+    FLASH_LITE_MODEL.thinkingLevels,
   );
-  replaceThinkingLevelOptions(templateThinkingLevelSelect, CUSTOM_MODEL_THINKING_LEVELS);
+  replaceThinkingLevelOptions(dom.modelProThinkingLevelSelect, PRO_MODEL.thinkingLevels);
 }
 
 export function applySettingsToForm(dom: OptionsDom, settings: GeminiSettings): void {
@@ -42,12 +37,16 @@ export function applySettingsToForm(dom: OptionsDom, settings: GeminiSettings): 
     FLASH_MODEL.thinkingLevels,
     FLASH_MODEL.defaultThinkingLevel,
   );
+  dom.modelFlashLiteThinkingLevelSelect.value = normalizeThinkingLevelForAllowed(
+    settings.modelThinkingLevelMap[FLASH_LITE_MODEL.model],
+    FLASH_LITE_MODEL.thinkingLevels,
+    FLASH_LITE_MODEL.defaultThinkingLevel,
+  );
   dom.modelProThinkingLevelSelect.value = normalizeThinkingLevelForAllowed(
     settings.modelThinkingLevelMap[PRO_MODEL.model],
     PRO_MODEL.thinkingLevels,
     PRO_MODEL.defaultThinkingLevel,
   );
-  replaceCustomModelRows(dom, settings.customModels, settings.modelThinkingLevelMap);
 
   dom.systemInstructionInput.value = settings.systemInstruction;
   dom.storeInteractionsInput.checked = settings.storeInteractions;
@@ -78,38 +77,20 @@ export function readFormState(dom: OptionsDom): Partial<GeminiSettings> {
       FLASH_MODEL.thinkingLevels,
       FLASH_MODEL.defaultThinkingLevel,
     ),
+    [FLASH_LITE_MODEL.model]: normalizeThinkingLevelForAllowed(
+      dom.modelFlashLiteThinkingLevelSelect.value,
+      FLASH_LITE_MODEL.thinkingLevels,
+      FLASH_LITE_MODEL.defaultThinkingLevel,
+    ),
     [PRO_MODEL.model]: normalizeThinkingLevelForAllowed(
       dom.modelProThinkingLevelSelect.value,
       PRO_MODEL.thinkingLevels,
       PRO_MODEL.defaultThinkingLevel,
     ),
   };
-  const customModels: string[] = [];
-  const seenModels = new Set<string>();
-
-  for (const row of listCustomModelRows(dom)) {
-    const modelInput = queryRequiredInRow<HTMLInputElement>(row, CUSTOM_MODEL_INPUT_SELECTOR);
-    const thinkingLevelInput = queryRequiredInRow<HTMLSelectElement>(
-      row,
-      CUSTOM_MODEL_THINKING_LEVEL_SELECTOR,
-    );
-    const model = modelInput.value.trim();
-    if (!model || seenModels.has(model)) {
-      continue;
-    }
-
-    seenModels.add(model);
-    customModels.push(model);
-    modelThinkingLevelMap[model] = normalizeThinkingLevelForAllowed(
-      thinkingLevelInput.value,
-      CUSTOM_MODEL_THINKING_LEVELS,
-      DEFAULT_CUSTOM_MODEL_THINKING_LEVEL,
-    );
-  }
 
   return {
     apiKey: dom.apiKeyInput.value.trim(),
-    customModels,
     modelThinkingLevelMap,
     systemInstruction: dom.systemInstructionInput.value.trim(),
     storeInteractions: dom.storeInteractionsInput.checked,
@@ -132,79 +113,6 @@ export function readFormState(dom: OptionsDom): Partial<GeminiSettings> {
     mapsLongitude: parseNullableNumber(dom.mapsLongitudeInput.value),
     computerUseExcludedActions: parseCommaSeparatedList(dom.computerUseExcludedActionsInput.value),
   };
-}
-
-export function addCustomModelRow(
-  dom: OptionsDom,
-  model = '',
-  thinkingLevel: string | undefined = DEFAULT_CUSTOM_MODEL_THINKING_LEVEL,
-): HTMLElement {
-  const templateRoot = dom.customModelRowTemplate.content.firstElementChild as HTMLElement | null;
-  if (!templateRoot) {
-    throw new Error('Custom model row template must have a root element.');
-  }
-
-  const row = templateRoot.cloneNode(true) as HTMLElement;
-  const thinkingLevelInput = queryRequiredInRow<HTMLSelectElement>(
-    row,
-    CUSTOM_MODEL_THINKING_LEVEL_SELECTOR,
-  );
-  if (thinkingLevelInput.options.length === 0) {
-    replaceThinkingLevelOptions(thinkingLevelInput, CUSTOM_MODEL_THINKING_LEVELS);
-  }
-
-  queryRequiredInRow<HTMLInputElement>(row, CUSTOM_MODEL_INPUT_SELECTOR).value = model;
-  thinkingLevelInput.value = normalizeThinkingLevelForAllowed(
-    thinkingLevel,
-    CUSTOM_MODEL_THINKING_LEVELS,
-    DEFAULT_CUSTOM_MODEL_THINKING_LEVEL,
-  );
-
-  dom.customModelRowsContainer.appendChild(row);
-  return row;
-}
-
-export function removeCustomModelRow(row: HTMLElement): void {
-  row.remove();
-}
-
-function replaceCustomModelRows(
-  dom: OptionsDom,
-  customModels: readonly string[],
-  modelThinkingLevelMap: Record<string, string>,
-): void {
-  dom.customModelRowsContainer.replaceChildren();
-  for (const model of customModels) {
-    addCustomModelRow(dom, model, modelThinkingLevelMap[model]);
-  }
-}
-
-function listCustomModelRows(dom: OptionsDom): HTMLElement[] {
-  return Array.from(
-    dom.customModelRowsContainer.querySelectorAll<HTMLElement>(CUSTOM_MODEL_ROW_SELECTOR),
-  );
-}
-
-function queryRequiredInRow<TElement extends Element>(
-  row: HTMLElement,
-  selector: string,
-): TElement {
-  const element = row.querySelector<TElement>(selector);
-  if (!element) {
-    throw new Error(`Custom model row is missing required node: ${selector}`);
-  }
-  return element;
-}
-
-function queryRequiredInTemplate<TElement extends Element>(
-  template: HTMLTemplateElement,
-  selector: string,
-): TElement {
-  const element = template.content.querySelector<TElement>(selector);
-  if (!element) {
-    throw new Error(`Custom model template is missing required node: ${selector}`);
-  }
-  return element;
 }
 
 function replaceThinkingLevelOptions(

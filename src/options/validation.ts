@@ -14,9 +14,7 @@ export function validateSettings(settings: GeminiSettings): string | null {
     return 'Provide both maps latitude and longitude, or leave both empty.';
   }
 
-  const toolConfigurationError = validateGeminiToolConfiguration(settings, {
-    mcpModelValidationScope: 'available-models',
-  });
+  const toolConfigurationError = validateGeminiToolConfiguration(settings);
   if (toolConfigurationError) {
     return toolConfigurationError;
   }

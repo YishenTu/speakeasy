@@ -100,6 +100,27 @@ describe('chatpanel template', () => {
     expect(template).toContain('title="Attach current YouTube URL"');
   });
 
+  it('orders model selector items as pro, flash, lite and uses lite alias', () => {
+    const template = getChatPanelTemplate();
+
+    const proItem = 'class="dropup-item" data-value="gemini-3.1-pro-preview"';
+    const flashItem = 'class="dropup-item" data-value="gemini-3-flash-preview"';
+    const liteItem = 'class="dropup-item" data-value="gemini-3.1-flash-lite-preview"';
+    const proIndex = template.indexOf(proItem);
+    const flashIndex = template.indexOf(flashItem);
+    const liteIndex = template.indexOf(liteItem);
+
+    expect(proIndex).toBeGreaterThan(-1);
+    expect(flashIndex).toBeGreaterThan(-1);
+    expect(liteIndex).toBeGreaterThan(-1);
+    expect(proIndex).toBeLessThan(flashIndex);
+    expect(flashIndex).toBeLessThan(liteIndex);
+    expect(template).toContain(
+      '<button type="button" class="dropup-item" data-value="gemini-3.1-flash-lite-preview">Lite</button>',
+    );
+    expect(template).not.toContain('>Flash Lite<');
+  });
+
   it('renders image preview markup inside the chatpanel container', () => {
     const template = getChatPanelTemplate();
 

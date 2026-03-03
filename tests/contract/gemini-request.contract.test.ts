@@ -97,25 +97,19 @@ describe('Gemini interactions request contract', () => {
     ]);
   });
 
-  it('builds mcp tool list in interactions format', () => {
+  it('rejects remote mcp tool usage in interactions requests', () => {
     const settings = createBaseSettings();
-    settings.model = 'gemini-2.5-flash';
+    settings.model = 'custom-legacy-model';
     settings.tools.mcpServers = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
 
-    const plan = composeGeminiInteractionRequest({
-      settings,
-      input: [{ type: 'text', text: 'query remote mcp' }],
-      functionDeclarations: FUNCTION_DECLARATIONS,
-    });
-
-    expect(plan.request.tools).toEqual([
-      {
-        type: 'mcp_server',
-        name: 'mcp_server_1',
-        url: 'https://mcp.example.com/stream',
-      },
-    ]);
+    expect(() =>
+      composeGeminiInteractionRequest({
+        settings,
+        input: [{ type: 'text', text: 'query remote mcp' }],
+        functionDeclarations: FUNCTION_DECLARATIONS,
+      }),
+    ).toThrow(/remote mcp is not supported/i);
   });
 
   it('rejects mixing function calling and native tools in interactions', () => {

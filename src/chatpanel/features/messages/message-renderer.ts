@@ -383,6 +383,10 @@ function createAssistantActionBar(
     return null;
   }
 
+  if (message.isStreaming) {
+    return null;
+  }
+
   const hasRegenerateAction = !!message.interactionId?.trim() && !!options.onAssistantAction;
   const branchOptions = message.branchOptionInteractionIds ?? [];
   const hasBranchSwitchAction = branchOptions.length > 1 && !!options.onAssistantBranchSelect;

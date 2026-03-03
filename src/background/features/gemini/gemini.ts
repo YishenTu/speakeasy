@@ -2,7 +2,6 @@ import type { FileDataAttachmentPayload } from '../../../shared/runtime';
 import type { GeminiSettings } from '../../../shared/settings';
 import { isRecord, toErrorMessage } from '../../core/utils';
 import type { ChatSession, GeminiContent } from '../session/types';
-import { getGeminiClient } from './gemini-client';
 import { composeGeminiInteractionRequest } from './gemini-request';
 import { normalizeContent } from './gemini/content-normalize';
 import {
@@ -10,7 +9,7 @@ import {
   renderContentForChat,
   renderThinkingSummaryForChat,
 } from './gemini/content-render';
-import type { GeminiStreamDelta, SDKCreateInteractionRequest } from './gemini/contracts';
+import type { GeminiStreamDelta } from './gemini/contracts';
 import {
   InvalidPreviousInteractionIdError,
   isInvalidPreviousInteractionIdError,
@@ -202,7 +201,7 @@ async function callGeminiInteractionWithFunctionResultRetry(input: {
 }): Promise<Awaited<ReturnType<typeof callGeminiInteraction>>> {
   try {
     return await callGeminiInteractionWithOptionalStreaming({
-      settings: input.settings,
+      apiKey: input.settings.apiKey,
       request: input.requestPlan.request,
       ...(input.onStreamDelta ? { onStreamDelta: input.onStreamDelta } : {}),
     });
@@ -229,7 +228,7 @@ async function callGeminiInteractionWithFunctionResultRetry(input: {
     });
 
     return callGeminiInteractionWithOptionalStreaming({
-      settings: input.settings,
+      apiKey: input.settings.apiKey,
       request: retryRequestPlan.request,
       ...(input.onStreamDelta ? { onStreamDelta: input.onStreamDelta } : {}),
     });
@@ -237,20 +236,20 @@ async function callGeminiInteractionWithFunctionResultRetry(input: {
 }
 
 async function callGeminiInteractionWithOptionalStreaming(input: {
-  settings: GeminiSettings;
+  apiKey: string;
   request: unknown;
   onStreamDelta?: (delta: GeminiStreamDelta) => void;
 }): Promise<Awaited<ReturnType<typeof callGeminiInteraction>>> {
   if (input.onStreamDelta) {
     return callGeminiInteractionStream({
-      settings: input.settings,
+      apiKey: input.apiKey,
       request: input.request,
       onStreamDelta: input.onStreamDelta,
     });
   }
 
   return callGeminiInteraction({
-    settings: input.settings,
+    apiKey: input.apiKey,
     request: input.request,
   });
 }
@@ -346,23 +345,17 @@ export async function generateSessionTitle(
     })),
   ];
 
-  const client = getGeminiClient(normalizedApiKey);
-  const response = (await client.interactions.create({
-    model: SESSION_TITLE_MODEL,
-    input,
-    store: false,
-  } as unknown as SDKCreateInteractionRequest)) as unknown;
+  const interaction = await callGeminiInteraction({
+    apiKey: normalizedApiKey,
+    request: {
+      model: SESSION_TITLE_MODEL,
+      input,
+      store: false,
+    },
+  });
 
-  if (!isRecord(response)) {
-    throw new Error('Gemini title generation response payload was not a JSON object.');
-  }
-
-  const rawOutputs = Array.isArray(response.outputs) ? response.outputs : [];
+  const rawOutputs = interaction.outputs ?? [];
   for (const rawOutput of rawOutputs) {
-    if (!isRecord(rawOutput)) {
-      continue;
-    }
-
     if (rawOutput.type !== 'text' || typeof rawOutput.text !== 'string') {
       continue;
     }

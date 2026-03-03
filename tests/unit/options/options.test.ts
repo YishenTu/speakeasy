@@ -24,11 +24,9 @@ describe('options page bootstrap', () => {
     storedSettings = {
       apiKey: 'init-key',
       model: 'gemini-3.1-pro-preview',
-      customModels: ['gemini-3.2-custom', 'gemini-3.2-beta'],
       modelThinkingLevelMap: {
         'gemini-3-flash-preview': 'high',
-        'gemini-3.2-custom': 'medium',
-        'gemini-3.2-beta': 'low',
+        'gemini-3.1-flash-lite-preview': 'low',
       },
       maxToolRoundTrips: 7,
       pageTextExtractionEngine: 'readability',
@@ -46,18 +44,18 @@ describe('options page bootstrap', () => {
     expect((document.getElementById('model-thinking-level-flash') as HTMLSelectElement).value).toBe(
       'high',
     );
+    expect((document.getElementById('model-name-flash-lite') as HTMLInputElement).value).toBe(
+      'gemini-3.1-flash-lite-preview',
+    );
+    expect(
+      (document.getElementById('model-thinking-level-flash-lite') as HTMLSelectElement).value,
+    ).toBe('low');
     expect((document.getElementById('model-name-pro') as HTMLInputElement).value).toBe(
       'gemini-3.1-pro-preview',
     );
     expect((document.getElementById('model-thinking-level-pro') as HTMLSelectElement).value).toBe(
       'high',
     );
-    const customRows = getCustomModelRows();
-    expect(customRows).toHaveLength(2);
-    expect(customRows[0]?.modelInput.value).toBe('gemini-3.2-custom');
-    expect(customRows[0]?.thinkingLevelInput.value).toBe('medium');
-    expect(customRows[1]?.modelInput.value).toBe('gemini-3.2-beta');
-    expect(customRows[1]?.thinkingLevelInput.value).toBe('low');
     expect(
       (document.getElementById('page-text-extraction-engine') as HTMLSelectElement).value,
     ).toBe('readability');
@@ -97,22 +95,9 @@ describe('options page bootstrap', () => {
 
     (document.getElementById('api-key') as HTMLInputElement).value = 'live-key';
     (document.getElementById('model-thinking-level-flash') as HTMLSelectElement).value = 'low';
+    (document.getElementById('model-thinking-level-flash-lite') as HTMLSelectElement).value =
+      'high';
     (document.getElementById('model-thinking-level-pro') as HTMLSelectElement).value = 'medium';
-    const addButton = document.getElementById('add-custom-model') as HTMLButtonElement;
-    addButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    addButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    const customRows = getCustomModelRows();
-    expect(customRows).toHaveLength(2);
-    const firstCustomRow = customRows[0];
-    const secondCustomRow = customRows[1];
-    if (!firstCustomRow || !secondCustomRow) {
-      throw new Error('Expected two custom model rows.');
-    }
-
-    firstCustomRow.modelInput.value = 'gemini-3.2-custom';
-    firstCustomRow.thinkingLevelInput.value = 'high';
-    secondCustomRow.modelInput.value = 'gemini-3.2-beta';
-    secondCustomRow.thinkingLevelInput.value = 'low';
     (document.getElementById('max-tool-round-trips') as HTMLInputElement).value = '4';
     (document.getElementById('page-text-extraction-engine') as HTMLSelectElement).value =
       'readability';
@@ -125,7 +110,6 @@ describe('options page bootstrap', () => {
       | {
           apiKey?: string;
           model?: string;
-          customModels?: string[];
           modelThinkingLevelMap?: Record<string, string>;
           maxToolRoundTrips?: number;
           pageTextExtractionEngine?: string;
@@ -133,19 +117,17 @@ describe('options page bootstrap', () => {
       | undefined;
     expect(persisted?.apiKey).toBe('live-key');
     expect(persisted?.model).toBe('gemini-3-flash-preview');
-    expect(persisted?.customModels).toEqual(['gemini-3.2-custom', 'gemini-3.2-beta']);
     expect(persisted?.modelThinkingLevelMap).toEqual({
       'gemini-3-flash-preview': 'low',
+      'gemini-3.1-flash-lite-preview': 'high',
       'gemini-3.1-pro-preview': 'medium',
-      'gemini-3.2-custom': 'high',
-      'gemini-3.2-beta': 'low',
     });
     expect(persisted?.maxToolRoundTrips).toBe(4);
     expect(persisted?.pageTextExtractionEngine).toBe('readability');
     expect(document.getElementById('save-status')?.textContent).toBe('Saved Gemini settings.');
   });
 
-  it('persists MCP settings when a Gemini 2.5 custom model is configured', async () => {
+  it('shows validation error and skips writes when MCP servers are enabled', async () => {
     const testWindow = dom?.window;
     if (!testWindow) {
       throw new Error('DOM test environment is not installed.');
@@ -163,35 +145,17 @@ describe('options page bootstrap', () => {
     (document.getElementById('mcp-server-urls') as HTMLInputElement).value =
       'https://mcp.example.com/stream';
 
-    const addButton = document.getElementById('add-custom-model') as HTMLButtonElement;
-    addButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    const customRows = getCustomModelRows();
-    const firstCustomRow = customRows[0];
-    if (!firstCustomRow) {
-      throw new Error('Expected one custom model row.');
-    }
-    firstCustomRow.modelInput.value = 'gemini-2.5-flash';
-    firstCustomRow.thinkingLevelInput.value = 'high';
-
     const form = document.getElementById('settings-form') as HTMLFormElement;
     form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
     await flushTasks();
 
-    expect(savedItems).toHaveLength(1);
-    const persisted = savedItems[0]?.[GEMINI_SETTINGS_STORAGE_KEY] as
-      | {
-          customModels?: string[];
-          tools?: { mcpServers?: boolean };
-          mcpServerUrls?: string[];
-        }
-      | undefined;
-    expect(persisted?.customModels).toEqual(['gemini-2.5-flash']);
-    expect(persisted?.tools?.mcpServers).toBe(true);
-    expect(persisted?.mcpServerUrls).toEqual(['https://mcp.example.com/stream']);
-    expect(document.getElementById('save-status')?.textContent).toBe('Saved Gemini settings.');
+    expect(savedItems).toHaveLength(0);
+    expect(document.getElementById('save-status')?.textContent).toBe(
+      'Remote MCP is not supported in this extension yet.',
+    );
   });
 
-  it('preserves the stored active model because options form does not edit it directly', async () => {
+  it('normalizes unsupported stored active model values back to the default model', async () => {
     const testWindow = dom?.window;
     if (!testWindow) {
       throw new Error('DOM test environment is not installed.');
@@ -199,12 +163,11 @@ describe('options page bootstrap', () => {
 
     storedSettings = {
       apiKey: 'init-key',
-      model: 'gemini-2.5-flash',
-      customModels: ['gemini-2.5-flash'],
+      model: 'custom-legacy-model',
       modelThinkingLevelMap: {
         'gemini-3-flash-preview': 'minimal',
+        'gemini-3.1-flash-lite-preview': 'minimal',
         'gemini-3.1-pro-preview': 'high',
-        'gemini-2.5-flash': 'medium',
       },
     };
     installChromeOptionsMock();
@@ -223,31 +186,7 @@ describe('options page bootstrap', () => {
         }
       | undefined;
     expect(persisted?.apiKey).toBe('updated-key');
-    expect(persisted?.model).toBe('gemini-2.5-flash');
-  });
-
-  it('removes a custom model row when remove is clicked', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
-    installChromeOptionsMock();
-    await importFreshOptionsModule();
-    await flushTasks();
-
-    const addButton = document.getElementById('add-custom-model') as HTMLButtonElement;
-    addButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    addButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    expect(getCustomModelRows()).toHaveLength(2);
-
-    const firstRemoveButton = document.querySelector<HTMLElement>('[data-remove-custom-model]');
-    if (!firstRemoveButton) {
-      throw new Error('First remove button is missing.');
-    }
-    firstRemoveButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-
-    expect(getCustomModelRows()).toHaveLength(1);
+    expect(persisted?.model).toBe('gemini-3-flash-preview');
   });
 
   function installChromeOptionsMock(): void {
@@ -288,17 +227,10 @@ function buildOptionsPageFixtureHtml(): string {
           <input id="api-key" />
           <input id="model-name-flash" />
           <select id="model-thinking-level-flash"></select>
+          <input id="model-name-flash-lite" />
+          <select id="model-thinking-level-flash-lite"></select>
           <input id="model-name-pro" />
           <select id="model-thinking-level-pro"></select>
-          <div id="custom-model-rows"></div>
-          <button id="add-custom-model" type="button">Add custom model</button>
-          <template id="custom-model-row-template">
-            <div data-custom-model-row>
-              <input data-custom-model-input />
-              <select data-custom-model-thinking-level></select>
-              <button type="button" data-remove-custom-model>Remove</button>
-            </div>
-          </template>
           <textarea id="system-instruction"></textarea>
           <input id="store-interactions" type="checkbox" />
           <input id="max-tool-round-trips" value="8" />
@@ -322,23 +254,4 @@ function buildOptionsPageFixtureHtml(): string {
       </body>
     </html>
   `;
-}
-
-function getCustomModelRows(): Array<{
-  modelInput: HTMLInputElement;
-  thinkingLevelInput: HTMLSelectElement;
-}> {
-  return Array.from(document.querySelectorAll<HTMLElement>('[data-custom-model-row]')).map(
-    (row) => {
-      const modelInput = row.querySelector<HTMLInputElement>('[data-custom-model-input]');
-      const thinkingLevelInput = row.querySelector<HTMLSelectElement>(
-        '[data-custom-model-thinking-level]',
-      );
-      if (!modelInput || !thinkingLevelInput) {
-        throw new Error('Custom model row is missing required inputs.');
-      }
-
-      return { modelInput, thinkingLevelInput };
-    },
-  );
 }

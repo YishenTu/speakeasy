@@ -28,62 +28,19 @@ describe('chatpanel input toolbar', () => {
     (globalThis as { chrome?: unknown }).chrome = undefined;
   });
 
-  it('loads custom models and updates thinking levels after model selection', async () => {
-    const testWindow = dom?.window;
-    if (!testWindow) {
-      throw new Error('DOM test environment is not installed.');
-    }
-
+  it('exposes toolbar action controls', async () => {
     installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: ['gemini-3.2-custom'],
-      },
+      [GEMINI_SETTINGS_STORAGE_KEY]: {},
     });
 
     const shadowRoot = createToolbarShadowRoot();
     const toolbar = createInputToolbar(shadowRoot);
     await Promise.resolve();
 
-    const customModelButton = shadowRoot.querySelector<HTMLElement>(
-      '.dropup-item[data-value="gemini-3.2-custom"]',
-    );
-    expect(customModelButton).not.toBeNull();
     expect(toolbar.captureButton.id).toBe('speakeasy-capture-full-page');
     expect(toolbar.extractTextButton.id).toBe('speakeasy-extract-page-text');
     expect(toolbar.attachButton.id).toBe('speakeasy-attach');
     expect(toolbar.videoUrlButton.id).toBe('speakeasy-attach-video-url');
-
-    customModelButton?.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-
-    expect(toolbar.selectedModel()).toBe('gemini-3.2-custom');
-    expect(toolbar.selectedThinkingLevel()).toBe('high');
-    const thinkingValues = Array.from(
-      shadowRoot.querySelectorAll<HTMLElement>('#speakeasy-thinking-dropup .dropup-item'),
-    ).map((node) => node.dataset.value);
-    expect(thinkingValues).toEqual(['high', 'medium', 'low']);
-  });
-
-  it('refreshes custom model menu when settings change', async () => {
-    installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: ['gemini-3.2-alpha'],
-      },
-    });
-
-    const shadowRoot = createToolbarShadowRoot();
-    createInputToolbar(shadowRoot);
-    await Promise.resolve();
-
-    expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-alpha"]')).not.toBeNull();
-
-    emitChanged?.({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        newValue: { customModels: ['gemini-3.2-beta'] },
-      },
-    });
-
-    expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-alpha"]')).toBeNull();
-    expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-beta"]')).not.toBeNull();
   });
 
   it('toggles dropups and closes them when clicking outside menu controls', async () => {
@@ -93,9 +50,7 @@ describe('chatpanel input toolbar', () => {
     }
 
     installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: [],
-      },
+      [GEMINI_SETTINGS_STORAGE_KEY]: {},
     });
 
     const shadowRoot = createToolbarShadowRoot();
@@ -134,9 +89,7 @@ describe('chatpanel input toolbar', () => {
     }
 
     installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: [],
-      },
+      [GEMINI_SETTINGS_STORAGE_KEY]: {},
     });
 
     const shadowRoot = createToolbarShadowRoot();
@@ -162,16 +115,6 @@ describe('chatpanel input toolbar', () => {
       shadowRoot.querySelectorAll<HTMLElement>('#speakeasy-thinking-dropup .dropup-item'),
     ).map((node) => node.dataset.value);
     expect(thinkingValues).toEqual(['high', 'medium', 'low']);
-    expect(
-      shadowRoot
-        .querySelector<HTMLElement>('#speakeasy-thinking-dropup .dropup-item[data-value="high"]')
-        ?.getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(
-      shadowRoot
-        .querySelector<HTMLElement>('#speakeasy-thinking-dropup .dropup-item[data-value="low"]')
-        ?.getAttribute('aria-selected'),
-    ).toBe('false');
   });
 
   it('uses mapped thinking defaults from settings', async () => {
@@ -182,7 +125,6 @@ describe('chatpanel input toolbar', () => {
 
     installChromeStorageMock({
       [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: [],
         modelThinkingLevelMap: {
           'gemini-3.1-pro-preview': 'medium',
         },
@@ -206,11 +148,6 @@ describe('chatpanel input toolbar', () => {
     expect(toolbar.selectedThinkingLevel()).toBe('medium');
     expect(thinkingTrigger.dataset.value).toBe('medium');
     expect(thinkingTrigger.textContent?.trim()).toBe('Med');
-    expect(
-      shadowRoot
-        .querySelector<HTMLElement>('#speakeasy-thinking-dropup .dropup-item[data-value="medium"]')
-        ?.getAttribute('aria-selected'),
-    ).toBe('true');
   });
 
   it('updates selected thinking level when a menu item is clicked', async () => {
@@ -220,19 +157,13 @@ describe('chatpanel input toolbar', () => {
     }
 
     installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: [],
-      },
+      [GEMINI_SETTINGS_STORAGE_KEY]: {},
     });
 
     const shadowRoot = createToolbarShadowRoot();
     const toolbar = createInputToolbar(shadowRoot);
     await Promise.resolve();
 
-    const thinkingMenu = queryRequiredElement<HTMLElement>(
-      shadowRoot,
-      '#speakeasy-thinking-dropup .dropup-menu',
-    );
     const lowThinkingButton = queryRequiredElement<HTMLElement>(
       shadowRoot,
       '#speakeasy-thinking-dropup .dropup-item[data-value="low"]',
@@ -242,20 +173,11 @@ describe('chatpanel input toolbar', () => {
       '#speakeasy-thinking-dropup .dropup-trigger',
     );
 
-    thinkingMenu.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
-    expect(toolbar.selectedThinkingLevel()).toBe('minimal');
-
     lowThinkingButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
 
     expect(toolbar.selectedThinkingLevel()).toBe('low');
     expect(thinkingTrigger.dataset.value).toBe('low');
     expect(thinkingTrigger.textContent?.trim()).toBe('Low');
-    expect(lowThinkingButton.getAttribute('aria-selected')).toBe('true');
-    expect(
-      shadowRoot
-        .querySelector<HTMLElement>('#speakeasy-thinking-dropup .dropup-item[data-value="minimal"]')
-        ?.getAttribute('aria-selected'),
-    ).toBe('false');
   });
 
   it('resolves thinking level from model defaults when trigger state is empty', async () => {
@@ -266,7 +188,6 @@ describe('chatpanel input toolbar', () => {
 
     installChromeStorageMock({
       [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: [],
         modelThinkingLevelMap: {
           'gemini-3.1-pro-preview': 'medium',
         },
@@ -299,9 +220,7 @@ describe('chatpanel input toolbar', () => {
     }
 
     installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: [],
-      },
+      [GEMINI_SETTINGS_STORAGE_KEY]: {},
     });
 
     const shadowRoot = createToolbarShadowRoot();
@@ -324,7 +243,6 @@ describe('chatpanel input toolbar', () => {
     emitChanged?.({
       [GEMINI_SETTINGS_STORAGE_KEY]: {
         newValue: {
-          customModels: [],
           modelThinkingLevelMap: {
             'gemini-3.1-pro-preview': 'medium',
           },
@@ -338,28 +256,26 @@ describe('chatpanel input toolbar', () => {
 
   it('ignores unrelated storage change events', async () => {
     installChromeStorageMock({
-      [GEMINI_SETTINGS_STORAGE_KEY]: {
-        customModels: ['gemini-3.2-alpha'],
-      },
+      [GEMINI_SETTINGS_STORAGE_KEY]: {},
     });
 
     const shadowRoot = createToolbarShadowRoot();
     createInputToolbar(shadowRoot);
     await Promise.resolve();
 
-    expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-alpha"]')).not.toBeNull();
-
     emitChanged?.({
       unrelatedStorageKey: {
         newValue: {
-          customModels: ['gemini-3.2-beta'],
+          modelThinkingLevelMap: {
+            'gemini-3.1-pro-preview': 'high',
+          },
         },
       },
     });
     await Promise.resolve();
 
-    expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-alpha"]')).not.toBeNull();
-    expect(shadowRoot.querySelector('.dropup-item[data-value="gemini-3.2-beta"]')).toBeNull();
+    const modelItems = shadowRoot.querySelectorAll('#speakeasy-model-dropup .dropup-item');
+    expect(modelItems).toHaveLength(2);
   });
 
   function installChromeStorageMock(initialValue: Record<string, unknown>): void {
