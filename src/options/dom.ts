@@ -5,11 +5,10 @@ export interface OptionsDom {
   apiKeyInput: HTMLInputElement;
   modelFlashNameInput: HTMLInputElement;
   modelFlashThinkingLevelSelect: HTMLSelectElement;
+  modelFlashLiteNameInput: HTMLInputElement;
+  modelFlashLiteThinkingLevelSelect: HTMLSelectElement;
   modelProNameInput: HTMLInputElement;
   modelProThinkingLevelSelect: HTMLSelectElement;
-  customModelRowsContainer: HTMLElement;
-  addCustomModelButton: HTMLButtonElement;
-  customModelRowTemplate: HTMLTemplateElement;
   systemInstructionInput: HTMLTextAreaElement;
   storeInteractionsInput: HTMLInputElement;
   maxToolRoundTripsInput: HTMLInputElement;
@@ -39,13 +38,14 @@ export function getOptionsDom(): OptionsDom {
     modelFlashThinkingLevelSelect: queryRequiredElement<HTMLSelectElement>(
       '#model-thinking-level-flash',
     ),
+    modelFlashLiteNameInput: queryRequiredElement<HTMLInputElement>('#model-name-flash-lite'),
+    modelFlashLiteThinkingLevelSelect: queryRequiredElement<HTMLSelectElement>(
+      '#model-thinking-level-flash-lite',
+    ),
     modelProNameInput: queryRequiredElement<HTMLInputElement>('#model-name-pro'),
     modelProThinkingLevelSelect: queryRequiredElement<HTMLSelectElement>(
       '#model-thinking-level-pro',
     ),
-    customModelRowsContainer: queryRequiredElement<HTMLElement>('#custom-model-rows'),
-    addCustomModelButton: queryRequiredElement<HTMLButtonElement>('#add-custom-model'),
-    customModelRowTemplate: queryRequiredElement<HTMLTemplateElement>('#custom-model-row-template'),
     systemInstructionInput: queryRequiredElement<HTMLTextAreaElement>('#system-instruction'),
     storeInteractionsInput: queryRequiredElement<HTMLInputElement>('#store-interactions'),
     maxToolRoundTripsInput: queryRequiredElement<HTMLInputElement>('#max-tool-round-trips'),

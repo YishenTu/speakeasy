@@ -15,14 +15,8 @@ export const DEFAULT_PAGE_TEXT_EXTRACTION_ENGINE: PageTextExtractionEngine = 'de
 
 export const THINKING_LEVELS = ['minimal', 'low', 'medium', 'high'] as const;
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
-export const CUSTOM_MODEL_THINKING_LEVELS = [
-  'low',
-  'medium',
-  'high',
-] as const satisfies readonly ThinkingLevel[];
-export const DEFAULT_CUSTOM_MODEL_THINKING_LEVEL: ThinkingLevel = 'high';
 
-export type BuiltinGeminiModelKey = 'flash' | 'pro';
+export type BuiltinGeminiModelKey = 'flash' | 'flash-lite' | 'pro';
 
 export interface BuiltinGeminiModelCatalogEntry {
   key: BuiltinGeminiModelKey;
@@ -37,6 +31,13 @@ export const BUILTIN_GEMINI_MODEL_CATALOG: readonly BuiltinGeminiModelCatalogEnt
     key: 'flash',
     model: 'gemini-3-flash-preview',
     label: 'Flash',
+    thinkingLevels: ['minimal', 'low', 'medium', 'high'],
+    defaultThinkingLevel: 'minimal',
+  },
+  {
+    key: 'flash-lite',
+    model: 'gemini-3.1-flash-lite-preview',
+    label: 'Lite',
     thinkingLevels: ['minimal', 'low', 'medium', 'high'],
     defaultThinkingLevel: 'minimal',
   },
@@ -75,7 +76,7 @@ export function getModelDisplayLabel(model: string): string {
 }
 
 export function getModelThinkingLevels(model: string): readonly ThinkingLevel[] {
-  return findBuiltinGeminiModel(model)?.thinkingLevels ?? CUSTOM_MODEL_THINKING_LEVELS;
+  return findBuiltinGeminiModel(model)?.thinkingLevels ?? THINKING_LEVELS;
 }
 
 export interface GeminiSettings {
@@ -92,7 +93,6 @@ export interface GeminiSettings {
   mapsLatitude: number | null;
   mapsLongitude: number | null;
   computerUseExcludedActions: string[];
-  customModels: string[];
 }
 
 export const GEMINI_SETTINGS_STORAGE_KEY = 'geminiSettings';
@@ -123,7 +123,6 @@ const DEFAULT_SETTINGS: GeminiSettings = {
   mapsLatitude: null,
   mapsLongitude: null,
   computerUseExcludedActions: [],
-  customModels: [],
 };
 
 function toStringOrEmpty(value: unknown): string {
@@ -197,6 +196,10 @@ function sanitizeModelThinkingLevelMap(value: unknown): Record<string, string> {
       continue;
     }
 
+    if (!findBuiltinGeminiModel(model)) {
+      continue;
+    }
+
     normalized[model] = thinkingLevel;
   }
 
@@ -237,10 +240,12 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
   const tools: Partial<GeminiToolSettings> =
     settings.tools && typeof settings.tools === 'object' ? settings.tools : {};
   const modelThinkingLevelMap = sanitizeModelThinkingLevelMap(settings.modelThinkingLevelMap);
+  const modelCandidate = toStringOrEmpty(settings.model).trim();
+  const model = findBuiltinGeminiModel(modelCandidate) ? modelCandidate : DEFAULT_SETTINGS.model;
 
   return {
     apiKey: toStringOrEmpty(settings.apiKey).trim(),
-    model: toStringOrEmpty(settings.model).trim() || DEFAULT_SETTINGS.model,
+    model,
     modelThinkingLevelMap: {
       ...DEFAULT_SETTINGS.modelThinkingLevelMap,
       ...modelThinkingLevelMap,
@@ -278,7 +283,6 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
     mapsLatitude: toNullableNumber(settings.mapsLatitude),
     mapsLongitude: toNullableNumber(settings.mapsLongitude),
     computerUseExcludedActions: sanitizeStringList(settings.computerUseExcludedActions),
-    customModels: sanitizeStringList(settings.customModels),
   };
 }
 

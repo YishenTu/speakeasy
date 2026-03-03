@@ -186,7 +186,6 @@ describe('buildGeminiRequestToolSelection', () => {
 
   it('rejects combining mcp servers with built-in tools', () => {
     const settings = createSettingsForToolTests();
-    settings.model = 'gemini-2.5-flash';
     settings.tools.mcpServers = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
     settings.tools.googleSearch = true;
@@ -196,32 +195,19 @@ describe('buildGeminiRequestToolSelection', () => {
     );
   });
 
-  it('rejects mcp server usage on gemini 3 models', () => {
+  it('rejects mcp server usage for the selected model', () => {
     const settings = createSettingsForToolTests();
-    settings.model = 'gemini-3-flash-preview';
     settings.tools.mcpServers = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
 
     expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
-      /remote mcp is not supported on gemini 3/i,
-    );
-  });
-
-  it('rejects mcp server usage on selected gemini 3 models even with gemini 2.5 custom models', () => {
-    const settings = createSettingsForToolTests();
-    settings.model = 'gemini-3-flash-preview';
-    settings.customModels = ['gemini-2.5-flash'];
-    settings.tools.mcpServers = true;
-    settings.mcpServerUrls = ['https://mcp.example.com/stream'];
-
-    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
-      /remote mcp is not supported on gemini 3/i,
+      /remote mcp is not supported/i,
     );
   });
 
   it('builds a computer_use tool payload with excluded actions', () => {
     const settings = createSettingsForToolTests();
-    settings.model = 'gemini-2.5-computer-use-preview-10-2025';
+    settings.model = 'custom-computer-use-model';
     settings.tools.computerUse = true;
     settings.computerUseExcludedActions = ['drag_and_drop', 'scroll_down'];
 
@@ -236,7 +222,7 @@ describe('buildGeminiRequestToolSelection', () => {
 
   it('omits excludedPredefinedFunctions when no actions are excluded', () => {
     const settings = createSettingsForToolTests();
-    settings.model = 'gemini-2.5-computer-use-preview-10-2025';
+    settings.model = 'custom-computer-use-model';
     settings.tools.computerUse = true;
 
     const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
@@ -253,18 +239,15 @@ describe('buildGeminiRequestToolSelection', () => {
     expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).not.toThrow();
   });
 
-  it('uses snake_case mcp server names', () => {
+  it('rejects mcp server usage even when the selected model is a custom legacy model', () => {
     const settings = createSettingsForToolTests();
-    settings.model = 'gemini-2.5-flash';
+    settings.model = 'custom-legacy-model';
     settings.tools.mcpServers = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
 
-    const selection = buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS);
-    expect(selection.tools).toContainEqual({
-      type: 'mcp_server',
-      name: 'mcp_server_1',
-      url: 'https://mcp.example.com/stream',
-    });
+    expect(() => buildGeminiRequestToolSelection(settings, FUNCTION_DECLARATIONS)).toThrow(
+      /remote mcp is not supported/i,
+    );
   });
 
   it('rejects google maps because interactions tooling does not expose it yet', () => {
@@ -841,7 +824,7 @@ describe('composeGeminiInteractionRequest', () => {
 });
 
 describe('generateSessionTitle', () => {
-  it('uses gemini-flash-lite-latest and sanitizes quoted model output', async () => {
+  it('uses gemini-3.1-flash-lite-preview and sanitizes quoted model output', async () => {
     enqueueGeminiResponses({
       id: 'interaction-title-1',
       outputs: [{ type: 'text', text: '  "Quarterly release planning"  ' }],
@@ -851,7 +834,7 @@ describe('generateSessionTitle', () => {
 
     expect(title).toBe('Quarterly release planning');
     expect(fetchRequestBodies).toHaveLength(1);
-    expect(fetchRequestBodies[0]?.model).toBe('gemini-flash-lite-latest');
+    expect(fetchRequestBodies[0]?.model).toBe('gemini-3.1-flash-lite-preview');
     expect(fetchRequestBodies[0]?.store).toBe(false);
 
     const requestInput = fetchRequestBodies[0]?.input;
@@ -873,6 +856,16 @@ describe('generateSessionTitle', () => {
 
     const title = await generateSessionTitle('test-title-key-2', 'What should we prioritize?');
     expect(title).toBe('');
+  });
+
+  it('throws when interaction response is missing id to match shared interaction normalization', async () => {
+    enqueueGeminiResponses({
+      outputs: [{ type: 'text', text: 'Fallback title' }],
+    });
+
+    await expect(generateSessionTitle('test-title-key-no-id', 'Plan migration')).rejects.toThrow(
+      /did not include an id/i,
+    );
   });
 
   it('returns empty title without calling Gemini for blank prompts and no attachments', async () => {

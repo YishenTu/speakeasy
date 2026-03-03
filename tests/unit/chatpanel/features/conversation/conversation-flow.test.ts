@@ -256,6 +256,7 @@ describe('conversation flow controller', () => {
     expect(harness.appendCalls[0]?.content).toBe('Hello world');
     expect(harness.appendCalls[1]?.role).toBe('assistant');
     expect(harness.appendCalls[1]?.content).toBe('');
+    expect(harness.appendCalls[1]?.isStreaming).toBe(true);
     expect(harness.rememberedPreviewMessages).toHaveLength(1);
     expect(harness.clearStageCalls).toEqual([true]);
     expect(harness.replaceCalls).toHaveLength(1);
@@ -432,6 +433,7 @@ describe('conversation flow controller', () => {
     expect(harness.replaceCalls).toHaveLength(1);
     expect(harness.replaceCalls[0]?.message.content).toBe('delta text');
     expect(harness.replaceCalls[0]?.message.thinkingSummary).toBe('delta thoughts');
+    expect(harness.replaceCalls[0]?.message.isStreaming).toBe(true);
 
     deferredSend.resolve({
       id: 'assistant-stream-final',
@@ -471,6 +473,7 @@ describe('conversation flow controller', () => {
     expect(harness.replaceCalls).toHaveLength(2);
     expect(harness.replaceCalls[0]?.messageId).toBe('assistant-target');
     expect(harness.replaceCalls[0]?.message.content).toBe('');
+    expect(harness.replaceCalls[0]?.message.isStreaming).toBe(true);
     expect(harness.replaceCalls[1]?.message).toEqual(targetMessage);
     expect(harness.localErrors).toEqual(['regen failed']);
     expect(harness.busyTransitions).toEqual([true, false]);

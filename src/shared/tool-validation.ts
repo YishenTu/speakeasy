@@ -1,13 +1,6 @@
 import type { GeminiSettings } from './settings';
 
-export interface GeminiToolValidationOptions {
-  mcpModelValidationScope?: 'selected-model' | 'available-models';
-}
-
-export function validateGeminiToolConfiguration(
-  settings: GeminiSettings,
-  options?: GeminiToolValidationOptions,
-): string | null {
+export function validateGeminiToolConfiguration(settings: GeminiSettings): string | null {
   if (settings.tools.fileSearch && settings.fileSearchStoreNames.length === 0) {
     return 'File Search is enabled but no file store names are configured.';
   }
@@ -34,39 +27,9 @@ export function validateGeminiToolConfiguration(
     return 'MCP servers cannot be combined with built-in tools or local function calling in the Interactions API yet. Choose one mode.';
   }
 
-  if (settings.tools.mcpServers && !hasMcpCompatibleModel(settings, options)) {
-    return 'Remote MCP is not supported on Gemini 3 models yet. Use a Gemini 2.5 model for MCP server tools.';
+  if (settings.tools.mcpServers) {
+    return 'Remote MCP is not supported in this extension yet.';
   }
 
   return null;
-}
-
-function hasMcpCompatibleModel(
-  settings: GeminiSettings,
-  options: GeminiToolValidationOptions | undefined,
-): boolean {
-  const scope = options?.mcpModelValidationScope ?? 'selected-model';
-  const candidateModels = listMcpCandidateModels(settings, scope);
-  return candidateModels.some((model) => !isGemini3Model(model));
-}
-
-function listMcpCandidateModels(
-  settings: GeminiSettings,
-  scope: NonNullable<GeminiToolValidationOptions['mcpModelValidationScope']>,
-): string[] {
-  const candidates =
-    scope === 'available-models' ? [settings.model, ...settings.customModels] : [settings.model];
-  const unique = new Set<string>();
-  for (const candidate of candidates) {
-    const normalized = candidate.trim();
-    if (!normalized) {
-      continue;
-    }
-    unique.add(normalized);
-  }
-  return [...unique];
-}
-
-function isGemini3Model(model: string): boolean {
-  return /^gemini-3(?:[.-]|$)/i.test(model.trim());
 }

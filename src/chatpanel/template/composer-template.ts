@@ -1,5 +1,5 @@
 import {
-  BUILTIN_GEMINI_MODEL_CATALOG,
+  type BuiltinGeminiModelKey,
   type ThinkingLevel,
   getBuiltinGeminiModelByKey,
 } from '../../shared/settings';
@@ -10,9 +10,11 @@ const THINKING_LABELS: Record<ThinkingLevel, string> = {
   low: 'Low',
   minimal: 'Min',
 };
+const MODEL_MENU_ORDER: readonly BuiltinGeminiModelKey[] = ['pro', 'flash', 'flash-lite'];
 
 function renderModelMenuItems(selectedModel: string): string {
-  return BUILTIN_GEMINI_MODEL_CATALOG.map((entry) => {
+  return MODEL_MENU_ORDER.map((key) => {
+    const entry = getBuiltinGeminiModelByKey(key);
     const selected = entry.model === selectedModel ? ' aria-selected="true"' : '';
     return `<button type="button" class="dropup-item" data-value="${entry.model}"${selected}>${entry.label}</button>`;
   }).join('');

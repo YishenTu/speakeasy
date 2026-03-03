@@ -20,6 +20,7 @@ describe('defaultGeminiSettings', () => {
       model: 'gemini-3-flash-preview',
       modelThinkingLevelMap: {
         'gemini-3-flash-preview': 'minimal',
+        'gemini-3.1-flash-lite-preview': 'minimal',
         'gemini-3.1-pro-preview': 'high',
       },
       systemInstruction: '',
@@ -41,7 +42,6 @@ describe('defaultGeminiSettings', () => {
       mapsLatitude: null,
       mapsLongitude: null,
       computerUseExcludedActions: [],
-      customModels: [],
     });
 
     first.tools.googleSearch = false;
@@ -60,6 +60,13 @@ describe('model catalog', () => {
         defaultThinkingLevel: 'minimal',
       },
       {
+        key: 'flash-lite',
+        model: 'gemini-3.1-flash-lite-preview',
+        label: 'Lite',
+        thinkingLevels: ['minimal', 'low', 'medium', 'high'],
+        defaultThinkingLevel: 'minimal',
+      },
+      {
         key: 'pro',
         model: 'gemini-3.1-pro-preview',
         label: 'Pro',
@@ -69,10 +76,22 @@ describe('model catalog', () => {
     ]);
 
     expect(getBuiltinGeminiModelByKey('flash').model).toBe(DEFAULT_GEMINI_MODEL);
+    expect(getModelDisplayLabel('gemini-3.1-flash-lite-preview')).toBe('Lite');
     expect(getModelDisplayLabel('gemini-3.1-pro-preview')).toBe('Pro');
     expect(getModelDisplayLabel('gemini-3.2-custom')).toBe('gemini-3.2-custom');
+    expect(getModelThinkingLevels('gemini-3.1-flash-lite-preview')).toEqual([
+      'minimal',
+      'low',
+      'medium',
+      'high',
+    ]);
     expect(getModelThinkingLevels('gemini-3.1-pro-preview')).toEqual(['low', 'medium', 'high']);
-    expect(getModelThinkingLevels('gemini-3.2-custom')).toEqual(['low', 'medium', 'high']);
+    expect(getModelThinkingLevels('gemini-3.2-custom')).toEqual([
+      'minimal',
+      'low',
+      'medium',
+      'high',
+    ]);
   });
 });
 
@@ -130,9 +149,14 @@ describe('normalizeGeminiSettings', () => {
     expect(normalized.computerUseExcludedActions).toEqual(['click', 'drag']);
     expect(normalized.modelThinkingLevelMap).toEqual({
       'gemini-3-flash-preview': 'minimal',
+      'gemini-3.1-flash-lite-preview': 'minimal',
       'gemini-3.1-pro-preview': 'high',
-      'custom-model': 'low',
     });
+  });
+
+  it('falls back to default model when stored model is not built in', () => {
+    const normalized = normalizeGeminiSettings({ model: 'custom-legacy-model' });
+    expect(normalized.model).toBe('gemini-3-flash-preview');
   });
 
   it('clamps and coerces numeric boundaries', () => {

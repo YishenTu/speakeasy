@@ -43,4 +43,6 @@ export interface ChatMessage {
   sourceModel?: string;
   groundingSources?: GroundingSource[];
   timestamp?: number;
+  // UI hint used by the chatpanel while an assistant response is still streaming.
+  isStreaming?: boolean;
 }

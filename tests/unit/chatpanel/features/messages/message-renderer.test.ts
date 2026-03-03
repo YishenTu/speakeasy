@@ -627,6 +627,32 @@ describe('chatpanel messages', () => {
     expect(messageList.textContent).not.toContain('Thinking...');
   });
 
+  it('hides assistant action bar while the assistant response is streaming', () => {
+    const messageList = document.getElementById('messages') as HTMLOListElement;
+
+    appendMessage(
+      {
+        id: 'assistant-streaming-actions',
+        role: 'assistant',
+        content: 'Partial response',
+        interactionId: 'interaction-streaming-actions',
+        timestamp: Date.parse('2026-02-22T18:20:00.000Z'),
+        isStreaming: true,
+      },
+      messageList,
+      {
+        onAssistantAction: () => {},
+      },
+    );
+
+    const row = messageList.querySelector(
+      'li[data-message-id="assistant-streaming-actions"]',
+    ) as HTMLLIElement | null;
+    expect(row?.textContent).toContain('Partial response');
+    expect(row?.querySelector('.message-actions-assistant')).toBeNull();
+    expect(row?.classList.contains('row-with-actions')).toBe(false);
+  });
+
   it('renders an assistant stats disclosure with token and timing breakdown', () => {
     const messageList = document.getElementById('messages') as HTMLOListElement;
 

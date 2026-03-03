@@ -1,4 +1,3 @@
-import type { GeminiSettings } from '../../../../shared/settings';
 import { isRecord } from '../../../core/utils';
 import { getGeminiClient } from '../gemini-client';
 import { readStringField } from './common';
@@ -22,15 +21,15 @@ import {
 } from './streaming';
 
 export async function callGeminiInteraction(input: {
-  settings: GeminiSettings;
+  apiKey: string;
   request: unknown;
 }): Promise<GeminiInteraction> {
-  const response = await createInteraction(input.settings.apiKey, input.request);
+  const response = await createInteraction(input.apiKey, input.request);
   return normalizeGeminiInteractionResponse(response);
 }
 
 export async function callGeminiInteractionStream(input: {
-  settings: GeminiSettings;
+  apiKey: string;
   request: unknown;
   onStreamDelta: (delta: GeminiStreamDelta) => void;
 }): Promise<GeminiInteraction> {
@@ -39,7 +38,7 @@ export async function callGeminiInteractionStream(input: {
     stream: true,
   };
 
-  const stream = await createInteraction(input.settings.apiKey, streamRequest);
+  const stream = await createInteraction(input.apiKey, streamRequest);
 
   if (!isAsyncIterable(stream)) {
     throw new Error('Gemini streaming response payload was not an async iterable.');

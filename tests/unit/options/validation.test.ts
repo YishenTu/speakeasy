@@ -69,7 +69,6 @@ describe('validateSettings', () => {
 
   it('rejects combining MCP servers with built-in tools', () => {
     const settings = createValidSettings();
-    settings.model = 'gemini-2.5-flash';
     settings.tools.mcpServers = true;
     settings.tools.googleSearch = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
@@ -79,25 +78,21 @@ describe('validateSettings', () => {
     );
   });
 
-  it('rejects remote MCP on Gemini 3 models', () => {
+  it('rejects remote MCP regardless of selected model', () => {
     const settings = createValidSettings();
-    settings.model = 'gemini-3-flash-preview';
     settings.tools.mcpServers = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
 
-    expect(validateSettings(settings)).toBe(
-      'Remote MCP is not supported on Gemini 3 models yet. Use a Gemini 2.5 model for MCP server tools.',
-    );
+    expect(validateSettings(settings)).toBe('Remote MCP is not supported in this extension yet.');
   });
 
-  it('allows MCP when a non-Gemini 3 custom model is configured', () => {
+  it('rejects MCP even when selected model is a legacy non-builtin value', () => {
     const settings = createValidSettings();
-    settings.model = 'gemini-3-flash-preview';
-    settings.customModels = ['gemini-2.5-flash'];
+    settings.model = 'custom-legacy-model';
     settings.tools.mcpServers = true;
     settings.mcpServerUrls = ['https://mcp.example.com/stream'];
 
-    expect(validateSettings(settings)).toBeNull();
+    expect(validateSettings(settings)).toBe('Remote MCP is not supported in this extension yet.');
   });
 
   it('requires both or neither map coordinates', () => {

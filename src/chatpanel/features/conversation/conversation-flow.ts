@@ -138,6 +138,7 @@ export function createConversationFlowController(
       id: draft.assistantMessageId,
       role: 'assistant',
       content: draft.text,
+      isStreaming: true,
     };
     if (draft.thinkingSummary) {
       streamMessage.thinkingSummary = draft.thinkingSummary;
@@ -297,6 +298,7 @@ export function createConversationFlowController(
           id: assistantPlaceholderId,
           role: 'assistant',
           content: '',
+          isStreaming: true,
         });
 
         if (input.shouldResetComposerText) {
@@ -377,6 +379,7 @@ export function createConversationFlowController(
             id: regenPlaceholderMessageId,
             role: 'assistant',
             content: '',
+            isStreaming: true,
           });
 
           regenStreamRequestId = crypto.randomUUID();
