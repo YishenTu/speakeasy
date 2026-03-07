@@ -11,6 +11,7 @@ export interface MessageRenderOptions {
   onAssistantBranchSelect?: (message: ChatMessage, interactionId: string) => void;
   onUserAction?: (action: 'fork', message: ChatMessage) => void;
   shouldAutoScroll?: (reason: MessageListAutoScrollReason) => boolean;
+  onAutoScrollToBottom?: (reason: MessageListAutoScrollReason) => void;
 }
 
 export type MessageListAutoScrollReason = 'render-all' | 'append' | 'replace' | 'stats-toggle';
@@ -642,6 +643,7 @@ function maybeScrollMessageListToBottom(
   }
 
   scrollMessageListToBottom(messageList);
+  options.onAutoScrollToBottom?.(reason);
 }
 
 function bindCodeCopyButtons(container: ParentNode): void {

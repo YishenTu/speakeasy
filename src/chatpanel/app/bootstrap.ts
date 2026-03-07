@@ -279,6 +279,9 @@ export function mountChatPanel(): void {
 
   const messageRenderOptions: MessageRenderOptions = {
     shouldAutoScroll: () => messageListAutoScrollState.shouldAutoScroll(),
+    onAutoScrollToBottom: () => {
+      syncMessageListAutoScrollState();
+    },
     onAssistantAction: (action, message) => {
       if (!conversationFlow) {
         return;

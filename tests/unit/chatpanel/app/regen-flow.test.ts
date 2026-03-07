@@ -1058,6 +1058,68 @@ describe('chatpanel regenerate flow', () => {
     expect(messageList.scrollTop).toBe(600);
   });
 
+  it('pauses stream auto-scroll after a small upward drag following programmatic bottom scroll', async () => {
+    const testWindow = getTestWindow();
+    currentMessages = [];
+    listSessionsPayload = [];
+    sendDeferred = createDeferred();
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const form = shadowRoot.querySelector('#speakeasy-form') as HTMLFormElement | null;
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const messageList = shadowRoot.querySelector('#speakeasy-messages') as HTMLOListElement | null;
+    expect(form).not.toBeNull();
+    expect(input).not.toBeNull();
+    expect(messageList).not.toBeNull();
+    if (!form || !input || !messageList) {
+      throw new Error('Expected chatpanel form controls.');
+    }
+
+    let simulatedScrollHeight = 260;
+    Object.defineProperty(messageList, 'scrollHeight', {
+      configurable: true,
+      get: () => simulatedScrollHeight,
+    });
+
+    input.value = 'first prompt';
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushMicrotasks(20);
+
+    expect(messageList.scrollTop).toBe(260);
+    const streamRequestId = sendRequest?.streamRequestId;
+    expect(typeof streamRequestId).toBe('string');
+    if (!streamRequestId) {
+      throw new Error('Expected stream request id.');
+    }
+
+    simulatedScrollHeight = 420;
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: 'chat/stream-delta',
+        requestId: streamRequestId,
+        textDelta: 'delta one',
+      });
+    }
+    await flushMicrotasks(6);
+    expect(messageList.scrollTop).toBe(420);
+
+    messageList.scrollTop = 410;
+    messageList.dispatchEvent(new testWindow.Event('scroll'));
+
+    simulatedScrollHeight = 500;
+    for (const listener of runtimeMessageListeners) {
+      listener({
+        type: 'chat/stream-delta',
+        requestId: streamRequestId,
+        textDelta: 'delta two',
+      });
+    }
+    await flushMicrotasks(6);
+    expect(messageList.scrollTop).toBe(410);
+  });
+
   it('shows image previews inline within the chatpanel for staged and message attachments', async () => {
     const testWindow = getTestWindow();
     currentMessages = [
