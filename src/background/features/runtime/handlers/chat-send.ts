@@ -85,13 +85,11 @@ export async function handleSendMessage(
   const attachmentPreviewTextByFileUri = buildAttachmentPreviewTextByFileUri(normalizedAttachments);
   const hasImagePreviews = Object.keys(attachmentPreviewByFileUri).length > 0;
   const hasTextPreviews = Object.keys(attachmentPreviewTextByFileUri).length > 0;
-  if (hasImagePreviews || hasTextPreviews) {
-    if (hasImagePreviews) {
-      userMetadata.attachmentPreviewByFileUri = attachmentPreviewByFileUri;
-    }
-    if (hasTextPreviews) {
-      userMetadata.attachmentPreviewTextByFileUri = attachmentPreviewTextByFileUri;
-    }
+  if (hasImagePreviews) {
+    userMetadata.attachmentPreviewByFileUri = attachmentPreviewByFileUri;
+  }
+  if (hasTextPreviews) {
+    userMetadata.attachmentPreviewTextByFileUri = attachmentPreviewTextByFileUri;
   }
   if (Object.keys(userMetadata).length > 0) {
     userContent.metadata = userMetadata;

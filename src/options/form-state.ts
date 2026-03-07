@@ -25,8 +25,6 @@ const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
   high: 'High (deepest)',
 };
 
-type SlashCommandRowMode = 'view' | 'edit';
-
 export function initializeModelThinkingControls(dom: OptionsDom): void {
   dom.modelFlashNameInput.value = FLASH_MODEL.model;
   dom.modelFlashLiteNameInput.value = FLASH_LITE_MODEL.model;

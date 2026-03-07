@@ -49,16 +49,14 @@ export function createSlashCommandMenuController(
   }
 
   function updateSelection(nextIndex: number): void {
-    if (visibleCommands.length === 0) {
-      selectedIndex = 0;
-      render();
-      return;
-    }
-
-    selectedIndex = Math.max(0, Math.min(nextIndex, visibleCommands.length - 1));
+    selectedIndex =
+      visibleCommands.length === 0
+        ? 0
+        : Math.max(0, Math.min(nextIndex, visibleCommands.length - 1));
     render();
-    const activeItem = options.list.querySelector<HTMLElement>('[aria-selected="true"]');
-    activeItem?.scrollIntoView({ block: 'nearest' });
+    options.list
+      .querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest' });
   }
 
   function applySelection(command: SlashCommandDefinition): void {

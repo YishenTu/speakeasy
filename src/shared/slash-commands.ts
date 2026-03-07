@@ -103,16 +103,8 @@ export function resolveSlashCommandText(
 ): ResolvedSlashCommandText {
   const normalizedRawText = rawText.trim();
   const invocation = parseSlashCommandInvocation(normalizedRawText);
-  if (!invocation) {
-    return {
-      rawText: normalizedRawText,
-      displayText: normalizedRawText,
-      resolvedText: normalizedRawText,
-    };
-  }
-
-  const command = findSlashCommand(commands, invocation.name);
-  if (!command) {
+  const command = invocation ? findSlashCommand(commands, invocation.name) : undefined;
+  if (!invocation || !command) {
     return {
       rawText: normalizedRawText,
       displayText: normalizedRawText,
