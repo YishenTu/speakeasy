@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { getOptionsDom } from '../../../src/options/dom';
 import {
+  addSlashCommandRow,
   applySettingsToForm,
   initializeModelThinkingControls,
   readFormState,
@@ -46,6 +47,10 @@ describe('options form state', () => {
     settings.mapsLatitude = 37.422;
     settings.mapsLongitude = -122.084;
     settings.computerUseExcludedActions = ['click', 'drag'];
+    settings.slashCommands = [
+      { name: 'summarize', prompt: 'Summarize this:\n\n$ARGUMENTS' },
+      { name: 'rewrite', prompt: 'Rewrite the text clearly.' },
+    ];
 
     applySettingsToForm(dom, settings);
 
@@ -73,6 +78,16 @@ describe('options form state', () => {
     expect(dom.mapsLatitudeInput.value).toBe('37.422');
     expect(dom.mapsLongitudeInput.value).toBe('-122.084');
     expect(dom.computerUseExcludedActionsInput.value).toBe('click, drag');
+    const slashRows = getSlashRows(dom);
+    expect(slashRows).toHaveLength(2);
+    expect(slashRows[0]?.nameInput.value).toBe('summarize');
+    expect(slashRows[0]?.promptInput.value).toBe('Summarize this:\n\n$ARGUMENTS');
+    expect(slashRows[1]?.nameInput.value).toBe('rewrite');
+    expect(slashRows[1]?.promptInput.value).toBe('Rewrite the text clearly.');
+    expect(slashRows[0]?.titleNode.textContent).toBe('/summarize');
+    expect(slashRows[0]?.previewNode.textContent).toBe('Summarize this:\n\n$ARGUMENTS');
+    expect(slashRows[0]?.editor.hidden).toBe(true);
+    expect(slashRows[0]?.summary.hidden).toBe(false);
   });
 
   it('writes empty map coordinate fields when settings hold null coordinates', () => {
@@ -111,6 +126,8 @@ describe('options form state', () => {
     dom.mapsLatitudeInput.value = ' 37.422 ';
     dom.mapsLongitudeInput.value = ' -122.084 ';
     dom.computerUseExcludedActionsInput.value = ' click, drag, click ';
+    addSlashCommandRow(dom, ' summarize ', ' Summarize:\n\n$ARGUMENTS ');
+    addSlashCommandRow(dom, '/rewrite', ' Rewrite clearly. ');
 
     const state = readFormState(dom);
 
@@ -140,6 +157,16 @@ describe('options form state', () => {
       mapsLatitude: 37.422,
       mapsLongitude: -122.084,
       computerUseExcludedActions: ['click', 'drag'],
+      slashCommands: [
+        {
+          name: 'summarize',
+          prompt: 'Summarize:\n\n$ARGUMENTS',
+        },
+        {
+          name: 'rewrite',
+          prompt: 'Rewrite clearly.',
+        },
+      ],
     });
   });
 
@@ -182,6 +209,19 @@ describe('options form state', () => {
       'gemini-3.1-pro-preview': 'high',
     });
   });
+
+  it('adds a new slash command row in view mode and updates the summary content', () => {
+    const dom = getOptionsDom();
+    const row = addSlashCommandRow(dom, 'summarize', 'Summarize this.');
+
+    const slashRows = getSlashRows(dom);
+    expect(slashRows).toHaveLength(1);
+    expect(slashRows[0]?.row).toBe(row);
+    expect(slashRows[0]?.editor.hidden).toBe(true);
+    expect(slashRows[0]?.summary.hidden).toBe(false);
+    expect(slashRows[0]?.titleNode.textContent).toBe('/summarize');
+    expect(slashRows[0]?.previewNode.textContent).toBe('Summarize this.');
+  });
 });
 
 function createOption(value: string, label: string): HTMLOptionElement {
@@ -189,6 +229,40 @@ function createOption(value: string, label: string): HTMLOptionElement {
   option.value = value;
   option.textContent = label;
   return option;
+}
+
+function requireInRow<TElement extends Element>(row: HTMLElement, selector: string): TElement {
+  const element = row.querySelector<TElement>(selector);
+  if (!element) {
+    throw new Error(`row is missing ${selector}`);
+  }
+  return element;
+}
+
+interface SlashCommandRow {
+  row: HTMLElement;
+  nameInput: HTMLInputElement;
+  promptInput: HTMLTextAreaElement;
+  summary: HTMLElement;
+  editor: HTMLElement;
+  titleNode: HTMLElement;
+  previewNode: HTMLElement;
+}
+
+function getSlashRows(dom: ReturnType<typeof getOptionsDom>): SlashCommandRow[] {
+  return Array.from(
+    dom.slashCommandRowsContainer.querySelectorAll<HTMLElement>('[data-slash-command-row]'),
+  ).map(
+    (row): SlashCommandRow => ({
+      row,
+      nameInput: requireInRow<HTMLInputElement>(row, '[data-slash-command-name]'),
+      promptInput: requireInRow<HTMLTextAreaElement>(row, '[data-slash-command-prompt]'),
+      summary: requireInRow<HTMLElement>(row, '[data-slash-command-summary]'),
+      editor: requireInRow<HTMLElement>(row, '[data-slash-command-editor]'),
+      titleNode: requireInRow<HTMLElement>(row, '[data-slash-command-title]'),
+      previewNode: requireInRow<HTMLElement>(row, '[data-slash-command-preview]'),
+    }),
+  );
 }
 
 function buildOptionsFixtureHtml(): string {
@@ -221,6 +295,24 @@ function buildOptionsFixtureHtml(): string {
           <input id="maps-latitude" />
           <input id="maps-longitude" />
           <input id="computer-use-excluded-actions" />
+          <div id="slash-command-rows"></div>
+          <button id="add-slash-command" type="button">Add slash command</button>
+          <template id="slash-command-row-template">
+            <div data-slash-command-row>
+              <div data-slash-command-summary>
+                <button type="button" data-edit-slash-command>Edit</button>
+                <span data-slash-command-avatar></span>
+                <span data-slash-command-title></span>
+                <p data-slash-command-preview></p>
+              </div>
+              <div data-slash-command-editor hidden>
+                <input data-slash-command-name />
+                <textarea data-slash-command-prompt></textarea>
+                <button type="button" data-done-slash-command>Done</button>
+                <button type="button" data-remove-slash-command>Remove</button>
+              </div>
+            </div>
+          </template>
           <span id="version"></span>
           <p id="save-status"></p>
         </form>

@@ -40,6 +40,7 @@ import {
 } from '../features/attachments/page-text-extraction';
 import { readAttachedTextPreview } from '../features/attachments/text-preview';
 import { createInputToolbar } from '../features/composer/input-toolbar';
+import { createSlashCommandMenuController } from '../features/composer/slash-command-menu';
 import {
   canSubmitMessage,
   createConversationFlowController,
@@ -104,6 +105,18 @@ export function mountChatPanel(): void {
   const input = queryRequiredElement<HTMLTextAreaElement>(shadowRoot, '#speakeasy-input');
   const fileInput = queryRequiredElement<HTMLInputElement>(shadowRoot, '#speakeasy-file-input');
   const filePreviews = queryRequiredElement<HTMLElement>(shadowRoot, '#speakeasy-file-previews');
+  const slashCommandMenu = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-slash-command-menu',
+  );
+  const slashCommandList = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-slash-command-list',
+  );
+  const slashCommandEmpty = queryRequiredElement<HTMLElement>(
+    shadowRoot,
+    '#speakeasy-slash-command-empty',
+  );
   const tabMentionMenu = queryRequiredElement<HTMLElement>(
     shadowRoot,
     '#speakeasy-tab-mention-menu',
@@ -196,12 +209,15 @@ export function mountChatPanel(): void {
 
   input.addEventListener('input', () => {
     resizeComposerInput();
+    slashCommandController.onInputOrCaretChange();
     tabMentionController.onInputOrCaretChange();
   });
   input.addEventListener('click', () => {
+    slashCommandController.onInputOrCaretChange();
     tabMentionController.onInputOrCaretChange();
   });
   input.addEventListener('keyup', () => {
+    slashCommandController.onInputOrCaretChange();
     tabMentionController.onInputOrCaretChange();
   });
   const stopInputKeyboardPropagation = (event: KeyboardEvent) => {
@@ -332,6 +348,14 @@ export function mountChatPanel(): void {
       }));
     },
     onError: appendLocalError,
+    isBusy: () =>
+      isBusy || isCapturingFullPageScreenshot || isExtractingPageText || isProcessingMentionAction,
+  });
+  const slashCommandController = createSlashCommandMenuController({
+    input,
+    menu: slashCommandMenu,
+    list: slashCommandList,
+    emptyState: slashCommandEmpty,
     isBusy: () =>
       isBusy || isCapturingFullPageScreenshot || isExtractingPageText || isProcessingMentionAction,
   });
@@ -504,6 +528,10 @@ export function mountChatPanel(): void {
   });
 
   input.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+
     if (event.key === 'Enter' && !event.shiftKey) {
       if (isInputComposing || event.isComposing || event.keyCode === 229) {
         return;
@@ -525,6 +553,7 @@ export function mountChatPanel(): void {
 
   input.addEventListener('blur', () => {
     isInputComposing = false;
+    slashCommandController.close();
   });
 
   shell.addEventListener('dragenter', (event) => {
@@ -625,7 +654,10 @@ export function mountChatPanel(): void {
       }
 
       const keyboardEvent = event as KeyboardEvent;
-      if (tabMentionController.onKeyDown(keyboardEvent)) {
+      if (
+        tabMentionController.onKeyDown(keyboardEvent) ||
+        slashCommandController.onKeyDown(keyboardEvent)
+      ) {
         keyboardEvent.stopPropagation();
       }
     },
@@ -660,6 +692,7 @@ export function mountChatPanel(): void {
     onClose: () => {
       dragEnterDepth = 0;
       form.classList.remove('drop-active');
+      slashCommandController.close();
       tabMentionController.close();
       closeImagePreview();
       closeTextPreview();
@@ -830,6 +863,7 @@ export function mountChatPanel(): void {
     isBusy = nextBusy;
     syncComposerDisabledState();
     if (nextBusy) {
+      slashCommandController.close();
       tabMentionController.close();
     }
     syncToolbarButtonState();
@@ -859,10 +893,14 @@ export function mountChatPanel(): void {
 
   function syncComposerDisabledState(): void {
     input.disabled = isBusy || isProcessingMentionAction;
+    if (input.disabled) {
+      slashCommandController.close();
+    }
   }
 
   function openImagePreview(imageUrl: string, imageLabel: string): void {
     closeTextPreview();
+    slashCommandController.close();
     imagePreviewElement.src = imageUrl;
     imagePreviewElement.alt = imageLabel || 'Image preview';
     tabMentionController.close();
@@ -884,6 +922,7 @@ export function mountChatPanel(): void {
 
   function openTextPreview(title: string, text: string): void {
     closeImagePreview();
+    slashCommandController.close();
     textPreviewTitle.textContent = title.trim() || 'Markdown preview';
     textPreviewContent.textContent = text;
     tabMentionController.close();

@@ -194,6 +194,9 @@ describe('chatpanel template', () => {
     expect(template).toContain(
       'id="speakeasy-tab-mention-list" class="mention-list sp-scrollable"',
     );
+    expect(template).toContain(
+      'id="speakeasy-slash-command-list" class="slash-command-list sp-scrollable"',
+    );
     expect(template).toContain('id="speakeasy-input" class="input sp-scrollable"');
     expect(template).not.toContain('.mention-list::-webkit-scrollbar {\n        width: 6px;');
     expect(template).not.toContain('.input::-webkit-scrollbar {\n        width: 8px;');
@@ -247,6 +250,15 @@ describe('chatpanel template', () => {
     expect(template).toContain('class="mention-menu" hidden');
   });
 
+  it('renders slash command menu markup inside the composer', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('id="speakeasy-slash-command-menu"');
+    expect(template).toContain('id="speakeasy-slash-command-list"');
+    expect(template).toContain('id="speakeasy-slash-command-empty"');
+    expect(template).toContain('class="slash-command-menu" hidden');
+  });
+
   it('includes tab mention style rules for menu, list, and items', () => {
     const template = getChatPanelTemplate();
 
@@ -261,5 +273,16 @@ describe('chatpanel template', () => {
     expect(template).toContain('.mention-item-title {');
     expect(template).toContain('.mention-item-meta {');
     expect(template).toContain('.mention-empty {');
+  });
+
+  it('includes slash command style rules for menu, list, and items', () => {
+    const template = getChatPanelTemplate();
+
+    expect(template).toContain('.slash-command-menu {');
+    expect(template).toContain('.slash-command-list {');
+    expect(template).toContain('.slash-command-item {');
+    expect(template).toContain('.slash-command-item-name {');
+    expect(template).toContain('.slash-command-item-prompt {');
+    expect(template).toContain('.slash-command-empty {');
   });
 });

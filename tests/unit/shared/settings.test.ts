@@ -42,6 +42,7 @@ describe('defaultGeminiSettings', () => {
       mapsLatitude: null,
       mapsLongitude: null,
       computerUseExcludedActions: [],
+      slashCommands: [],
     });
 
     first.tools.googleSearch = false;
@@ -124,6 +125,11 @@ describe('normalizeGeminiSettings', () => {
         '': 'high',
         'gemini-3.1-pro-preview': 9,
       },
+      slashCommands: [
+        { name: ' /summarize ', prompt: ' Summarize:\n\n$ARGUMENTS ' },
+        { name: 'invalid name', prompt: 'Should skip' },
+        { name: '/summarize', prompt: 'Duplicate should skip' },
+      ],
     });
 
     expect(normalized.apiKey).toBe('');
@@ -152,6 +158,12 @@ describe('normalizeGeminiSettings', () => {
       'gemini-3.1-flash-lite-preview': 'minimal',
       'gemini-3.1-pro-preview': 'high',
     });
+    expect(normalized.slashCommands).toEqual([
+      {
+        name: 'summarize',
+        prompt: 'Summarize:\n\n$ARGUMENTS',
+      },
+    ]);
   });
 
   it('falls back to default model when stored model is not built in', () => {

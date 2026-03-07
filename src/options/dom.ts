@@ -9,6 +9,9 @@ export interface OptionsDom {
   modelFlashLiteThinkingLevelSelect: HTMLSelectElement;
   modelProNameInput: HTMLInputElement;
   modelProThinkingLevelSelect: HTMLSelectElement;
+  slashCommandRowsContainer: HTMLElement;
+  addSlashCommandButton: HTMLButtonElement;
+  slashCommandRowTemplate: HTMLTemplateElement;
   systemInstructionInput: HTMLTextAreaElement;
   storeInteractionsInput: HTMLInputElement;
   maxToolRoundTripsInput: HTMLInputElement;
@@ -45,6 +48,11 @@ export function getOptionsDom(): OptionsDom {
     modelProNameInput: queryRequiredElement<HTMLInputElement>('#model-name-pro'),
     modelProThinkingLevelSelect: queryRequiredElement<HTMLSelectElement>(
       '#model-thinking-level-pro',
+    ),
+    slashCommandRowsContainer: queryRequiredElement<HTMLElement>('#slash-command-rows'),
+    addSlashCommandButton: queryRequiredElement<HTMLButtonElement>('#add-slash-command'),
+    slashCommandRowTemplate: queryRequiredElement<HTMLTemplateElement>(
+      '#slash-command-row-template',
     ),
     systemInstructionInput: queryRequiredElement<HTMLTextAreaElement>('#system-instruction'),
     storeInteractionsInput: queryRequiredElement<HTMLInputElement>('#store-interactions'),

@@ -64,6 +64,84 @@
             placeholder="You are a concise assistant..."></textarea>
         </label>
 
+        <section class="settings-field">
+          <div class="settings-slash-command-toolbar">
+            <div>
+              <span class="settings-label">Slash commands <span
+                  class="settings-optional">(optional)</span></span>
+              <p class="settings-help-text">
+                Use <code>/command</code> in the chat composer. If the prompt contains
+                <code>$ARGUMENTS</code>, the typed arguments replace it. Otherwise the arguments are appended below the prompt.
+              </p>
+            </div>
+            <button id="add-slash-command" type="button" class="settings-inline-button">
+              Add
+            </button>
+          </div>
+          <div id="slash-command-rows" class="settings-slash-command-list"></div>
+          <template id="slash-command-row-template">
+            <article class="settings-slash-command-card" data-slash-command-row data-slash-command-mode="view">
+              <div class="settings-slash-command-summary" data-slash-command-summary>
+                <div class="settings-slash-command-summary-actions">
+                  <button type="button"
+                    class="settings-slash-command-action"
+                    data-edit-slash-command>
+                    Edit
+                  </button>
+                  <button type="button"
+                    class="settings-slash-command-action settings-slash-command-action-danger"
+                    data-remove-slash-command>
+                    Remove
+                  </button>
+                </div>
+                <button type="button" class="settings-slash-command-open" data-edit-slash-command>
+                  <div class="settings-slash-command-summary-head">
+                    <span class="settings-slash-command-avatar" data-slash-command-avatar>C</span>
+                    <span class="settings-slash-command-title" data-slash-command-title>/comment</span>
+                  </div>
+                  <p class="settings-slash-command-preview" data-slash-command-preview>
+                    Describe what this command should do.
+                  </p>
+                </button>
+              </div>
+              <div class="settings-slash-command-editor" data-slash-command-editor hidden>
+                <label class="settings-field settings-slash-command-name-field">
+                  <span class="settings-label">Command</span>
+                  <div class="settings-slash-command-name-wrap">
+                    <span class="settings-slash-command-prefix" aria-hidden="true">/</span>
+                    <input type="text"
+                      class="settings-input settings-slash-command-name-input"
+                      data-slash-command-name
+                      placeholder="summarize" />
+                  </div>
+                </label>
+                <label class="settings-field settings-slash-command-prompt-field">
+                  <span class="settings-label">Prompt</span>
+                  <textarea
+                    class="settings-input resize-y"
+                    data-slash-command-prompt
+                    rows="4"
+                    placeholder="Summarize the following:
+
+$ARGUMENTS"></textarea>
+                </label>
+                <div class="settings-slash-command-editor-actions">
+                  <button type="button"
+                    class="settings-inline-button"
+                    data-done-slash-command>
+                    Done
+                  </button>
+                  <button type="button"
+                    class="settings-inline-button"
+                    data-remove-slash-command>
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </article>
+          </template>
+        </section>
+
         <label class="settings-tool-option">
           <input id="store-interactions" type="checkbox"
             class="settings-checkbox" />

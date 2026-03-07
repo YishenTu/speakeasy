@@ -24,6 +24,10 @@ describe('options page bootstrap', () => {
     storedSettings = {
       apiKey: 'init-key',
       model: 'gemini-3.1-pro-preview',
+      slashCommands: [
+        { name: 'summarize', prompt: 'Summarize:\n\n$ARGUMENTS' },
+        { name: 'rewrite', prompt: 'Rewrite clearly.' },
+      ],
       modelThinkingLevelMap: {
         'gemini-3-flash-preview': 'high',
         'gemini-3.1-flash-lite-preview': 'low',
@@ -56,6 +60,12 @@ describe('options page bootstrap', () => {
     expect((document.getElementById('model-thinking-level-pro') as HTMLSelectElement).value).toBe(
       'high',
     );
+    const slashRows = getSlashCommandRows();
+    expect(slashRows).toHaveLength(2);
+    expect(slashRows[0]?.nameInput.value).toBe('summarize');
+    expect(slashRows[0]?.promptInput.value).toBe('Summarize:\n\n$ARGUMENTS');
+    expect(slashRows[1]?.nameInput.value).toBe('rewrite');
+    expect(slashRows[1]?.promptInput.value).toBe('Rewrite clearly.');
     expect(
       (document.getElementById('page-text-extraction-engine') as HTMLSelectElement).value,
     ).toBe('readability');
@@ -98,6 +108,16 @@ describe('options page bootstrap', () => {
     (document.getElementById('model-thinking-level-flash-lite') as HTMLSelectElement).value =
       'high';
     (document.getElementById('model-thinking-level-pro') as HTMLSelectElement).value = 'medium';
+    const addSlashCommandButton = document.getElementById('add-slash-command') as HTMLButtonElement;
+    addSlashCommandButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    const slashRows = getSlashCommandRows();
+    expect(slashRows).toHaveLength(1);
+    const firstSlashRow = slashRows[0];
+    if (!firstSlashRow) {
+      throw new Error('Expected one slash command row.');
+    }
+    firstSlashRow.nameInput.value = '/summarize';
+    firstSlashRow.promptInput.value = ' Summarize:\n\n$ARGUMENTS ';
     (document.getElementById('max-tool-round-trips') as HTMLInputElement).value = '4';
     (document.getElementById('page-text-extraction-engine') as HTMLSelectElement).value =
       'readability';
@@ -113,6 +133,7 @@ describe('options page bootstrap', () => {
           modelThinkingLevelMap?: Record<string, string>;
           maxToolRoundTrips?: number;
           pageTextExtractionEngine?: string;
+          slashCommands?: Array<{ name: string; prompt: string }>;
         }
       | undefined;
     expect(persisted?.apiKey).toBe('live-key');
@@ -124,7 +145,112 @@ describe('options page bootstrap', () => {
     });
     expect(persisted?.maxToolRoundTrips).toBe(4);
     expect(persisted?.pageTextExtractionEngine).toBe('readability');
+    expect(persisted?.slashCommands).toEqual([
+      {
+        name: 'summarize',
+        prompt: 'Summarize:\n\n$ARGUMENTS',
+      },
+    ]);
     expect(document.getElementById('save-status')?.textContent).toBe('Saved Gemini settings.');
+  });
+
+  it('shows slash command validation errors and skips writes on invalid submit', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeOptionsMock();
+    await importFreshOptionsModule();
+    await flushTasks();
+
+    (document.getElementById('api-key') as HTMLInputElement).value = 'live-key';
+    const addSlashCommandButton = document.getElementById('add-slash-command') as HTMLButtonElement;
+    addSlashCommandButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    const slashRows = getSlashCommandRows();
+    const firstSlashRow = slashRows[0];
+    if (!firstSlashRow) {
+      throw new Error('Expected one slash command row.');
+    }
+    firstSlashRow.nameInput.value = 'release notes';
+    firstSlashRow.promptInput.value = 'Summarize these notes.';
+
+    const form = document.getElementById('settings-form') as HTMLFormElement;
+    form.dispatchEvent(new testWindow.Event('submit', { bubbles: true, cancelable: true }));
+    await flushTasks();
+
+    expect(document.getElementById('save-status')?.textContent).toBe(
+      'Slash command names must be a single token using letters, numbers, hyphens, or underscores.',
+    );
+    expect(savedItems).toHaveLength(0);
+  });
+
+  it('keeps a valid slash command after reloading the settings page without a full form submit', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeOptionsMock();
+    await importFreshOptionsModule();
+    await flushTasks();
+
+    const addSlashCommandButton = document.getElementById('add-slash-command') as HTMLButtonElement;
+    addSlashCommandButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    let slashRows = getSlashCommandRows();
+    const firstSlashRow = slashRows[0];
+    if (!firstSlashRow) {
+      throw new Error('Expected one slash command row.');
+    }
+
+    firstSlashRow.nameInput.value = 'summarize';
+    firstSlashRow.nameInput.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    firstSlashRow.promptInput.value = 'Summarize:\n\n$ARGUMENTS';
+    firstSlashRow.promptInput.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushTasks();
+
+    dom?.restore();
+    dom = installDomTestEnvironment(buildOptionsPageFixtureHtml());
+    installChromeOptionsMock();
+    await importFreshOptionsModule();
+    await flushTasks();
+
+    slashRows = getSlashCommandRows();
+    expect(slashRows).toHaveLength(1);
+    expect(slashRows[0]?.nameInput.value).toBe('summarize');
+    expect(slashRows[0]?.promptInput.value).toBe('Summarize:\n\n$ARGUMENTS');
+  });
+
+  it('switches a completed slash command row into summary card view when done is clicked', async () => {
+    const testWindow = dom?.window;
+    if (!testWindow) {
+      throw new Error('DOM test environment is not installed.');
+    }
+
+    installChromeOptionsMock();
+    await importFreshOptionsModule();
+    await flushTasks();
+
+    const addSlashCommandButton = document.getElementById('add-slash-command') as HTMLButtonElement;
+    addSlashCommandButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    const slashRows = getSlashCommandRows();
+    const firstSlashRow = slashRows[0];
+    if (!firstSlashRow) {
+      throw new Error('Expected one slash command row.');
+    }
+
+    firstSlashRow.nameInput.value = 'comment';
+    firstSlashRow.nameInput.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    firstSlashRow.promptInput.value = 'Summarize the comments in Chinese.';
+    firstSlashRow.promptInput.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+
+    firstSlashRow.doneButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
+    await flushTasks();
+
+    expect(firstSlashRow.summary.hidden).toBe(false);
+    expect(firstSlashRow.editor.hidden).toBe(true);
+    expect(firstSlashRow.titleNode.textContent).toBe('/comment');
+    expect(firstSlashRow.previewNode.textContent).toBe('Summarize the comments in Chinese.');
   });
 
   it('shows validation error and skips writes when MCP servers are enabled', async () => {
@@ -202,6 +328,7 @@ describe('options page bootstrap', () => {
         local: createChromeStorageLocalMock(storageState, {
           onSet: async (items) => {
             savedItems.push(items);
+            storedSettings = items[GEMINI_SETTINGS_STORAGE_KEY] ?? storedSettings;
           },
         }),
       },
@@ -214,8 +341,9 @@ async function importFreshOptionsModule(): Promise<void> {
 }
 
 async function flushTasks(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 8; index += 1) {
+    await Promise.resolve();
+  }
 }
 
 function buildOptionsPageFixtureHtml(): string {
@@ -248,10 +376,63 @@ function buildOptionsPageFixtureHtml(): string {
           <input id="maps-latitude" />
           <input id="maps-longitude" />
           <input id="computer-use-excluded-actions" />
+          <div id="slash-command-rows"></div>
+          <button id="add-slash-command" type="button">Add slash command</button>
+          <template id="slash-command-row-template">
+            <div data-slash-command-row>
+              <div data-slash-command-summary>
+                <button type="button" data-edit-slash-command>Edit</button>
+                <span data-slash-command-avatar></span>
+                <span data-slash-command-title></span>
+                <p data-slash-command-preview></p>
+              </div>
+              <div data-slash-command-editor hidden>
+                <input data-slash-command-name />
+                <textarea data-slash-command-prompt></textarea>
+                <button type="button" data-done-slash-command>Done</button>
+                <button type="button" data-remove-slash-command>Remove</button>
+              </div>
+            </div>
+          </template>
         </form>
         <span id="version"></span>
         <p id="save-status"></p>
       </body>
     </html>
   `;
+}
+
+function getSlashCommandRows(): Array<{
+  nameInput: HTMLInputElement;
+  promptInput: HTMLTextAreaElement;
+  summary: HTMLElement;
+  editor: HTMLElement;
+  titleNode: HTMLElement;
+  previewNode: HTMLElement;
+  doneButton: HTMLButtonElement;
+}> {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-slash-command-row]')).map(
+    (row) => {
+      const nameInput = row.querySelector<HTMLInputElement>('[data-slash-command-name]');
+      const promptInput = row.querySelector<HTMLTextAreaElement>('[data-slash-command-prompt]');
+      const summary = row.querySelector<HTMLElement>('[data-slash-command-summary]');
+      const editor = row.querySelector<HTMLElement>('[data-slash-command-editor]');
+      const titleNode = row.querySelector<HTMLElement>('[data-slash-command-title]');
+      const previewNode = row.querySelector<HTMLElement>('[data-slash-command-preview]');
+      const doneButton = row.querySelector<HTMLButtonElement>('[data-done-slash-command]');
+      if (
+        !nameInput ||
+        !promptInput ||
+        !summary ||
+        !editor ||
+        !titleNode ||
+        !previewNode ||
+        !doneButton
+      ) {
+        throw new Error('Slash command row is missing required inputs.');
+      }
+
+      return { nameInput, promptInput, summary, editor, titleNode, previewNode, doneButton };
+    },
+  );
 }

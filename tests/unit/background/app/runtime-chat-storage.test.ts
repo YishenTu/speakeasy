@@ -673,6 +673,60 @@ describe('runtime chat storage handler', () => {
     });
   });
 
+  it('expands slash commands for Gemini while keeping the slash text in stored chat history', async () => {
+    let observedUserContent: GeminiContent | undefined;
+    const handler = createRuntimeRequestHandler({
+      repository,
+      bootstrapChatStorage: async () => {},
+      readGeminiSettings: async () => {
+        const settings = createSettings();
+        settings.slashCommands = [
+          {
+            name: 'summarize',
+            prompt: 'Summarize this carefully:\n\n$ARGUMENTS',
+          },
+        ];
+        return settings;
+      },
+      completeAssistantTurn: async (session) => {
+        observedUserContent = session.contents.at(-1);
+        const assistantContent: GeminiContent = {
+          role: 'model',
+          parts: [{ text: 'Done' }],
+        };
+        session.contents.push(assistantContent);
+        session.lastInteractionId = 'interaction-slash';
+        return assistantContent;
+      },
+      openOptionsPage: async () => {},
+      now: () => new Date('2025-01-01T00:00:00.000Z'),
+      generateSessionTitle: async () => '',
+    });
+
+    const sendPayload = (await handler({
+      type: 'chat/send',
+      text: '/summarize release notes',
+      model: 'gemini-3-flash-preview',
+    })) as ChatSendPayload;
+
+    expect(observedUserContent).toMatchObject({
+      role: 'user',
+      parts: [{ text: 'Summarize this carefully:\n\nrelease notes' }],
+      metadata: {
+        userDisplayText: '/summarize release notes',
+      },
+    });
+
+    const loadPayload = (await handler({
+      type: 'chat/load',
+      chatId: sendPayload.chatId,
+    })) as ChatLoadPayload;
+    expect(loadPayload.messages[0]).toMatchObject({
+      role: 'user',
+      content: '/summarize release notes',
+    });
+  });
+
   it('generates and persists title for first textual sends without blocking send response', async () => {
     let resolveTitleGeneration: (() => void) | null = null;
     let titleCalls = 0;

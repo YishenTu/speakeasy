@@ -1,3 +1,6 @@
+import type { SlashCommandDefinition } from './slash-commands';
+import { sanitizeSlashCommands } from './slash-commands';
+
 export interface GeminiToolSettings {
   googleSearch: boolean;
   googleMaps: boolean;
@@ -93,6 +96,7 @@ export interface GeminiSettings {
   mapsLatitude: number | null;
   mapsLongitude: number | null;
   computerUseExcludedActions: string[];
+  slashCommands: SlashCommandDefinition[];
 }
 
 export const GEMINI_SETTINGS_STORAGE_KEY = 'geminiSettings';
@@ -123,6 +127,7 @@ const DEFAULT_SETTINGS: GeminiSettings = {
   mapsLatitude: null,
   mapsLongitude: null,
   computerUseExcludedActions: [],
+  slashCommands: [],
 };
 
 function toStringOrEmpty(value: unknown): string {
@@ -283,6 +288,7 @@ export function normalizeGeminiSettings(value: unknown): GeminiSettings {
     mapsLatitude: toNullableNumber(settings.mapsLatitude),
     mapsLongitude: toNullableNumber(settings.mapsLongitude),
     computerUseExcludedActions: sanitizeStringList(settings.computerUseExcludedActions),
+    slashCommands: sanitizeSlashCommands(settings.slashCommands),
   };
 }
 
@@ -291,5 +297,6 @@ export function defaultGeminiSettings(): GeminiSettings {
     ...DEFAULT_SETTINGS,
     modelThinkingLevelMap: { ...DEFAULT_SETTINGS.modelThinkingLevelMap },
     tools: { ...DEFAULT_SETTINGS.tools },
+    slashCommands: DEFAULT_SETTINGS.slashCommands.map((command) => ({ ...command })),
   };
 }

@@ -1423,7 +1423,28 @@ export function getChatPanelStyles(): string {
         z-index: 12;
       }
 
+      .slash-command-menu {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        bottom: calc(100% + 6px);
+        border: 1px solid var(--sp-color-border-base);
+        border-radius: var(--sp-radius-md);
+        background: var(--sp-color-surface-overlay);
+        max-height: 188px;
+        overflow: hidden;
+        z-index: 12;
+      }
+
       .mention-list {
+        display: flex;
+        flex-direction: column;
+        max-height: 188px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+
+      .slash-command-list {
         display: flex;
         flex-direction: column;
         max-height: 188px;
@@ -1444,8 +1465,31 @@ export function getChatPanelStyles(): string {
         cursor: pointer;
       }
 
-      .mention-item:hover,
+      .slash-command-item {
+        border: none;
+        background: transparent;
+        color: var(--sp-color-text-default);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 7px 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .mention-item:hover {
+        background: var(--sp-color-surface-hover);
+        color: var(--sp-color-text-primary);
+      }
+
       .mention-item[aria-selected="true"] {
+        background: var(--sp-color-surface-hover);
+        color: var(--sp-color-text-primary);
+      }
+
+      .slash-command-item:hover,
+      .slash-command-item[aria-selected="true"] {
         background: var(--sp-color-surface-hover);
         color: var(--sp-color-text-primary);
       }
@@ -1469,10 +1513,35 @@ export function getChatPanelStyles(): string {
         text-overflow: ellipsis;
       }
 
+      .slash-command-item-prompt {
+        width: 100%;
+        font-size: var(--sp-font-size-xs);
+        line-height: 1.2;
+        color: var(--sp-color-text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
       .mention-empty {
         padding: 8px 10px;
         font-size: var(--sp-font-size-xs);
         color: var(--sp-color-text-muted);
+      }
+
+      .slash-command-empty {
+        padding: 8px 10px;
+        font-size: var(--sp-font-size-xs);
+        color: var(--sp-color-text-muted);
+      }
+
+      .slash-command-item-name {
+        width: 100%;
+        font-size: 12px;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .input-toolbar {

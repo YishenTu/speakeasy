@@ -146,6 +146,7 @@ export interface GeminiContentMetadata {
   interactionId?: string;
   sourceModel?: string;
   createdAt?: string;
+  userDisplayText?: string;
   attachmentPreviewByFileUri?: Record<string, string>;
   attachmentPreviewTextByFileUri?: Record<string, string>;
   groundingSources?: GroundingSource[];

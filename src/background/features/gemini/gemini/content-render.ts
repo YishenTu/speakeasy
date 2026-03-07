@@ -9,6 +9,13 @@ import {
 } from './common';
 
 export function renderContentForChat(content: GeminiContent): string {
+  if (content.role === 'user') {
+    const displayText = content.metadata?.userDisplayText?.trim();
+    if (displayText) {
+      return displayText;
+    }
+  }
+
   const blocks: string[] = [];
 
   for (const part of content.parts) {
