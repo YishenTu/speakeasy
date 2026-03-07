@@ -1410,7 +1410,8 @@ export function getChatPanelStyles(): string {
         }
       }
 
-      .mention-menu {
+      .mention-menu,
+      .slash-command-menu {
         position: absolute;
         left: 8px;
         right: 8px;
@@ -1423,7 +1424,8 @@ export function getChatPanelStyles(): string {
         z-index: 12;
       }
 
-      .mention-list {
+      .mention-list,
+      .slash-command-list {
         display: flex;
         flex-direction: column;
         max-height: 188px;
@@ -1431,7 +1433,8 @@ export function getChatPanelStyles(): string {
         overscroll-behavior: contain;
       }
 
-      .mention-item {
+      .mention-item,
+      .slash-command-item {
         border: none;
         background: transparent;
         color: var(--sp-color-text-default);
@@ -1445,12 +1448,15 @@ export function getChatPanelStyles(): string {
       }
 
       .mention-item:hover,
-      .mention-item[aria-selected="true"] {
+      .mention-item[aria-selected="true"],
+      .slash-command-item:hover,
+      .slash-command-item[aria-selected="true"] {
         background: var(--sp-color-surface-hover);
         color: var(--sp-color-text-primary);
       }
 
-      .mention-item-title {
+      .mention-item-title,
+      .slash-command-item-name {
         width: 100%;
         font-size: 12px;
         line-height: 1.2;
@@ -1459,7 +1465,8 @@ export function getChatPanelStyles(): string {
         text-overflow: ellipsis;
       }
 
-      .mention-item-meta {
+      .mention-item-meta,
+      .slash-command-item-prompt {
         width: 100%;
         font-size: var(--sp-font-size-xs);
         line-height: 1.2;
@@ -1469,7 +1476,8 @@ export function getChatPanelStyles(): string {
         text-overflow: ellipsis;
       }
 
-      .mention-empty {
+      .mention-empty,
+      .slash-command-empty {
         padding: 8px 10px;
         font-size: var(--sp-font-size-xs);
         color: var(--sp-color-text-muted);

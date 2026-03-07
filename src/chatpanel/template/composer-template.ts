@@ -47,6 +47,10 @@ export function getComposerTemplate(): string {
               hidden />
             <div id="speakeasy-file-previews" class="file-preview-strip"></div>
             <div class="composer-input-wrap">
+              <div id="speakeasy-slash-command-menu" class="slash-command-menu" hidden>
+                <div id="speakeasy-slash-command-empty" class="slash-command-empty" hidden>No matching commands</div>
+                <div id="speakeasy-slash-command-list" class="slash-command-list sp-scrollable" role="listbox"></div>
+              </div>
               <div id="speakeasy-tab-mention-menu" class="mention-menu" hidden>
                 <div id="speakeasy-tab-mention-empty" class="mention-empty">No matching tabs</div>
                 <div id="speakeasy-tab-mention-list" class="mention-list sp-scrollable" role="listbox"></div>

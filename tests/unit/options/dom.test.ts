@@ -25,6 +25,9 @@ describe('options dom helpers', () => {
     expect(optionsDom.modelFlashLiteThinkingLevelSelect.id).toBe('model-thinking-level-flash-lite');
     expect(optionsDom.modelProNameInput.id).toBe('model-name-pro');
     expect(optionsDom.modelProThinkingLevelSelect.id).toBe('model-thinking-level-pro');
+    expect(optionsDom.slashCommandRowsContainer.id).toBe('slash-command-rows');
+    expect(optionsDom.addSlashCommandButton.id).toBe('add-slash-command');
+    expect(optionsDom.slashCommandRowTemplate.id).toBe('slash-command-row-template');
     expect(optionsDom.pageTextExtractionEngineInput.id).toBe('page-text-extraction-engine');
     expect(optionsDom.statusNode.id).toBe('save-status');
   });
@@ -62,6 +65,9 @@ function buildOptionsFixtureHtml(): string {
         <select id="model-thinking-level-flash-lite"></select>
         <input id="model-name-pro" />
         <select id="model-thinking-level-pro"></select>
+        <div id="slash-command-rows"></div>
+        <button id="add-slash-command" type="button">Add</button>
+        <template id="slash-command-row-template"></template>
         <textarea id="system-instruction"></textarea>
         <input id="store-interactions" type="checkbox" />
         <input id="max-tool-round-trips" />

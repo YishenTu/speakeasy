@@ -1,4 +1,5 @@
 import type { FileDataAttachmentPayload } from '../../../../shared/runtime';
+import { resolveSlashCommandText } from '../../../../shared/slash-commands';
 import { isInvalidPreviousInteractionIdError } from '../../gemini/gemini';
 import {
   appendContentsToBranch,
@@ -32,15 +33,18 @@ export async function handleSendMessage(
   attachments: FileDataAttachmentPayload[] | undefined,
   dependencies: RuntimeDependencies,
 ): Promise<SendMessageResult> {
-  const normalizedText = text.trim();
+  const normalizedDisplayText = text.trim();
   const normalizedAttachments = normalizeFileDataAttachments(attachments);
-  if (!normalizedText && normalizedAttachments.length === 0) {
-    throw new Error('Cannot send an empty message.');
-  }
 
   const settings = await dependencies.readGeminiSettings();
   if (!settings.apiKey) {
     throw new Error('Gemini API key is missing. Add it in Speakeasy Settings.');
+  }
+
+  const resolvedUserText = resolveSlashCommandText(normalizedDisplayText, settings.slashCommands);
+  const normalizedText = resolvedUserText.resolvedText.trim();
+  if (!normalizedText && normalizedAttachments.length === 0) {
+    throw new Error('Cannot send an empty message.');
   }
 
   if (model) {
@@ -71,15 +75,24 @@ export async function handleSendMessage(
     role: 'user',
     parts: userParts,
   };
+  const shouldPersistDisplayText =
+    !!resolvedUserText.command && normalizedDisplayText !== normalizedText;
+  const userMetadata: NonNullable<GeminiContent['metadata']> = {};
+  if (shouldPersistDisplayText) {
+    userMetadata.userDisplayText = normalizedDisplayText;
+  }
   const attachmentPreviewByFileUri = buildAttachmentPreviewByFileUri(normalizedAttachments);
   const attachmentPreviewTextByFileUri = buildAttachmentPreviewTextByFileUri(normalizedAttachments);
   const hasImagePreviews = Object.keys(attachmentPreviewByFileUri).length > 0;
   const hasTextPreviews = Object.keys(attachmentPreviewTextByFileUri).length > 0;
-  if (hasImagePreviews || hasTextPreviews) {
-    userContent.metadata = {
-      ...(hasImagePreviews ? { attachmentPreviewByFileUri } : {}),
-      ...(hasTextPreviews ? { attachmentPreviewTextByFileUri } : {}),
-    };
+  if (hasImagePreviews) {
+    userMetadata.attachmentPreviewByFileUri = attachmentPreviewByFileUri;
+  }
+  if (hasTextPreviews) {
+    userMetadata.attachmentPreviewTextByFileUri = attachmentPreviewTextByFileUri;
+  }
+  if (Object.keys(userMetadata).length > 0) {
+    userContent.metadata = userMetadata;
   }
   const branchStartNodeId = workingSession.branchTree?.activeLeafNodeId;
   if (!branchStartNodeId) {
@@ -137,7 +150,7 @@ export async function handleSendMessage(
   const pendingTitleGeneration: PendingSessionTitleGeneration = {
     chatId: workingSession.id,
     apiKey: settings.apiKey,
-    firstUserQuery: normalizedText,
+    firstUserQuery: normalizedDisplayText || normalizedText,
   };
   if (normalizedAttachments.length > 0) {
     pendingTitleGeneration.attachments = normalizedAttachments;

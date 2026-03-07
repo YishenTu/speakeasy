@@ -209,6 +209,7 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   const interactionId = readStringField(value, 'interactionId', 'interaction_id');
   const sourceModel = readStringField(value, 'sourceModel', 'source_model');
   const createdAt = readStringField(value, 'createdAt', 'created_at');
+  const userDisplayText = readStringField(value, 'userDisplayText', 'user_display_text');
   const attachmentPreviewByFileUri = normalizeAttachmentPreviewByFileUri(
     readPartRecord(value, 'attachmentPreviewByFileUri', 'attachment_preview_by_file_uri'),
   );
@@ -224,6 +225,7 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
     !interactionId &&
     !sourceModel &&
     !createdAt &&
+    !userDisplayText &&
     !attachmentPreviewByFileUri &&
     !attachmentPreviewTextByFileUri &&
     !groundingSources
@@ -243,6 +245,9 @@ function normalizeContentMetadata(value: unknown): GeminiContent['metadata'] | u
   }
   if (createdAt) {
     metadata.createdAt = createdAt;
+  }
+  if (userDisplayText) {
+    metadata.userDisplayText = userDisplayText;
   }
   if (attachmentPreviewByFileUri) {
     metadata.attachmentPreviewByFileUri = attachmentPreviewByFileUri;

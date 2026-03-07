@@ -25,7 +25,12 @@ describe('sessions', () => {
       createdAt: '2025-01-01T00:00:00.000Z',
       updatedAt: '2025-01-01T00:00:00.000Z',
       contents: [
-        { id: 'u1', role: 'user', parts: [{ text: 'Question' }] },
+        {
+          id: 'u1',
+          role: 'user',
+          parts: [{ text: 'Expanded prompt that should stay hidden from the UI.' }],
+          metadata: { userDisplayText: '/summarize Question' },
+        },
         {
           id: 'm1',
           role: 'model',
@@ -80,7 +85,7 @@ describe('sessions', () => {
     expect(messages).toHaveLength(5);
     expect(messages[0]).toMatchObject({
       role: 'user',
-      content: 'Question',
+      content: '/summarize Question',
     });
     expect(messages[0]?.previousInteractionId).toBeUndefined();
     expect(messages[1]).toMatchObject({

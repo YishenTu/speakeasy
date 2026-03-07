@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test';
 import type { ChatMessage } from '../../../../src/shared/messages';
 import type { RuntimeRequest } from '../../../../src/shared/runtime';
-import { ACTIVE_CHAT_STORAGE_KEY } from '../../../../src/shared/settings';
+import {
+  ACTIVE_CHAT_STORAGE_KEY,
+  GEMINI_SETTINGS_STORAGE_KEY,
+} from '../../../../src/shared/settings';
 import {
   type InstalledDomEnvironment,
   installDomTestEnvironment,
@@ -501,6 +504,41 @@ describe('chatpanel regenerate flow', () => {
       type: 'chat/load',
       chatId: 'chat-tab-22',
     });
+  });
+
+  it('opens the slash command menu when typing a leading slash in the composer', async () => {
+    const testWindow = getTestWindow();
+    storageState[GEMINI_SETTINGS_STORAGE_KEY] = {
+      slashCommands: [
+        { name: 'summarize', prompt: 'Summarize this.' },
+        { name: 'rewrite', prompt: 'Rewrite this.' },
+      ],
+    };
+
+    await importFreshChatpanelModule();
+    await flushMicrotasks();
+
+    const shadowRoot = getChatpanelShadowRoot();
+    const input = shadowRoot.querySelector('#speakeasy-input') as HTMLTextAreaElement | null;
+    const slashMenu = shadowRoot.querySelector(
+      '#speakeasy-slash-command-menu',
+    ) as HTMLElement | null;
+    expect(input).not.toBeNull();
+    expect(slashMenu).not.toBeNull();
+    if (!input || !slashMenu) {
+      throw new Error('Expected slash command controls.');
+    }
+
+    input.value = '/';
+    input.setSelectionRange(1, 1);
+    input.dispatchEvent(new testWindow.Event('input', { bubbles: true }));
+    await flushMicrotasks(12);
+
+    expect(slashMenu.hidden).toBe(false);
+    const commandNames = Array.from(
+      shadowRoot.querySelectorAll<HTMLElement>('[data-slash-command-name]'),
+    ).map((node) => node.textContent);
+    expect(commandNames).toEqual(['/summarize', '/rewrite']);
   });
 
   function getToolbarButtons(shadowRoot: ShadowRoot) {

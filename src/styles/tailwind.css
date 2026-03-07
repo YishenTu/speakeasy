@@ -11,6 +11,8 @@
 @layer components {
   .settings-page {
     @apply min-h-screen bg-black text-white/90 tracking-wide;
+    background-image: radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 32%),
+      linear-gradient(180deg, #050505 0%, #0b0b0b 100%);
   }
 
   .settings-layout {
@@ -43,6 +45,10 @@
 
   .settings-label {
     @apply mb-1.5 block text-xs uppercase tracking-wider text-white/70;
+  }
+
+  .settings-help-text {
+    @apply mt-2 text-sm leading-6 text-white/60;
   }
 
   .settings-optional {
@@ -114,6 +120,105 @@
 
   .settings-inline-button {
     @apply border border-white/20 bg-black/30 px-3 py-2 text-xs uppercase tracking-widest text-white/80 transition-colors hover:border-white/40 hover:text-white focus:outline-none;
+  }
+
+  .settings-slash-command-list {
+    @apply mt-4 grid gap-4 md:grid-cols-2;
+  }
+
+  .settings-slash-command-card {
+    @apply relative rounded-xl border border-white/10 bg-black/25 p-5 backdrop-blur-sm;
+    align-self: start;
+    min-height: 10rem;
+  }
+
+  .settings-slash-command-card[data-slash-command-mode="edit"] {
+    min-height: auto;
+  }
+
+  .settings-slash-command-toolbar {
+    @apply flex flex-col gap-3 md:flex-row md:items-end md:justify-between;
+  }
+
+  .settings-slash-command-summary {
+    @apply relative;
+  }
+
+  .settings-slash-command-summary-actions {
+    @apply absolute right-0 top-0 z-10 flex gap-2 opacity-0 transition duration-200;
+  }
+
+  .settings-slash-command-card:hover .settings-slash-command-summary-actions,
+  .settings-slash-command-card:focus-within .settings-slash-command-summary-actions {
+    opacity: 1;
+  }
+
+  .settings-slash-command-action {
+    @apply rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/65 transition-colors hover:border-white/25 hover:text-white focus:outline-none;
+  }
+
+  .settings-slash-command-action-danger {
+    @apply text-white/55;
+  }
+
+  .settings-slash-command-open {
+    @apply flex w-full flex-col items-start gap-2.5 border-0 bg-transparent p-0 text-left text-inherit;
+  }
+
+  .settings-slash-command-summary-head {
+    @apply flex items-center gap-2.5;
+  }
+
+  .settings-slash-command-avatar {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-semibold text-white/80;
+  }
+
+  .settings-slash-command-title {
+    @apply text-base font-semibold tracking-tight text-white;
+  }
+
+  .settings-slash-command-preview {
+    @apply text-sm leading-5 text-white/55;
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .settings-slash-command-editor {
+    @apply hidden flex-col gap-4;
+  }
+
+  .settings-slash-command-card[data-slash-command-mode="edit"] .settings-slash-command-editor {
+    @apply flex;
+  }
+
+  .settings-slash-command-card[data-slash-command-mode="edit"] .settings-slash-command-summary {
+    @apply hidden;
+  }
+
+  .settings-slash-command-editor-actions {
+    @apply flex flex-wrap justify-end gap-2;
+  }
+
+  .settings-slash-command-name-field {
+    @apply flex-1;
+  }
+
+  .settings-slash-command-name-wrap {
+    @apply mt-1.5 flex items-stretch overflow-hidden rounded-lg border border-white/10 bg-white/[0.05] transition-colors focus-within:border-white/35 focus-within:bg-white/[0.09];
+  }
+
+  .settings-slash-command-prefix {
+    @apply flex items-center px-3 text-sm font-semibold text-white/55;
+  }
+
+  .settings-slash-command-name-input {
+    @apply border-0 bg-transparent px-1 py-2 text-sm focus:border-0 focus:bg-transparent;
+  }
+
+  .settings-slash-command-prompt-field {
+    @apply mt-0;
   }
 
   .settings-status {
