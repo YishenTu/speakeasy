@@ -41,7 +41,7 @@ dom.slashCommandRowsContainer.addEventListener('input', (event) => {
   }
 
   syncSlashCommandRowPresentation(row);
-  void scheduleSlashCommandAutosave();
+  fireSlashCommandAutosave();
 });
 
 dom.slashCommandRowsContainer.addEventListener('click', (event) => {
@@ -55,7 +55,7 @@ dom.slashCommandRowsContainer.addEventListener('click', (event) => {
   );
   if (removeButton) {
     removeSlashCommandRow(row);
-    void scheduleSlashCommandAutosave();
+    fireSlashCommandAutosave();
     return;
   }
 
@@ -74,7 +74,7 @@ dom.slashCommandRowsContainer.addEventListener('click', (event) => {
   const draft = readSlashCommandDraftFromRow(row);
   if (!draft.name && !draft.prompt) {
     removeSlashCommandRow(row);
-    void scheduleSlashCommandAutosave();
+    fireSlashCommandAutosave();
     return;
   }
 
@@ -87,7 +87,7 @@ dom.slashCommandRowsContainer.addEventListener('click', (event) => {
 
   syncSlashCommandRowPresentation(row);
   setSlashCommandRowEditState(row, false);
-  void scheduleSlashCommandAutosave();
+  fireSlashCommandAutosave();
 });
 
 dom.form.addEventListener('submit', async (event) => {
@@ -121,6 +121,12 @@ async function initializeForm(): Promise<void> {
   applySettingsToForm(dom, settings);
   hasInitializedForm = true;
   setStatus(dom.statusNode, 'Ready.', 'info');
+}
+
+function fireSlashCommandAutosave(): void {
+  scheduleSlashCommandAutosave().catch(() => {
+    setStatus(dom.statusNode, 'Failed to save slash commands.', 'error');
+  });
 }
 
 async function scheduleSlashCommandAutosave(): Promise<void> {

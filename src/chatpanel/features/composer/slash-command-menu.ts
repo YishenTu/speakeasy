@@ -1,5 +1,6 @@
 import { GEMINI_SETTINGS_STORAGE_KEY, normalizeGeminiSettings } from '../../../shared/settings';
 import { type SlashCommandDefinition, filterSlashCommands } from '../../../shared/slash-commands';
+import { createTitleMetaButton } from '../../core/list-item-builders';
 
 export interface SlashCommandMenuController {
   onInputOrCaretChange(): void;
@@ -129,23 +130,20 @@ export function createSlashCommandMenuController(
     command: SlashCommandDefinition,
     selected: boolean,
   ): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'slash-command-item';
-    button.dataset.commandName = command.name;
-    button.setAttribute('role', 'option');
-    button.setAttribute('aria-selected', selected ? 'true' : 'false');
-
-    const name = document.createElement('span');
-    name.className = 'slash-command-item-name';
-    name.dataset.slashCommandName = 'true';
-    name.textContent = `/${command.name}`;
-
-    const prompt = document.createElement('span');
-    prompt.className = 'slash-command-item-prompt';
-    prompt.textContent = command.prompt;
-
-    button.append(name, prompt);
+    const button = createTitleMetaButton({
+      buttonClassName: 'slash-command-item',
+      titleClassName: 'slash-command-item-name',
+      metaClassName: 'slash-command-item-prompt',
+      titleText: `/${command.name}`,
+      metaText: command.prompt,
+      role: 'option',
+      selected,
+      dataset: { commandName: command.name },
+    });
+    const titleSpan = button.querySelector<HTMLElement>('.slash-command-item-name');
+    if (titleSpan) {
+      titleSpan.dataset.slashCommandName = 'true';
+    }
     return button;
   }
 
@@ -199,9 +197,12 @@ export function createSlashCommandMenuController(
   };
 
   options.list.addEventListener('click', onListClick);
-  void chrome.storage.local.get(GEMINI_SETTINGS_STORAGE_KEY).then((stored) => {
-    applySettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
-  });
+  void chrome.storage.local
+    .get(GEMINI_SETTINGS_STORAGE_KEY)
+    .then((stored) => {
+      applySettings(stored[GEMINI_SETTINGS_STORAGE_KEY]);
+    })
+    .catch(() => {});
   chrome.storage.onChanged.addListener(onStorageChanged);
 
   return {

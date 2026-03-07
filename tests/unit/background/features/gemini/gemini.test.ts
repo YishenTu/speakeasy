@@ -338,6 +338,35 @@ describe('renderContentForChat', () => {
 
     expect(renderContentForChat(content)).toBe('Tool call requested: click {"x":120,"y":240}');
   });
+
+  it('returns userDisplayText for user content when metadata is present', () => {
+    const content: GeminiContent = {
+      role: 'user',
+      parts: [{ text: 'Summarize this carefully:\n\nrelease notes' }],
+      metadata: { userDisplayText: '/summarize release notes' },
+    };
+
+    expect(renderContentForChat(content)).toBe('/summarize release notes');
+  });
+
+  it('renders parts normally for user content without userDisplayText', () => {
+    const content: GeminiContent = {
+      role: 'user',
+      parts: [{ text: 'Hello world' }],
+    };
+
+    expect(renderContentForChat(content)).toBe('Hello world');
+  });
+
+  it('ignores userDisplayText on model content and renders parts normally', () => {
+    const content: GeminiContent = {
+      role: 'model',
+      parts: [{ text: 'Model response' }],
+      metadata: { userDisplayText: 'Should be ignored' },
+    };
+
+    expect(renderContentForChat(content)).toBe('Model response');
+  });
 });
 
 describe('extractAttachments', () => {
@@ -635,6 +664,35 @@ describe('normalizeContent', () => {
       },
     });
     expect(snakeCaseMetadata.metadata?.createdAt).toBe(createdAt);
+  });
+
+  it('preserves userDisplayText metadata in both camelCase and snake_case forms', () => {
+    const withCamelCase = normalizeContent({
+      role: 'user',
+      parts: [{ text: 'expanded prompt' }],
+      metadata: {
+        userDisplayText: '/summarize release notes',
+      },
+    });
+    expect(withCamelCase.metadata?.userDisplayText).toBe('/summarize release notes');
+
+    const withSnakeCase = normalizeContent({
+      role: 'user',
+      parts: [{ text: 'expanded prompt' }],
+      metadata: {
+        user_display_text: '/rewrite draft',
+      },
+    });
+    expect(withSnakeCase.metadata?.userDisplayText).toBe('/rewrite draft');
+
+    const withEmpty = normalizeContent({
+      role: 'user',
+      parts: [{ text: 'plain message' }],
+      metadata: {
+        userDisplayText: '   ',
+      },
+    });
+    expect(withEmpty.metadata).toBeUndefined();
   });
 
   it('keeps valid interactionId metadata and drops empty or non-string values', () => {
