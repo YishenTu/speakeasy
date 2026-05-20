@@ -1,6 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
+import { FunctionCallingConfigMode, GoogleGenAI, Type } from '@google/genai';
 
-const model = 'gemini-3-flash-preview';
+const model = 'gemini-flash-latest';
 const apiKey = Bun.env.GEMINI_API_KEY;
 
 if (!apiKey) {
@@ -180,7 +180,7 @@ async function run(): Promise<void> {
     name: 'get_current_time',
     description: 'Get the current time.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {},
     },
   };
@@ -197,7 +197,7 @@ async function run(): Promise<void> {
       tools: [{ functionDeclarations: [functionTool] }],
       toolConfig: {
         functionCallingConfig: {
-          mode: 'ANY',
+          mode: FunctionCallingConfigMode.ANY,
           allowedFunctionNames: ['get_current_time'],
         },
       },
@@ -234,7 +234,7 @@ async function run(): Promise<void> {
       tools: [{ functionDeclarations: [functionTool] }],
       toolConfig: {
         functionCallingConfig: {
-          mode: 'AUTO',
+          mode: FunctionCallingConfigMode.AUTO,
         },
       },
     },

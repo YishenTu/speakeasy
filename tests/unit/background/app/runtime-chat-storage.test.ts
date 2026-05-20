@@ -63,7 +63,7 @@ class InMemoryChatRepository implements ChatRepository {
 function createSettings(): GeminiSettings {
   const settings = defaultGeminiSettings();
   settings.apiKey = 'test-api-key';
-  settings.model = 'gemini-3-flash-preview';
+  settings.model = 'gemini-flash-latest';
   return settings;
 }
 
@@ -135,7 +135,7 @@ function createMultiTurnSession(id: string): ChatSession {
         parts: [{ text: 'first answer' }],
         metadata: {
           interactionId: 'interaction-1',
-          sourceModel: 'gemini-3-flash-preview',
+          sourceModel: 'gemini-flash-latest',
         },
       },
       {
@@ -149,7 +149,7 @@ function createMultiTurnSession(id: string): ChatSession {
         parts: [{ text: 'second answer' }],
         metadata: {
           interactionId: 'interaction-2',
-          sourceModel: 'gemini-3.1-pro-preview',
+          sourceModel: 'gemini-pro-latest',
         },
       },
     ],
@@ -226,7 +226,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/send',
       chatId: 'chat-send',
       text: 'next',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
     expect(sendPayload).toMatchObject({
       chatId: 'chat-send',
@@ -281,7 +281,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/send',
       chatId: 'chat-stats',
       text: 'show me stats',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
 
     expect(sendPayload).toMatchObject({
@@ -398,7 +398,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/send',
         chatId: 'chat-prune',
         text: 'message',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       });
       expect(sendPayload).toMatchObject({
         chatId: 'chat-prune',
@@ -444,7 +444,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/send',
       chatId: 'chat-1',
       text: 'queued',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
 
     let loadResolved = false;
@@ -494,7 +494,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/send',
         chatId: 'chat-2',
         text: 'will fail',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       }),
     ).rejects.toThrow(/unavailable/i);
 
@@ -526,7 +526,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/send',
         chatId: 'chat-3',
         text: 'retry',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       }),
     ).rejects.toThrow(/resend your last message/i);
 
@@ -577,7 +577,7 @@ describe('runtime chat storage handler', () => {
             type: 'chat/send',
             chatId: chained.id,
             text: 'retry',
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-flash-latest',
             streamRequestId: 'stream-1',
           },
           {
@@ -630,7 +630,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/send',
         chatId: chained.id,
         text: 'retry',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       }),
     ).rejects.toThrow(/failed to reset expired conversation context/i);
 
@@ -659,7 +659,7 @@ describe('runtime chat storage handler', () => {
     const sendPayload = await handler({
       type: 'chat/send',
       text: 'start new conversation',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
 
     const chatId = (sendPayload as { chatId: string }).chatId;
@@ -706,7 +706,7 @@ describe('runtime chat storage handler', () => {
     const sendPayload = (await handler({
       type: 'chat/send',
       text: '/summarize release notes',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     })) as ChatSendPayload;
 
     expect(observedUserContent).toMatchObject({
@@ -757,7 +757,7 @@ describe('runtime chat storage handler', () => {
     const sendPayload = await handler({
       type: 'chat/send',
       text: 'start titled conversation',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
 
     const chatId = (sendPayload as { chatId: string }).chatId;
@@ -824,7 +824,7 @@ describe('runtime chat storage handler', () => {
     const sendPayload = await handler({
       type: 'chat/send',
       text: '   ',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
       attachments: [
         {
           name: 'img',
@@ -884,7 +884,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/send',
       chatId: 'chat-existing',
       text: 'follow up',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
 
     expect(payload).toMatchObject({
@@ -921,7 +921,7 @@ describe('runtime chat storage handler', () => {
       const sendPayload = await handler({
         type: 'chat/send',
         text: 'start new conversation',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       });
 
       const chatId = (sendPayload as { chatId: string }).chatId;
@@ -968,7 +968,7 @@ describe('runtime chat storage handler', () => {
       await handler({
         type: 'chat/send',
         text: 'generate title',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       });
       await handler({ type: 'chat/list' });
 
@@ -1104,7 +1104,7 @@ describe('runtime chat storage handler', () => {
       handler({
         type: 'chat/send',
         text: '   ',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       }),
     ).rejects.toThrow(/empty message/i);
 
@@ -1130,7 +1130,7 @@ describe('runtime chat storage handler', () => {
       handler({
         type: 'chat/send',
         text: 'hello',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       }),
     ).rejects.toThrow(/api key is missing/i);
   });
@@ -1158,7 +1158,7 @@ describe('runtime chat storage handler', () => {
     const payload = await handler({
       type: 'chat/send',
       text: '  ',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
       attachments: [
         {
           name: 'img',
@@ -1261,7 +1261,7 @@ describe('runtime chat storage handler', () => {
     const sendPayload = (await handler({
       type: 'chat/send',
       text: '',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
       attachments: [
         {
           name: 'invoice.pdf',
@@ -1311,7 +1311,7 @@ describe('runtime chat storage handler', () => {
     await handler({
       type: 'chat/send',
       text: '',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
       attachments: [
         {
           name: 'img',
@@ -1595,7 +1595,7 @@ describe('runtime chat storage handler', () => {
           type: 'chat/send',
           chatId: 'chat-stream',
           text: 'stream this',
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-flash-latest',
           streamRequestId: 'stream-1',
         },
         {
@@ -1677,7 +1677,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/send',
         chatId: 'chat-stream-missing-sender',
         text: 'stream this',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
         streamRequestId: 'stream-2',
       });
 
@@ -1730,7 +1730,7 @@ describe('runtime chat storage handler', () => {
           type: 'chat/send',
           chatId: 'chat-stream-send-error',
           text: 'stream please',
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-flash-latest',
           streamRequestId: 'stream-send-error',
         },
         {
@@ -1867,7 +1867,7 @@ describe('runtime chat storage handler', () => {
           type: 'chat/send',
           chatId: 'chat-stream-tab-only',
           text: 'stream this',
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-flash-latest',
           streamRequestId: 'stream-tab-only',
         },
         {
@@ -1967,7 +1967,7 @@ describe('runtime chat storage handler', () => {
           parts: [{ text: 'forked follow-up answer' }],
           metadata: {
             interactionId: 'interaction-fork',
-            sourceModel: 'gemini-3-flash-preview',
+            sourceModel: 'gemini-flash-latest',
           },
         };
         session.contents.push(assistantContent);
@@ -1989,7 +1989,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/send',
       chatId: 'chat-base',
       text: 'edited second prompt',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     } as RuntimeRequest);
 
     const loadPayload = await handler({ type: 'chat/load', chatId: 'chat-base' } as RuntimeRequest);
@@ -2050,7 +2050,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/regen',
       chatId: 'chat-base',
       previousInteractionId: 'interaction-2',
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-pro-latest',
       thinkingLevel: 'high',
     } as RuntimeRequest);
 
@@ -2063,7 +2063,7 @@ describe('runtime chat storage handler', () => {
         content: 'regenerated answer',
       },
     });
-    expect(capturedModel).toBe('gemini-3.1-pro-preview');
+    expect(capturedModel).toBe('gemini-pro-latest');
     expect(capturedSessionSnapshot?.contents.map((content) => content.id)).toEqual([
       'u1',
       'm1',
@@ -2117,7 +2117,7 @@ describe('runtime chat storage handler', () => {
       type: 'chat/regen',
       chatId: 'chat-base',
       previousInteractionId: 'interaction-2',
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-pro-latest',
     } as RuntimeRequest);
 
     const switched = await handler({
@@ -2151,7 +2151,7 @@ describe('runtime chat storage handler', () => {
       handler({
         type: 'chat/regen',
         chatId: 'chat-base',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       } as RuntimeRequest),
     ).rejects.toThrow(/target interaction id/i);
   });
@@ -2174,7 +2174,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/regen',
         chatId: 'missing-chat',
         previousInteractionId: 'interaction-1',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       } as RuntimeRequest),
     ).rejects.toThrow(/chat that does not exist/i);
   });
@@ -2198,7 +2198,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/regen',
         chatId: 'chat-base',
         previousInteractionId: 'missing-interaction',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       } as RuntimeRequest),
     ).rejects.toThrow(/target assistant message was not found/i);
   });
@@ -2238,7 +2238,7 @@ describe('runtime chat storage handler', () => {
         type: 'chat/regen',
         chatId: 'chat-assistant-only',
         previousInteractionId: 'interaction-1',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
       } as RuntimeRequest),
     ).rejects.toThrow(/no originating user prompt was found/i);
   });

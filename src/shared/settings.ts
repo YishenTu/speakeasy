@@ -32,29 +32,28 @@ export interface BuiltinGeminiModelCatalogEntry {
 export const BUILTIN_GEMINI_MODEL_CATALOG: readonly BuiltinGeminiModelCatalogEntry[] = [
   {
     key: 'flash',
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-flash-latest',
     label: 'Flash',
     thinkingLevels: ['minimal', 'low', 'medium', 'high'],
     defaultThinkingLevel: 'minimal',
   },
   {
     key: 'flash-lite',
-    model: 'gemini-3.1-flash-lite-preview',
+    model: 'gemini-flash-lite-latest',
     label: 'Lite',
     thinkingLevels: ['minimal', 'low', 'medium', 'high'],
     defaultThinkingLevel: 'minimal',
   },
   {
     key: 'pro',
-    model: 'gemini-3.1-pro-preview',
+    model: 'gemini-pro-latest',
     label: 'Pro',
     thinkingLevels: ['low', 'medium', 'high'],
     defaultThinkingLevel: 'high',
   },
 ];
 
-export const DEFAULT_GEMINI_MODEL =
-  BUILTIN_GEMINI_MODEL_CATALOG[0]?.model ?? 'gemini-3-flash-preview';
+export const DEFAULT_GEMINI_MODEL = BUILTIN_GEMINI_MODEL_CATALOG[0]?.model ?? 'gemini-flash-latest';
 
 const DEFAULT_MODEL_THINKING_LEVEL_MAP: Record<string, string> = Object.fromEntries(
   BUILTIN_GEMINI_MODEL_CATALOG.map((entry) => [entry.model, entry.defaultThinkingLevel]),

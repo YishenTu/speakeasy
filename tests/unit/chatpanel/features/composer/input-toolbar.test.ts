@@ -98,7 +98,7 @@ describe('chatpanel input toolbar', () => {
 
     const proModelButton = queryRequiredElement<HTMLElement>(
       shadowRoot,
-      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-pro-latest"]',
     );
     proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
 
@@ -106,7 +106,7 @@ describe('chatpanel input toolbar', () => {
       shadowRoot,
       '#speakeasy-thinking-dropup .dropup-trigger',
     );
-    expect(toolbar.selectedModel()).toBe('gemini-3.1-pro-preview');
+    expect(toolbar.selectedModel()).toBe('gemini-pro-latest');
     expect(toolbar.selectedThinkingLevel()).toBe('high');
     expect(thinkingTrigger.dataset.value).toBe('high');
     expect(thinkingTrigger.textContent?.trim()).toBe('High');
@@ -126,7 +126,7 @@ describe('chatpanel input toolbar', () => {
     installChromeStorageMock({
       [GEMINI_SETTINGS_STORAGE_KEY]: {
         modelThinkingLevelMap: {
-          'gemini-3.1-pro-preview': 'medium',
+          'gemini-pro-latest': 'medium',
         },
       },
     });
@@ -137,7 +137,7 @@ describe('chatpanel input toolbar', () => {
 
     const proModelButton = queryRequiredElement<HTMLElement>(
       shadowRoot,
-      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-pro-latest"]',
     );
     proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
 
@@ -189,7 +189,7 @@ describe('chatpanel input toolbar', () => {
     installChromeStorageMock({
       [GEMINI_SETTINGS_STORAGE_KEY]: {
         modelThinkingLevelMap: {
-          'gemini-3.1-pro-preview': 'medium',
+          'gemini-pro-latest': 'medium',
         },
       },
     });
@@ -200,7 +200,7 @@ describe('chatpanel input toolbar', () => {
 
     const proModelButton = queryRequiredElement<HTMLElement>(
       shadowRoot,
-      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-pro-latest"]',
     );
     proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
 
@@ -229,7 +229,7 @@ describe('chatpanel input toolbar', () => {
 
     const proModelButton = queryRequiredElement<HTMLElement>(
       shadowRoot,
-      '#speakeasy-model-dropup .dropup-item[data-value="gemini-3.1-pro-preview"]',
+      '#speakeasy-model-dropup .dropup-item[data-value="gemini-pro-latest"]',
     );
     proModelButton.dispatchEvent(new testWindow.MouseEvent('click', { bubbles: true }));
 
@@ -244,7 +244,7 @@ describe('chatpanel input toolbar', () => {
       [GEMINI_SETTINGS_STORAGE_KEY]: {
         newValue: {
           modelThinkingLevelMap: {
-            'gemini-3.1-pro-preview': 'medium',
+            'gemini-pro-latest': 'medium',
           },
         },
       },
@@ -267,7 +267,7 @@ describe('chatpanel input toolbar', () => {
       unrelatedStorageKey: {
         newValue: {
           modelThinkingLevelMap: {
-            'gemini-3.1-pro-preview': 'high',
+            'gemini-pro-latest': 'high',
           },
         },
       },
@@ -296,10 +296,10 @@ describe('chatpanel input toolbar', () => {
   function createToolbarShadowRoot(): ShadowRoot {
     return createShadowRootFixture(`
       <div class="dropup" id="speakeasy-model-dropup">
-        <button class="dropup-trigger" type="button" data-value="gemini-3-flash-preview">Flash</button>
+        <button class="dropup-trigger" type="button" data-value="gemini-flash-latest">Flash</button>
         <div class="dropup-menu">
-          <button type="button" class="dropup-item" data-value="gemini-3-flash-preview" aria-selected="true">Flash</button>
-          <button type="button" class="dropup-item" data-value="gemini-3.1-pro-preview">Pro</button>
+          <button type="button" class="dropup-item" data-value="gemini-flash-latest" aria-selected="true">Flash</button>
+          <button type="button" class="dropup-item" data-value="gemini-pro-latest">Pro</button>
         </div>
       </div>
       <div class="dropup" id="speakeasy-thinking-dropup">

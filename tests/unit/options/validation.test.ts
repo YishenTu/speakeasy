@@ -5,7 +5,7 @@ import { defaultGeminiSettings } from '../../../src/shared/settings';
 function createValidSettings() {
   const settings = defaultGeminiSettings();
   settings.apiKey = 'test-api-key';
-  settings.model = 'gemini-3-flash-preview';
+  settings.model = 'gemini-flash-latest';
   settings.tools = {
     googleSearch: false,
     googleMaps: false,

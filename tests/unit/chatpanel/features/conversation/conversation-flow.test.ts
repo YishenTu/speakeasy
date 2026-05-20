@@ -141,7 +141,7 @@ function createHarness(options: HarnessOptions = {}) {
       },
     },
     toolbar: {
-      selectedModel: () => 'gemini-3-flash-preview',
+      selectedModel: () => 'gemini-flash-latest',
       selectedThinkingLevel: () => 'minimal',
     },
     composer: {
@@ -247,7 +247,7 @@ describe('conversation flow controller', () => {
 
     expect(harness.sendCalls).toHaveLength(1);
     expect(harness.sendCalls[0]?.userInput).toBe('Hello world');
-    expect(harness.sendCalls[0]?.model).toBe('gemini-3-flash-preview');
+    expect(harness.sendCalls[0]?.model).toBe('gemini-flash-latest');
     expect(harness.sendCalls[0]?.thinkingLevel).toBe('minimal');
     expect(typeof harness.sendCalls[0]?.streamRequestId).toBe('string');
     expect(harness.sendCalls[0]?.streamRequestId?.length).toBeGreaterThan(0);

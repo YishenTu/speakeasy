@@ -49,7 +49,7 @@ describe('chat storage bootstrap', () => {
   it('preserves gemini settings while resetting chat keys', async () => {
     storageState[GEMINI_SETTINGS_STORAGE_KEY] = {
       apiKey: 'keep-me',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     };
     storageState[LEGACY_CHAT_SESSIONS_STORAGE_KEY] = { stale: true };
     storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-old';
@@ -58,7 +58,7 @@ describe('chat storage bootstrap', () => {
 
     expect(storageState[GEMINI_SETTINGS_STORAGE_KEY]).toEqual({
       apiKey: 'keep-me',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
     });
   });
 

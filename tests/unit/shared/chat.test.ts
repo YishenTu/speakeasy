@@ -108,34 +108,24 @@ describe('shared chat client', () => {
       },
     );
 
-    await sendMessage(
-      'hello from tab a',
-      'gemini-3-flash-preview',
-      undefined,
-      undefined,
-      undefined,
-      { tabId: 101 },
-    );
-    await sendMessage(
-      'hello from tab b',
-      'gemini-3-flash-preview',
-      undefined,
-      undefined,
-      undefined,
-      { tabId: 202 },
-    );
+    await sendMessage('hello from tab a', 'gemini-flash-latest', undefined, undefined, undefined, {
+      tabId: 101,
+    });
+    await sendMessage('hello from tab b', 'gemini-flash-latest', undefined, undefined, undefined, {
+      tabId: 202,
+    });
 
     expect(runtimeRequests).toEqual([
       {
         type: 'chat/send',
         text: 'hello from tab a',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
         chatId: 'chat-tab-a',
       },
       {
         type: 'chat/send',
         text: 'hello from tab b',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
         chatId: 'chat-tab-b',
       },
     ]);
@@ -233,7 +223,7 @@ describe('shared chat client', () => {
 
     const assistantMessage = await sendMessage(
       '   hello there   ',
-      'gemini-3-flash-preview',
+      'gemini-flash-latest',
       'high',
       undefined,
       'stream-req-1',
@@ -243,7 +233,7 @@ describe('shared chat client', () => {
       {
         type: 'chat/send',
         text: 'hello there',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
         thinkingLevel: 'high',
         chatId: 'chat-10',
         streamRequestId: 'stream-req-1',
@@ -258,7 +248,7 @@ describe('shared chat client', () => {
   });
 
   it('rejects empty user messages when attachments are not present', async () => {
-    await expect(sendMessage('   ', 'gemini-3-flash-preview', undefined, [])).rejects.toThrow(
+    await expect(sendMessage('   ', 'gemini-flash-latest', undefined, [])).rejects.toThrow(
       /empty message/i,
     );
     expect(runtimeRequests).toEqual([]);
@@ -277,7 +267,7 @@ describe('shared chat client', () => {
       },
     });
 
-    await sendMessage('', 'gemini-3-flash-preview', undefined, [
+    await sendMessage('', 'gemini-flash-latest', undefined, [
       {
         name: 'note.txt',
         mimeType: 'text/plain',
@@ -289,7 +279,7 @@ describe('shared chat client', () => {
       {
         type: 'chat/send',
         text: '',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
         attachments: [
           {
             name: 'note.txt',
@@ -427,7 +417,7 @@ describe('shared chat client', () => {
 
     const assistant = await regenerateAssistantMessage(
       'interaction-2',
-      'gemini-3.1-pro-preview',
+      'gemini-pro-latest',
       'high',
       'regen-stream-1',
     );
@@ -443,7 +433,7 @@ describe('shared chat client', () => {
         type: 'chat/regen',
         chatId: 'chat-active',
         previousInteractionId: 'interaction-2',
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-pro-latest',
         thinkingLevel: 'high',
         streamRequestId: 'regen-stream-1',
       },
@@ -487,7 +477,7 @@ describe('shared chat client', () => {
 
   it('rejects regenerate when no active chat exists', async () => {
     await expect(
-      regenerateAssistantMessage('interaction-2', 'gemini-3-flash-preview'),
+      regenerateAssistantMessage('interaction-2', 'gemini-flash-latest'),
     ).rejects.toThrow(/active chat/i);
     expect(runtimeRequests).toEqual([]);
   });
@@ -495,7 +485,7 @@ describe('shared chat client', () => {
   it('rejects regenerate when target interaction id is blank', async () => {
     storageState[ACTIVE_CHAT_STORAGE_KEY] = 'chat-active';
 
-    await expect(regenerateAssistantMessage('   ', 'gemini-3-flash-preview')).rejects.toThrow(
+    await expect(regenerateAssistantMessage('   ', 'gemini-flash-latest')).rejects.toThrow(
       /target interaction id/i,
     );
     expect(runtimeRequests).toEqual([]);

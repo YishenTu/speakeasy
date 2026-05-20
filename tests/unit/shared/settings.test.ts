@@ -17,11 +17,11 @@ describe('defaultGeminiSettings', () => {
 
     expect(first).toEqual({
       apiKey: '',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-latest',
       modelThinkingLevelMap: {
-        'gemini-3-flash-preview': 'minimal',
-        'gemini-3.1-flash-lite-preview': 'minimal',
-        'gemini-3.1-pro-preview': 'high',
+        'gemini-flash-latest': 'minimal',
+        'gemini-flash-lite-latest': 'minimal',
+        'gemini-pro-latest': 'high',
       },
       systemInstruction: '',
       storeInteractions: true,
@@ -55,21 +55,21 @@ describe('model catalog', () => {
     expect(BUILTIN_GEMINI_MODEL_CATALOG).toEqual([
       {
         key: 'flash',
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-flash-latest',
         label: 'Flash',
         thinkingLevels: ['minimal', 'low', 'medium', 'high'],
         defaultThinkingLevel: 'minimal',
       },
       {
         key: 'flash-lite',
-        model: 'gemini-3.1-flash-lite-preview',
+        model: 'gemini-flash-lite-latest',
         label: 'Lite',
         thinkingLevels: ['minimal', 'low', 'medium', 'high'],
         defaultThinkingLevel: 'minimal',
       },
       {
         key: 'pro',
-        model: 'gemini-3.1-pro-preview',
+        model: 'gemini-pro-latest',
         label: 'Pro',
         thinkingLevels: ['low', 'medium', 'high'],
         defaultThinkingLevel: 'high',
@@ -77,16 +77,16 @@ describe('model catalog', () => {
     ]);
 
     expect(getBuiltinGeminiModelByKey('flash').model).toBe(DEFAULT_GEMINI_MODEL);
-    expect(getModelDisplayLabel('gemini-3.1-flash-lite-preview')).toBe('Lite');
-    expect(getModelDisplayLabel('gemini-3.1-pro-preview')).toBe('Pro');
+    expect(getModelDisplayLabel('gemini-flash-lite-latest')).toBe('Lite');
+    expect(getModelDisplayLabel('gemini-pro-latest')).toBe('Pro');
     expect(getModelDisplayLabel('gemini-3.2-custom')).toBe('gemini-3.2-custom');
-    expect(getModelThinkingLevels('gemini-3.1-flash-lite-preview')).toEqual([
+    expect(getModelThinkingLevels('gemini-flash-lite-latest')).toEqual([
       'minimal',
       'low',
       'medium',
       'high',
     ]);
-    expect(getModelThinkingLevels('gemini-3.1-pro-preview')).toEqual(['low', 'medium', 'high']);
+    expect(getModelThinkingLevels('gemini-pro-latest')).toEqual(['low', 'medium', 'high']);
     expect(getModelThinkingLevels('gemini-3.2-custom')).toEqual([
       'minimal',
       'low',
@@ -123,7 +123,7 @@ describe('normalizeGeminiSettings', () => {
       modelThinkingLevelMap: {
         ' custom-model ': ' low ',
         '': 'high',
-        'gemini-3.1-pro-preview': 9,
+        'gemini-pro-latest': 9,
       },
       slashCommands: [
         { name: ' /summarize ', prompt: ' Summarize:\n\n$ARGUMENTS ' },
@@ -133,7 +133,7 @@ describe('normalizeGeminiSettings', () => {
     });
 
     expect(normalized.apiKey).toBe('');
-    expect(normalized.model).toBe('gemini-3-flash-preview');
+    expect(normalized.model).toBe('gemini-flash-latest');
     expect(normalized.systemInstruction).toBe('');
     expect(normalized.storeInteractions).toBe(true);
     expect(normalized.maxToolRoundTrips).toBe(6);
@@ -154,9 +154,9 @@ describe('normalizeGeminiSettings', () => {
     expect(normalized.mapsLongitude).toBeNull();
     expect(normalized.computerUseExcludedActions).toEqual(['click', 'drag']);
     expect(normalized.modelThinkingLevelMap).toEqual({
-      'gemini-3-flash-preview': 'minimal',
-      'gemini-3.1-flash-lite-preview': 'minimal',
-      'gemini-3.1-pro-preview': 'high',
+      'gemini-flash-latest': 'minimal',
+      'gemini-flash-lite-latest': 'minimal',
+      'gemini-pro-latest': 'high',
     });
     expect(normalized.slashCommands).toEqual([
       {
@@ -168,7 +168,7 @@ describe('normalizeGeminiSettings', () => {
 
   it('falls back to default model when stored model is not built in', () => {
     const normalized = normalizeGeminiSettings({ model: 'custom-legacy-model' });
-    expect(normalized.model).toBe('gemini-3-flash-preview');
+    expect(normalized.model).toBe('gemini-flash-latest');
   });
 
   it('clamps and coerces numeric boundaries', () => {

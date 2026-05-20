@@ -26,9 +26,9 @@ describe('options form state', () => {
     const settings = defaultGeminiSettings();
     settings.apiKey = 'api-key';
     settings.modelThinkingLevelMap = {
-      'gemini-3-flash-preview': 'medium',
-      'gemini-3.1-flash-lite-preview': 'low',
-      'gemini-3.1-pro-preview': 'low',
+      'gemini-flash-latest': 'medium',
+      'gemini-flash-lite-latest': 'low',
+      'gemini-pro-latest': 'low',
     };
     settings.systemInstruction = 'Be direct.';
     settings.storeInteractions = false;
@@ -55,11 +55,11 @@ describe('options form state', () => {
     applySettingsToForm(dom, settings);
 
     expect(dom.apiKeyInput.value).toBe('api-key');
-    expect(dom.modelFlashNameInput.value).toBe('gemini-3-flash-preview');
+    expect(dom.modelFlashNameInput.value).toBe('gemini-flash-latest');
     expect(dom.modelFlashThinkingLevelSelect.value).toBe('medium');
-    expect(dom.modelFlashLiteNameInput.value).toBe('gemini-3.1-flash-lite-preview');
+    expect(dom.modelFlashLiteNameInput.value).toBe('gemini-flash-lite-latest');
     expect(dom.modelFlashLiteThinkingLevelSelect.value).toBe('low');
-    expect(dom.modelProNameInput.value).toBe('gemini-3.1-pro-preview');
+    expect(dom.modelProNameInput.value).toBe('gemini-pro-latest');
     expect(dom.modelProThinkingLevelSelect.value).toBe('low');
     expect(dom.systemInstructionInput.value).toBe('Be direct.');
     expect(dom.storeInteractionsInput.checked).toBe(false);
@@ -134,9 +134,9 @@ describe('options form state', () => {
     expect(state).toEqual({
       apiKey: 'key-123',
       modelThinkingLevelMap: {
-        'gemini-3-flash-preview': 'low',
-        'gemini-3.1-flash-lite-preview': 'high',
-        'gemini-3.1-pro-preview': 'high',
+        'gemini-flash-latest': 'low',
+        'gemini-flash-lite-latest': 'high',
+        'gemini-pro-latest': 'high',
       },
       systemInstruction: 'Use tools when needed.',
       storeInteractions: true,
@@ -204,9 +204,9 @@ describe('options form state', () => {
     const state = readFormState(dom);
 
     expect(state.modelThinkingLevelMap).toEqual({
-      'gemini-3-flash-preview': 'minimal',
-      'gemini-3.1-flash-lite-preview': 'minimal',
-      'gemini-3.1-pro-preview': 'high',
+      'gemini-flash-latest': 'minimal',
+      'gemini-flash-lite-latest': 'minimal',
+      'gemini-pro-latest': 'high',
     });
   });
 
