@@ -23,14 +23,14 @@ describe('options page bootstrap', () => {
   it('initializes form state and page metadata from storage', async () => {
     storedSettings = {
       apiKey: 'init-key',
-      model: 'gemini-pro-latest',
+      model: 'gemini-3.1-pro-preview',
       slashCommands: [
         { name: 'summarize', prompt: 'Summarize:\n\n$ARGUMENTS' },
         { name: 'rewrite', prompt: 'Rewrite clearly.' },
       ],
       modelThinkingLevelMap: {
-        'gemini-flash-latest': 'high',
-        'gemini-flash-lite-latest': 'low',
+        'gemini-3.5-flash': 'high',
+        'gemini-3.1-flash-lite': 'low',
       },
       maxToolRoundTrips: 7,
       pageTextExtractionEngine: 'readability',
@@ -43,19 +43,19 @@ describe('options page bootstrap', () => {
     expect(document.getElementById('version')?.textContent).toBe('9.9.9');
     expect((document.getElementById('api-key') as HTMLInputElement).value).toBe('init-key');
     expect((document.getElementById('model-name-flash') as HTMLInputElement).value).toBe(
-      'gemini-flash-latest',
+      'gemini-3.5-flash',
     );
     expect((document.getElementById('model-thinking-level-flash') as HTMLSelectElement).value).toBe(
       'high',
     );
     expect((document.getElementById('model-name-flash-lite') as HTMLInputElement).value).toBe(
-      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
     );
     expect(
       (document.getElementById('model-thinking-level-flash-lite') as HTMLSelectElement).value,
     ).toBe('low');
     expect((document.getElementById('model-name-pro') as HTMLInputElement).value).toBe(
-      'gemini-pro-latest',
+      'gemini-3.1-pro-preview',
     );
     expect((document.getElementById('model-thinking-level-pro') as HTMLSelectElement).value).toBe(
       'high',
@@ -137,11 +137,11 @@ describe('options page bootstrap', () => {
         }
       | undefined;
     expect(persisted?.apiKey).toBe('live-key');
-    expect(persisted?.model).toBe('gemini-flash-latest');
+    expect(persisted?.model).toBe('gemini-3.5-flash');
     expect(persisted?.modelThinkingLevelMap).toEqual({
-      'gemini-flash-latest': 'low',
-      'gemini-flash-lite-latest': 'high',
-      'gemini-pro-latest': 'medium',
+      'gemini-3.5-flash': 'low',
+      'gemini-3.1-flash-lite': 'high',
+      'gemini-3.1-pro-preview': 'medium',
     });
     expect(persisted?.maxToolRoundTrips).toBe(4);
     expect(persisted?.pageTextExtractionEngine).toBe('readability');
@@ -291,9 +291,9 @@ describe('options page bootstrap', () => {
       apiKey: 'init-key',
       model: 'custom-legacy-model',
       modelThinkingLevelMap: {
-        'gemini-flash-latest': 'minimal',
-        'gemini-flash-lite-latest': 'minimal',
-        'gemini-pro-latest': 'high',
+        'gemini-3.5-flash': 'minimal',
+        'gemini-3.1-flash-lite': 'minimal',
+        'gemini-3.1-pro-preview': 'high',
       },
     };
     installChromeOptionsMock();
@@ -312,7 +312,7 @@ describe('options page bootstrap', () => {
         }
       | undefined;
     expect(persisted?.apiKey).toBe('updated-key');
-    expect(persisted?.model).toBe('gemini-flash-latest');
+    expect(persisted?.model).toBe('gemini-3.5-flash');
   });
 
   function installChromeOptionsMock(): void {

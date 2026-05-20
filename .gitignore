@@ -26,3 +26,8 @@ Thumbs.db
 # Local page text extraction plugins (private, optional)
 plugins/page-text-extraction/index.local.js
 plugins/page-text-extraction/local-*.plugin.js
+
+.agents/
+.claude/
+.codex/
+.conductor/

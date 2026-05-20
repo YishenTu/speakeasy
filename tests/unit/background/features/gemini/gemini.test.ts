@@ -882,7 +882,7 @@ describe('composeGeminiInteractionRequest', () => {
 });
 
 describe('generateSessionTitle', () => {
-  it('uses gemini-flash-lite-latest and sanitizes quoted model output', async () => {
+  it('uses gemini-3.1-flash-lite and sanitizes quoted model output', async () => {
     enqueueGeminiResponses({
       id: 'interaction-title-1',
       outputs: [{ type: 'text', text: '  "Quarterly release planning"  ' }],
@@ -892,7 +892,7 @@ describe('generateSessionTitle', () => {
 
     expect(title).toBe('Quarterly release planning');
     expect(fetchRequestBodies).toHaveLength(1);
-    expect(fetchRequestBodies[0]?.model).toBe('gemini-flash-lite-latest');
+    expect(fetchRequestBodies[0]?.model).toBe('gemini-3.1-flash-lite');
     expect(fetchRequestBodies[0]?.store).toBe(false);
 
     const requestInput = fetchRequestBodies[0]?.input;

@@ -103,9 +103,9 @@ describe('chatpanel template', () => {
   it('orders model selector items as pro, flash, lite and uses lite alias', () => {
     const template = getChatPanelTemplate();
 
-    const proItem = 'class="dropup-item" data-value="gemini-pro-latest"';
-    const flashItem = 'class="dropup-item" data-value="gemini-flash-latest"';
-    const liteItem = 'class="dropup-item" data-value="gemini-flash-lite-latest"';
+    const proItem = 'class="dropup-item" data-value="gemini-3.1-pro-preview"';
+    const flashItem = 'class="dropup-item" data-value="gemini-3.5-flash"';
+    const liteItem = 'class="dropup-item" data-value="gemini-3.1-flash-lite"';
     const proIndex = template.indexOf(proItem);
     const flashIndex = template.indexOf(flashItem);
     const liteIndex = template.indexOf(liteItem);
@@ -116,7 +116,7 @@ describe('chatpanel template', () => {
     expect(proIndex).toBeLessThan(flashIndex);
     expect(flashIndex).toBeLessThan(liteIndex);
     expect(template).toContain(
-      '<button type="button" class="dropup-item" data-value="gemini-flash-lite-latest">Lite</button>',
+      '<button type="button" class="dropup-item" data-value="gemini-3.1-flash-lite">Lite</button>',
     );
     expect(template).not.toContain('>Flash Lite<');
   });

@@ -26,9 +26,9 @@ describe('options form state', () => {
     const settings = defaultGeminiSettings();
     settings.apiKey = 'api-key';
     settings.modelThinkingLevelMap = {
-      'gemini-flash-latest': 'medium',
-      'gemini-flash-lite-latest': 'low',
-      'gemini-pro-latest': 'low',
+      'gemini-3.5-flash': 'medium',
+      'gemini-3.1-flash-lite': 'low',
+      'gemini-3.1-pro-preview': 'low',
     };
     settings.systemInstruction = 'Be direct.';
     settings.storeInteractions = false;
@@ -55,11 +55,11 @@ describe('options form state', () => {
     applySettingsToForm(dom, settings);
 
     expect(dom.apiKeyInput.value).toBe('api-key');
-    expect(dom.modelFlashNameInput.value).toBe('gemini-flash-latest');
+    expect(dom.modelFlashNameInput.value).toBe('gemini-3.5-flash');
     expect(dom.modelFlashThinkingLevelSelect.value).toBe('medium');
-    expect(dom.modelFlashLiteNameInput.value).toBe('gemini-flash-lite-latest');
+    expect(dom.modelFlashLiteNameInput.value).toBe('gemini-3.1-flash-lite');
     expect(dom.modelFlashLiteThinkingLevelSelect.value).toBe('low');
-    expect(dom.modelProNameInput.value).toBe('gemini-pro-latest');
+    expect(dom.modelProNameInput.value).toBe('gemini-3.1-pro-preview');
     expect(dom.modelProThinkingLevelSelect.value).toBe('low');
     expect(dom.systemInstructionInput.value).toBe('Be direct.');
     expect(dom.storeInteractionsInput.checked).toBe(false);
@@ -134,9 +134,9 @@ describe('options form state', () => {
     expect(state).toEqual({
       apiKey: 'key-123',
       modelThinkingLevelMap: {
-        'gemini-flash-latest': 'low',
-        'gemini-flash-lite-latest': 'high',
-        'gemini-pro-latest': 'high',
+        'gemini-3.5-flash': 'low',
+        'gemini-3.1-flash-lite': 'high',
+        'gemini-3.1-pro-preview': 'high',
       },
       systemInstruction: 'Use tools when needed.',
       storeInteractions: true,
@@ -204,9 +204,9 @@ describe('options form state', () => {
     const state = readFormState(dom);
 
     expect(state.modelThinkingLevelMap).toEqual({
-      'gemini-flash-latest': 'minimal',
-      'gemini-flash-lite-latest': 'minimal',
-      'gemini-pro-latest': 'high',
+      'gemini-3.5-flash': 'minimal',
+      'gemini-3.1-flash-lite': 'minimal',
+      'gemini-3.1-pro-preview': 'high',
     });
   });
 
